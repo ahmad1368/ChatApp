@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #27 Biometric login (Face ID / fingerprint) via WebAuthn — real platform-authenticator registration and sign-in (no biometric data ever reaches the server, by design of the standard); demo UI at `/settings/security?userId=`
