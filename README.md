@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #12 Image sharing with automatic compression — client-side canvas downscale/re-encode before upload, in-memory upload store, images rendered inline in the chat
