@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #13 CDN readiness for static assets — `NEXT_PUBLIC_CDN_URL`-driven `assetPrefix` plus immutable cache headers, so a CDN can front the app's build output (and, once #12 merges, uploaded images) without code changes
