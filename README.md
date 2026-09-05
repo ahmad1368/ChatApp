@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #20 High-concurrency architecture readiness — optional Redis adapter for multi-instance Socket.io broadcasts, per-socket message rate limiting, and graceful shutdown
