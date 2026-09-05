@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #18 In-app update system — service worker update detection with an "Update now" prompt, the web equivalent of the Play Store in-app update flow
