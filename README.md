@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- Custom photo watermarking to prevent photo theft (#45): `PhotoStore` (5MB cap, jpeg/png/webp) + `POST /api/photos` upload; `GET /api/photos/:id` dynamically burns a viewer-labeled watermark into the image's actual pixel data on every serve (via `jimp`, no native image-library dependency), so a leaked copy of the raw file itself carries the watermark rather than a strippable DOM overlay. Web UI adds a profile-photo upload/preview.

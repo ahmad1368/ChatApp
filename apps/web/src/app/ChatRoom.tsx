@@ -10,6 +10,8 @@ export default function ChatRoom() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
+  const [photoId, setPhotoId] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -40,6 +42,30 @@ export default function ChatRoom() {
     setText("");
   };
 
+  const uploadPhoto = async (file: File) => {
+    setPhotoError(null);
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const base64 = dataUrl.split(",")[1] ?? "";
+
+    const res = await fetch(`${API_URL}/api/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author, mimeType: file.type, data: base64 }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setPhotoError(body.error ?? "Failed to upload photo");
+      return;
+    }
+    const body = await res.json();
+    setPhotoId(body.id);
+  };
+
   return (
     <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
       <h1>ChatApp</h1>
@@ -61,6 +87,28 @@ export default function ChatRoom() {
         />
         <button onClick={sendMessage}>Send</button>
       </div>
+
+      <section style={{ borderTop: "1px solid #eee", paddingTop: 12, marginTop: 12, fontSize: 13 }}>
+        <h2 style={{ fontSize: 14 }}>Profile photo</h2>
+        <p style={{ color: "#666" }}>
+          Uploaded photos are watermarked with your name every time they&apos;re served, to deter
+          photo theft — the watermark is burned into the image itself, not just shown on top of it.
+        </p>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={(e) => e.target.files?.[0] && uploadPhoto(e.target.files[0])}
+        />
+        {photoError && <p style={{ color: "#b00020" }}>{photoError}</p>}
+        {photoId && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`${API_URL}/api/photos/${photoId}?viewer=${encodeURIComponent(author)}`}
+            alt="Watermarked upload preview"
+            style={{ marginTop: 8, maxWidth: "100%", borderRadius: 8 }}
+          />
+        )}
+      </section>
     </main>
   );
 }
