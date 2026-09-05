@@ -6,20 +6,50 @@ import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+// Contact Picker API: supported on Chrome for Android only. Where it's missing
+// (all desktop browsers, iOS Safari) we fall back to manual number entry as the
+// web equivalent of "import phone contacts."
+type ContactsManager = {
+  select: (properties: string[], options?: { multiple?: boolean }) => Promise<Array<{ tel?: string[] }>>;
+};
+
+function getContactsManager(): ContactsManager | undefined {
+  return (navigator as unknown as { contacts?: ContactsManager }).contacts;
+}
+
 export default function ChatRoom() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
+  const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [contactNumbers, setContactNumbers] = useState("");
+  const [contactBlockStatus, setContactBlockStatus] = useState<string | null>(null);
+  const [contactPickerSupported, setContactPickerSupported] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
-  useEffect(() => {
-    fetch(`${API_URL}/api/rooms/${DEFAULT_ROOM_ID}/messages`)
+  const refreshMessages = () => {
+    fetch(`${API_URL}/api/rooms/${DEFAULT_ROOM_ID}/messages?viewer=${encodeURIComponent(author)}`)
       .then((res) => res.json())
       .then(setMessages)
       .catch(() => setMessages([]));
+  };
+
+  const refreshBlockedAuthors = () => {
+    fetch(`${API_URL}/api/blocks/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setBlockedAuthors(body.blockedAuthors ?? []))
+      .catch(() => setBlockedAuthors([]));
+  };
+
+  useEffect(() => {
+    refreshMessages();
+    refreshBlockedAuthors();
+    setContactPickerSupported(Boolean(getContactsManager()));
 
     const socket = io(API_URL);
     socketRef.current = socket;
+    socket.emit("identify", author);
     socket.emit("join", DEFAULT_ROOM_ID);
     socket.on("message:new", (message: ChatMessage) => {
       setMessages((prev) => [...prev, message]);
@@ -28,6 +58,7 @@ export default function ChatRoom() {
     return () => {
       socket.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const sendMessage = () => {
@@ -40,18 +71,100 @@ export default function ChatRoom() {
     setText("");
   };
 
+  const blockUser = async (blockedAuthor: string) => {
+    if (!confirm(`Block ${blockedAuthor}? You won't see each other's messages anymore.`)) return;
+    await fetch(`${API_URL}/api/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockerAuthor: author, blockedAuthor }),
+    });
+    setBlockedAuthors((prev) => [...prev, blockedAuthor]);
+    setMessages((prev) => prev.filter((m) => m.author !== blockedAuthor));
+  };
+
+  const unblockUser = async (blockedAuthor: string) => {
+    await fetch(`${API_URL}/api/blocks`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockerAuthor: author, blockedAuthor }),
+    });
+    setBlockedAuthors((prev) => prev.filter((a) => a !== blockedAuthor));
+  };
+
+  const savePhoneNumber = async () => {
+    if (!phoneNumber.trim()) return;
+    await fetch(`${API_URL}/api/profile/phone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author, phoneNumber: phoneNumber.trim() }),
+    });
+    setContactBlockStatus("Phone number saved.");
+  };
+
+  const blockByContactNumbers = async (numbers: string[]) => {
+    const res = await fetch(`${API_URL}/api/contacts/block`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author, phoneNumbers: numbers }),
+    });
+    const body = await res.json();
+    const newlyBlocked: string[] = body.blockedAuthors ?? [];
+    if (newlyBlocked.length > 0) {
+      setBlockedAuthors((prev) => Array.from(new Set([...prev, ...newlyBlocked])));
+      setMessages((prev) => prev.filter((m) => !newlyBlocked.includes(m.author)));
+      setContactBlockStatus(`Blocked ${newlyBlocked.length} contact(s) already on ChatApp.`);
+    } else {
+      setContactBlockStatus("None of those contacts were found on ChatApp.");
+    }
+  };
+
+  const blockPastedContacts = () => {
+    const numbers = contactNumbers
+      .split(/[\n,]+/)
+      .map((n) => n.trim())
+      .filter(Boolean);
+    if (numbers.length === 0) return;
+    blockByContactNumbers(numbers);
+    setContactNumbers("");
+  };
+
+  const pickDeviceContacts = async () => {
+    const contactsManager = getContactsManager();
+    if (!contactsManager) return;
+    try {
+      const picked = await contactsManager.select(["tel"], { multiple: true });
+      const numbers = picked.flatMap((c) => c.tel ?? []);
+      if (numbers.length > 0) blockByContactNumbers(numbers);
+    } catch {
+      // user cancelled the picker or permission was denied
+    }
+  };
+
+  const visibleMessages = messages.filter((m) => !blockedAuthors.includes(m.author));
+
   return (
     <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
       <h1>ChatApp</h1>
       <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12, minHeight: 240, marginBottom: 12 }}>
-        {messages.map((m) => (
-          <div key={m.id} style={{ marginBottom: 6 }}>
-            <strong>{m.author}: </strong>
-            <span>{m.text}</span>
+        {visibleMessages.map((m) => (
+          <div key={m.id} style={{ marginBottom: 6, display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>
+              <strong>{m.author}: </strong>
+              <span>{m.text}</span>
+            </span>
+            {m.author !== author && (
+              <button
+                onClick={() => blockUser(m.author)}
+                title={`Block ${m.author}`}
+                style={{ fontSize: 12, cursor: "pointer" }}
+              >
+                🚫 Block
+              </button>
+            )}
           </div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -61,6 +174,57 @@ export default function ChatRoom() {
         />
         <button onClick={sendMessage}>Send</button>
       </div>
+
+      {blockedAuthors.length > 0 && (
+        <div style={{ fontSize: 13, color: "#555", marginBottom: 12 }}>
+          <strong>Blocked users:</strong>
+          <ul style={{ paddingLeft: 16 }}>
+            {blockedAuthors.map((blockedAuthor) => (
+              <li key={blockedAuthor}>
+                {blockedAuthor}{" "}
+                <button onClick={() => unblockUser(blockedAuthor)} style={{ fontSize: 12, cursor: "pointer" }}>
+                  Unblock
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <section style={{ borderTop: "1px solid #eee", paddingTop: 12, fontSize: 13 }}>
+        <h2 style={{ fontSize: 14 }}>Block phone contacts</h2>
+        <p style={{ color: "#666" }}>
+          Save your number so people who have you saved can find you, then block any of your phone
+          contacts who are already on ChatApp.
+        </p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            placeholder="Your phone number"
+            style={{ flex: 1, padding: 6 }}
+          />
+          <button onClick={savePhoneNumber}>Save</button>
+        </div>
+
+        {contactPickerSupported ? (
+          <button onClick={pickDeviceContacts}>Import contacts to block</button>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <textarea
+              value={contactNumbers}
+              onChange={(e) => setContactNumbers(e.target.value)}
+              placeholder="Paste contact phone numbers, one per line"
+              rows={3}
+              style={{ padding: 6 }}
+            />
+            <button onClick={blockPastedContacts} style={{ alignSelf: "flex-start" }}>
+              Block matching contacts
+            </button>
+          </div>
+        )}
+        {contactBlockStatus && <p style={{ color: "#666" }}>{contactBlockStatus}</p>}
+      </section>
     </main>
   );
 }
