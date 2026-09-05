@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- Block users and prevent re-encountering them (#42): mutual, high-priority block/unblock API independent of any matching/discovery service; blocked pairs stop receiving each other's messages both in real time (per-socket Socket.io delivery filtering) and in message history; block list is per-user and self-lookup only (no endpoint reveals who has blocked a given user). Mobile screenshot-blocking (Android `FLAG_SECURE`) and image watermarking from the reference app's implementation guide are native-app/media concerns out of scope for this web-first PWA and are deferred.

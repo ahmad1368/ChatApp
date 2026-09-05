@@ -13,3 +13,12 @@ export interface SendMessagePayload {
 }
 
 export const DEFAULT_ROOM_ID = "general";
+
+export interface BlockPayload {
+  blockerAuthor: string;
+  blockedAuthor: string;
+}
+
+export interface BlockRecord extends BlockPayload {
+  createdAt: string;
+}
