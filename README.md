@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- Biometric re-authentication when entering the app (#49): WebAuthn platform authenticators (Touch ID/Windows Hello/Android fingerprint via Chrome) are the real, working web equivalent of native biometric re-auth — `WebAuthnStore` (`apps/api/src/webauthn.ts`, `@simplewebauthn/server`) enrolls a `platform`-attachment, `userVerification: "required"` credential per guest identity and re-verifies it whenever the tab becomes visible again. A persistent guest identity (`localStorage`, `apps/web/src/app/guestIdentity.ts`) replaces the previous per-reload random author, since re-authentication needs something to re-authenticate *against*. `BiometricLock.tsx` gates the chat UI: first visit offers enrollment (skippable), later visits/returns require an `@simplewebauthn/browser` re-auth before revealing content.
