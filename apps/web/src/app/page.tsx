@@ -1,5 +1,5 @@
-import ChatRoom from "./ChatRoom";
+import EntryGate from "./EntryGate";
 
 export default function Home() {
-  return <ChatRoom />;
+  return <EntryGate />;
 }

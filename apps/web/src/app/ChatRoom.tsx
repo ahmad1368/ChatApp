@@ -6,7 +6,7 @@ import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
-export default function ChatRoom() {
+export default function ChatRoom({ isGuest = false }: { isGuest?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
@@ -31,11 +31,12 @@ export default function ChatRoom() {
   }, []);
 
   const sendMessage = () => {
-    if (!text.trim() || !socketRef.current) return;
+    if (isGuest || !text.trim() || !socketRef.current) return;
     socketRef.current.emit("message:send", {
       roomId: DEFAULT_ROOM_ID,
       author,
       text: text.trim(),
+      asGuest: isGuest,
     });
     setText("");
   };
@@ -43,6 +44,15 @@ export default function ChatRoom() {
   return (
     <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
       <h1>ChatApp</h1>
+      {isGuest && (
+        <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
+          You're browsing as a guest — you can read messages, but{" "}
+          <a href="/signup" style={{ color: "#2563eb" }}>
+            sign up
+          </a>{" "}
+          to send your own.
+        </div>
+      )}
       <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12, minHeight: 240, marginBottom: 12 }}>
         {messages.map((m) => (
           <div key={m.id} style={{ marginBottom: 6 }}>
@@ -56,10 +66,13 @@ export default function ChatRoom() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          placeholder="Type a message"
+          placeholder={isGuest ? "Sign up to send a message" : "Type a message"}
+          disabled={isGuest}
           style={{ flex: 1, padding: 8 }}
         />
-        <button onClick={sendMessage}>Send</button>
+        <button onClick={sendMessage} disabled={isGuest}>
+          Send
+        </button>
       </div>
     </main>
   );
