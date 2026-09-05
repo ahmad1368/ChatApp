@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
 
@@ -42,7 +43,12 @@ export default function ChatRoom() {
 
   return (
     <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
-      <h1>ChatApp</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1>ChatApp</h1>
+        <Link href="/safety" style={{ fontSize: 13 }}>
+          🛡️ Safety Center
+        </Link>
+      </div>
       <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12, minHeight: 240, marginBottom: 12 }}>
         {messages.map((m) => (
           <div key={m.id} style={{ marginBottom: 6 }}>

@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- Safety Center and guide for safe meetups (#46): `/safety` page with static safe-meetup tips plus "Share your date" — `SafetyPlanStore` (`apps/api/src/safetyPlans.ts`) records who/where/when and issues a share code (`POST /api/safety/plans`); a trusted contact opens `/safety/shared/:code` (`GET /api/safety/plans/shared/:shareCode`) to view the plan read-only, no login required, matching the Bumble/Tinder "share my date" pattern. Report/Block deep-links into the Safety Center are deferred until #41/#42 merge into this app's baseline.
