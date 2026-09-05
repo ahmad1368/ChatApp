@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #28 Step-by-step profile onboarding — server-persisted, resumable state machine (display name → avatar → bio) with a shared progress-bar UI at `/onboarding?userId=`
