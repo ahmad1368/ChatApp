@@ -41,25 +41,27 @@ export default function ChatRoom() {
   };
 
   return (
-    <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
+    <main className="chat-app">
       <h1>ChatApp</h1>
-      <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12, minHeight: 240, marginBottom: 12 }}>
+      <div className="chat-app__messages">
         {messages.map((m) => (
-          <div key={m.id} style={{ marginBottom: 6 }}>
+          <div key={m.id} className="chat-app__message">
             <strong>{m.author}: </strong>
             <span>{m.text}</span>
           </div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="chat-app__composer">
         <input
+          className="chat-app__input"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Type a message"
-          style={{ flex: 1, padding: 8 }}
         />
-        <button onClick={sendMessage}>Send</button>
+        <button className="chat-app__send" onClick={sendMessage}>
+          Send
+        </button>
       </div>
     </main>
   );

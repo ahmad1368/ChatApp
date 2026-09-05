@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #3 Responsive design for tablet and desktop — CSS custom properties + media-query breakpoints replace fixed inline layout
