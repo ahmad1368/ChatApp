@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #19 Data Saver Mode — a persistent, user-controlled toggle (defaulting to the OS Data Saver signal) that holds off loading messages/opening the live connection until the user asks for it
