@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #10 Deep linking — `/room/[roomId]` routing plus `?m=<messageId>` links that scroll to and highlight a specific message, with a per-message "copy link" action
