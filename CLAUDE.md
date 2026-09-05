@@ -1,5 +1,9 @@
 # ChatApp
 
+## Product direction
+
+ChatApp is pivoting from a generic real-time chat app into a **dating app** — the 500-issue backlog (`gh issue list`) was generated against dating-app reference products (Tinder, eHarmony, Raya, Feeld, OkCupid, Bumble, etc.) and issues from #29 onward are genuinely about dating/matching functionality (dating goals, gender/orientation, swipe-to-match, compatibility, discovery, profiles, safety), not generic chat infra. Build these as real dating-app features on top of the existing chat/auth/onboarding core, rather than skipping them or forcing a generic-chat reinterpretation. Issues #1-28 (cross-platform infra, auth) remain valid as-is — they're foundational to any app, dating or not. Revisit this direction if the user says otherwise.
+
 ## Stack
 
 - Monorepo via npm workspaces: `apps/web` (Next.js + TS), `apps/api` (Express + Socket.io), `packages/shared` (shared types).

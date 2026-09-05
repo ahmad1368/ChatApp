@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import ReportDialog from "./ReportDialog";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -10,6 +11,7 @@ export default function ChatRoom() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
+  const [reportTarget, setReportTarget] = useState<{ author: string; messageId: string } | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -45,9 +47,20 @@ export default function ChatRoom() {
       <h1>ChatApp</h1>
       <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12, minHeight: 240, marginBottom: 12 }}>
         {messages.map((m) => (
-          <div key={m.id} style={{ marginBottom: 6 }}>
-            <strong>{m.author}: </strong>
-            <span>{m.text}</span>
+          <div key={m.id} style={{ marginBottom: 6, display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>
+              <strong>{m.author}: </strong>
+              <span>{m.text}</span>
+            </span>
+            {m.author !== author && (
+              <button
+                onClick={() => setReportTarget({ author: m.author, messageId: m.id })}
+                title="Report this message"
+                style={{ border: "none", background: "none", color: "#9ca3af", cursor: "pointer", fontSize: 12, flexShrink: 0 }}
+              >
+                ⚠ Report
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -61,6 +74,14 @@ export default function ChatRoom() {
         />
         <button onClick={sendMessage}>Send</button>
       </div>
+      {reportTarget && (
+        <ReportDialog
+          reporterAuthor={author}
+          reportedAuthor={reportTarget.author}
+          messageId={reportTarget.messageId}
+          onClose={() => setReportTarget(null)}
+        />
+      )}
     </main>
   );
 }
