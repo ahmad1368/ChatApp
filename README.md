@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #21 Phone number + OTP signup — `/signup` two-step flow, backend OTP request/verify with expiry/attempt limits/resend cooldown, JWT access + rotating refresh tokens
