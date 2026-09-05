@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #14 OS shortcuts integration — web app manifest `shortcuts` entry so installed PWAs get a jump-list/long-press shortcut into the app
