@@ -13,3 +13,32 @@ export interface SendMessagePayload {
 }
 
 export const DEFAULT_ROOM_ID = "general";
+
+export interface EmergencyContact {
+  name: string;
+  contactMethod: string;
+}
+
+export interface SOSLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
+export interface SOSAlert {
+  id: string;
+  author: string;
+  location: SOSLocation;
+  resolved: boolean;
+  triggeredAt: string;
+  updatedAt: string;
+  contacts: { name: string; shareCode: string }[];
+}
+
+export interface SOSAlertView {
+  author: string;
+  location: SOSLocation;
+  resolved: boolean;
+  triggeredAt: string;
+  updatedAt: string;
+}

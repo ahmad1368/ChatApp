@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- Emergency SOS (#48): a prominent SOS button in the chat UI uses the browser's real, working Geolocation API to capture the sender's current position and trigger an alert (`SOSStore`, `apps/api/src/sos.ts`) that's shared with every registered emergency contact via a distinct, live-updating share code each (stubbed notification delivery, same pattern as other stubbed third-party sends). The sender can push location updates while the alert is active and resolve it once safe; contacts view a live, auto-refreshing `/sos/shared/[code]` page with no login required.
