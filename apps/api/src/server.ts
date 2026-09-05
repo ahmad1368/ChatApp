@@ -3,6 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
+import { buildChatMessage } from "./messages";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 
@@ -33,13 +34,7 @@ io.on("connection", (socket) => {
 
   socket.on("message:send", (payload: SendMessagePayload) => {
     const roomId = payload.roomId || DEFAULT_ROOM_ID;
-    const message: ChatMessage = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      roomId,
-      author: payload.author,
-      text: payload.text,
-      createdAt: new Date().toISOString(),
-    };
+    const message: ChatMessage = buildChatMessage(payload);
     const existing = messagesByRoom.get(roomId) ?? [];
     existing.push(message);
     messagesByRoom.set(roomId, existing);

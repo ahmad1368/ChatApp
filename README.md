@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #15 Smooth 60fps swipe-to-reply — Pointer Events + transform/rAF-only dragging on message bubbles, swipe right to quote-reply
