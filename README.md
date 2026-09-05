@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #16 Keyboard shortcuts — Ctrl/Cmd+K to focus the composer, Shift+Enter for a new line, Esc to dismiss, and `?` for a shortcuts help overlay
