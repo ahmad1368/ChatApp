@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #25 Account recovery via email — `/recover` two-step flow reinterpreting "password recovery" for this passwordless app (SMS recovery is already covered by #21's phone OTP)
