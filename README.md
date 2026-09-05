@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- Screenshot/DRM policy (#44): browsers have no API to block or even detect an OS-level screenshot (no equivalent of Android `FLAG_SECURE`/iOS screen-capture protection exists on web), so this implements the honest web mitigation — deterrence + traceability. `POST /api/watermark/session` issues a per-viewing-session trace code (`WatermarkStore`, never exposed via a read endpoint); the client renders it as a faint tiled watermark over the chat. The UI also blurs chat content on tab-blur/visibility-change as defense-in-depth against shoulder-surfing/screen-share leaks. True screenshot prevention is deferred as a native-only capability per CLAUDE.md's web-first scoping.
