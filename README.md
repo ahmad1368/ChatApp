@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #26 Two-factor authentication — TOTP (RFC 6238) setup with QR enrollment, confirm, verify, and disable, fully self-contained (no third-party 2FA provider needed); demo UI at `/settings/security?userId=`
