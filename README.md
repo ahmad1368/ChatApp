@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #17 Automatic crash/error reporting — global error/rejection handlers plus a React error boundary report to `/api/error-reports`, the web equivalent of Crashlytics
