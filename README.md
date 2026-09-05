@@ -23,3 +23,4 @@ npm run dev:web   # http://localhost:3000
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
+- Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`

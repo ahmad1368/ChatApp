@@ -4,6 +4,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
 import { exportDataForAuthor } from "./dataExport";
+import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 
@@ -13,6 +14,7 @@ export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMes
   app.use(express.json());
 
   const messagesByRoom = new Map<string, ChatMessage[]>();
+  const locations = new LocationStore();
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
@@ -35,6 +37,36 @@ export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMes
     const dataExport = exportDataForAuthor(messagesByRoom, author);
     res.setHeader("Content-Disposition", `attachment; filename="chatapp-data-${encodeURIComponent(author)}.json"`);
     res.json(dataExport);
+  });
+
+  // Location privacy: a user's exact coordinates never leave this process —
+  // every read returns a coordinate snapped to a ~5km grid cell instead.
+  app.put("/api/users/:author/location", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    if (!isValidCoordinates(req.body)) {
+      res.status(400).json({ error: "lat/lng must be numbers within valid ranges" });
+      return;
+    }
+    locations.setLocation(author, req.body);
+    res.json({ approximate: locations.getApproximateLocation(author) });
+  });
+
+  app.get("/api/users/:author/location", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    const approximate = locations.getApproximateLocation(author);
+    if (!approximate) {
+      res.status(404).json({ error: "no location on file for this user" });
+      return;
+    }
+    res.json({ approximate });
   });
 
   return { app, messagesByRoom };

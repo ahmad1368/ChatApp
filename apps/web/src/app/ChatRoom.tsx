@@ -45,9 +45,14 @@ export default function ChatRoom() {
     <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1>ChatApp</h1>
-        <Link href={`/privacy/export?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
-          Download my data
-        </Link>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Link href={`/privacy/export?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
+            Download my data
+          </Link>
+          <Link href={`/privacy/location?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
+            Location privacy
+          </Link>
+        </div>
       </div>
       <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12, minHeight: 240, marginBottom: 12 }}>
         {messages.map((m) => (

@@ -52,3 +52,62 @@ test("GET /api/account/:author/export for an author with no data returns an empt
     server.close();
   }
 });
+
+test("PUT /api/users/:author/location stores an exact location and returns only an approximation", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/users/alice/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 37.7749, lng: -122.4194 }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.notDeepEqual(body.approximate, { lat: 37.7749, lng: -122.4194 });
+    assert.equal(typeof body.approximate.lat, "number");
+    assert.equal(typeof body.approximate.lng, "number");
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/users/:author/location rejects out-of-range coordinates", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/users/alice/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 999, lng: 0 }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/users/:author/location returns 404 when no location is on file", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/users/nobody/location`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/users/:author/location returns the same approximation set via PUT", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/users/alice/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 51.5074, lng: -0.1278 }),
+    });
+    const res = await fetch(`${baseUrl}/api/users/alice/location`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(typeof body.approximate.lat, "number");
+  } finally {
+    server.close();
+  }
+});
