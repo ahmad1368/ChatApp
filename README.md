@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #1 Full PWA support for the browser — manifest, service worker (app-shell caching + offline fallback), installable/standalone display
