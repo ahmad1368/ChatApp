@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #22 Google Sign-In — server-side ID token verification (`google-auth-library`), JWT session issuance, and a Google Identity Services button that gracefully degrades when unconfigured
