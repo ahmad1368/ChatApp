@@ -4,6 +4,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
 import { exportDataForAuthor } from "./dataExport";
+import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 
@@ -13,6 +14,9 @@ export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMes
   app.use(express.json());
 
   const messagesByRoom = new Map<string, ChatMessage[]>();
+
+  const accountDeletion = new AccountDeletionCoordinator();
+  accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
@@ -35,6 +39,18 @@ export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMes
     const dataExport = exportDataForAuthor(messagesByRoom, author);
     res.setHeader("Content-Disposition", `attachment; filename="chatapp-data-${encodeURIComponent(author)}.json"`);
     res.json(dataExport);
+  });
+
+  // GDPR erasure: its own high-priority, dependency-free safety path, same
+  // as Report/Block/SOS. See AccountDeletionCoordinator for why this is a
+  // registry rather than a single hardcoded purge.
+  app.delete("/api/account/:author", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    res.json(accountDeletion.deleteAllDataFor(author));
   });
 
   return { app, messagesByRoom };
