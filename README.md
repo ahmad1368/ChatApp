@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #23 Sign in with Apple — server-side ID token verification against Apple's JWKS, JWT session issuance, and a Sign in with Apple button that gracefully degrades when unconfigured
