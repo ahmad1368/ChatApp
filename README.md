@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- Share My Date (#47): richer trusted-contact date-sharing than #46's static plan — `SharedDateStore` (`apps/api/src/sharedDates.ts`) issues a distinct share code per named trusted contact (`POST /api/shared-dates`), lets the sharer push live status updates (`PATCH /api/shared-dates/:id/status`: planned/on the way/arrived/safe/need help) that every contact sees on refresh, and supports revoking all access at once (`POST /api/shared-dates/:id/revoke`). `/share-my-date` is the sharer's UI; `/share-my-date/shared/[code]` is the trusted contact's auto-refreshing read-only view. Note: this overlaps with #46's simpler "Share your date" — see CLAUDE.md's "Known backlog overlap" section for the reconciliation plan once both merge.
