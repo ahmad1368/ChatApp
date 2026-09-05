@@ -1,6 +1,6 @@
 # ChatApp
 
-A real-time chat application built incrementally from the project's 500-feature issue backlog, one issue at a time via the `/next-issue` workflow.
+A dating app built around real-time chat, built incrementally from the project's 500-feature issue backlog, one issue at a time via the `/next-issue` workflow. See `CLAUDE.md` for the product-direction note.
 
 ## Stack
 
@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #37 Verified badge — `GET /api/users/:userId/badge` (boolean-only, no image exposure) plus a reusable blue-checkmark `VerifiedBadge` component shown after selfie verification
