@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import { LocaleToggle, useLocale } from "./LocaleProvider";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export default function ChatRoom() {
+  const { t } = useLocale();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
@@ -42,7 +44,10 @@ export default function ChatRoom() {
 
   return (
     <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
-      <h1>ChatApp</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1>{t("title")}</h1>
+        <LocaleToggle />
+      </div>
       <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12, minHeight: 240, marginBottom: 12 }}>
         {messages.map((m) => (
           <div key={m.id} style={{ marginBottom: 6 }}>
@@ -56,10 +61,10 @@ export default function ChatRoom() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          placeholder="Type a message"
+          placeholder={t("placeholder")}
           style={{ flex: 1, padding: 8 }}
         />
-        <button onClick={sendMessage}>Send</button>
+        <button onClick={sendMessage}>{t("send")}</button>
       </div>
     </main>
   );
