@@ -22,4 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
-- Complete account and data deletion / GDPR erasure (#50): `DELETE /api/account/:author` erases every message an author has sent. `AccountDeletionCoordinator` (`apps/api/src/accountDeletion.ts`) is a registry, not a single hardcoded purge, so future safety-feature stores (blocks, safety plans, SOS contacts, WebAuthn credentials, photos — each currently on its own unmerged branch) can register their own purge callback once merged. Web UI: `/privacy` requires typing "DELETE" to confirm before erasing, consistent with Feeld's minimal-but-safety-conscious pattern.
+- Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`

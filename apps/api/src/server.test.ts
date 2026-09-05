@@ -10,45 +10,44 @@ function listen() {
   return { server, baseUrl: `http://127.0.0.1:${port}`, messagesByRoom };
 }
 
-test("DELETE /api/account/:author erases only that author's messages", async () => {
+test("GET /api/account/:author/export returns only that author's messages as a download", async () => {
   const { server, baseUrl, messagesByRoom } = listen();
   messagesByRoom.set("general", [
     { id: "1", roomId: "general", author: "alice", text: "hi", createdAt: new Date().toISOString() },
     { id: "2", roomId: "general", author: "bob", text: "yo", createdAt: new Date().toISOString() },
   ]);
   try {
-    const res = await fetch(`${baseUrl}/api/account/alice`, { method: "DELETE" });
+    const res = await fetch(`${baseUrl}/api/account/alice/export`);
     assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-disposition") ?? "", /attachment; filename="chatapp-data-alice\.json"/);
     const body = await res.json();
-    assert.equal(body.deletedRecordCount, 1);
-
-    const remaining = await (await fetch(`${baseUrl}/api/rooms/general/messages`)).json();
+    assert.equal(body.author, "alice");
     assert.deepEqual(
-      remaining.map((m: { author: string }) => m.author),
-      ["bob"]
+      body.messages.map((m: { author: string }) => m.author),
+      ["alice"]
     );
   } finally {
     server.close();
   }
 });
 
-test("DELETE /api/account/:author rejects a missing author", async () => {
+test("GET /api/account/:author/export rejects a missing author", async () => {
   const { server, baseUrl } = listen();
   try {
-    const res = await fetch(`${baseUrl}/api/account/${encodeURIComponent(" ")}`, { method: "DELETE" });
+    const res = await fetch(`${baseUrl}/api/account/${encodeURIComponent(" ")}/export`);
     assert.equal(res.status, 400);
   } finally {
     server.close();
   }
 });
 
-test("DELETE /api/account/:author for an author with no data returns a zero count", async () => {
+test("GET /api/account/:author/export for an author with no data returns an empty backup", async () => {
   const { server, baseUrl } = listen();
   try {
-    const res = await fetch(`${baseUrl}/api/account/nobody`, { method: "DELETE" });
+    const res = await fetch(`${baseUrl}/api/account/nobody/export`);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.deletedRecordCount, 0);
+    assert.deepEqual(body.messages, []);
   } finally {
     server.close();
   }
