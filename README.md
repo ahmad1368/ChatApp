@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #11 Optimized REST API — backward-compatible cursor pagination (`limit`/`before`) on the messages endpoint, with a "Load older messages" client flow, instead of always shipping full room history
