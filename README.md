@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #24 Sign in with Facebook — server-side access token verification via the Graph API's `debug_token`, JWT session issuance, gracefully-degrading button
