@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import ThemeToggle from "./ThemeToggle";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -41,9 +42,21 @@ export default function ChatRoom() {
   };
 
   return (
-    <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
-      <h1>ChatApp</h1>
-      <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12, minHeight: 240, marginBottom: 12 }}>
+    <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif", color: "var(--color-text)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1>ChatApp</h1>
+        <ThemeToggle />
+      </div>
+      <div
+        style={{
+          border: "1px solid var(--color-border)",
+          background: "var(--color-panel)",
+          borderRadius: 8,
+          padding: 12,
+          minHeight: 240,
+          marginBottom: 12,
+        }}
+      >
         {messages.map((m) => (
           <div key={m.id} style={{ marginBottom: 6 }}>
             <strong>{m.author}: </strong>
@@ -57,9 +70,28 @@ export default function ChatRoom() {
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Type a message"
-          style={{ flex: 1, padding: 8 }}
+          style={{
+            flex: 1,
+            padding: 8,
+            background: "var(--color-panel)",
+            color: "var(--color-text)",
+            border: "1px solid var(--color-border)",
+            borderRadius: 4,
+          }}
         />
-        <button onClick={sendMessage}>Send</button>
+        <button
+          onClick={sendMessage}
+          style={{
+            padding: "8px 16px",
+            background: "var(--color-accent)",
+            color: "var(--color-accent-text)",
+            border: "none",
+            borderRadius: 4,
+            cursor: "pointer",
+          }}
+        >
+          Send
+        </button>
       </div>
     </main>
   );

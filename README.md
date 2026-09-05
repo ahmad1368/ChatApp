@@ -22,3 +22,4 @@ npm run dev:web   # http://localhost:3000
 ## Implemented so far
 
 - Baseline real-time chat (single room, Socket.io) — web UI + API scaffold
+- #8 Dark / Light Mode support — CSS custom-property theme tokens, system-preference default, and a manual override toggle persisted in localStorage
