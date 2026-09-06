@@ -19,14 +19,71 @@ import {
   OnboardingState,
 } from "@chatapp/shared";
 import { loadStoredAuth } from "../authClient";
+import AvatarCropper from "../AvatarCropper";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 const TEXT_STEP_LABELS: Partial<Record<(typeof ONBOARDING_STEPS)[number], { title: string; placeholder: string; optional?: boolean }>> = {
   displayName: { title: "What should we call you?", placeholder: "Your display name" },
-  avatar: { title: "Add a profile photo", placeholder: "Paste an image URL", optional: true },
   bio: { title: "Say a little about yourself", placeholder: "A short bio", optional: true },
 };
+
+function AvatarStep({ onSubmit, error }: { onSubmit: (avatarUrl: string) => void; error: string | null }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    e.target.value = "";
+    if (selected) setFile(selected);
+  };
+
+  const handleCropped = async ({ mimeType, base64 }: { mimeType: string; base64: string }) => {
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/uploads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mimeType, data: base64 }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Upload failed");
+      }
+      const { url } = await res.json();
+      onSubmit(`${API_URL}${url}`);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+      setFile(null);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  if (file) {
+    return (
+      <div>
+        <label style={{ display: "block", fontSize: 14, marginBottom: 12 }}>Crop your photo</label>
+        {(error || uploadError) && <p style={{ color: "#c0392b", fontSize: 13 }}>{error ?? uploadError}</p>}
+        <AvatarCropper file={file} onCancel={() => setFile(null)} onCropped={handleCropped} />
+        {isUploading && <p style={{ fontSize: 13, color: "#6b7280", textAlign: "center" }}>Uploading…</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label style={{ display: "block", fontSize: 14, marginBottom: 12 }}>Add a profile photo</label>
+      {error && <p style={{ color: "#c0392b", fontSize: 13 }}>{error}</p>}
+      <input type="file" accept="image/*" onChange={handleFileChange} style={{ marginBottom: 16 }} />
+      <button type="button" onClick={() => onSubmit("")} style={{ width: "100%", padding: 10 }}>
+        Skip for now
+      </button>
+    </div>
+  );
+}
 
 function GenderStep({ onSubmit, error }: { onSubmit: (data: { option: GenderOption; customText?: string }) => void; error: string | null }) {
   const [selected, setSelected] = useState<GenderOption | null>(null);
@@ -332,7 +389,9 @@ export default function OnboardingPage() {
         ))}
       </div>
 
-      {state.currentStep === "searchRadius" ? (
+      {state.currentStep === "avatar" ? (
+        <AvatarStep error={error} onSubmit={(avatarUrl) => submitStep("avatar", avatarUrl)} />
+      ) : state.currentStep === "searchRadius" ? (
         <SearchRadiusStep error={error} onSubmit={(data) => submitStep("searchRadius", data)} />
       ) : state.currentStep === "ageRange" ? (
         <AgeRangeStep error={error} onSubmit={(data) => submitStep("ageRange", data)} />

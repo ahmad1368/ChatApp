@@ -67,6 +67,14 @@ describe("OnboardingStore", () => {
     assert.equal(result.state.currentStep, "bio");
   });
 
+  it("accepts an uploaded avatar URL for the avatar step", () => {
+    const store = new OnboardingStore();
+    store.submitStep("user-1", "displayName", "Alice");
+    const result = store.submitStep("user-1", "avatar", "/api/uploads/abc-123");
+    assert.ok(result.success);
+    assert.equal(result.state.profile.avatarUrl, "/api/uploads/abc-123");
+  });
+
   it("rejects an invalid dating goal", () => {
     const store = new OnboardingStore();
     store.submitStep("user-1", "displayName", "Alice");
