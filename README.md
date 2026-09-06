@@ -59,6 +59,7 @@ npm run dev:web   # http://localhost:3000
 - #36 Live selfie verification — ninth onboarding step: live camera capture (never a picked file) + on-device face-presence check, stored privately with only a boolean "verified" flag ever exposed to clients, gated behind a verified access token
 - #37 Verified badge — `GET /api/users/:userId/badge` (boolean-only, no image exposure, intentionally public/unauthenticated) plus a reusable blue-checkmark `VerifiedBadge` component shown after selfie verification
 - #38 Guest mode with limited access — an entry choice screen (sign up vs. continue as guest, skipped entirely for an already-signed-in user); guests can read the chat but sending is disabled client-side and rejected server-side
+- #39 Onboarding draft persistence across a sudden exit — `/onboarding` retries once with a refreshed access token (`fetchWithAuth`) instead of failing when a closed-tab-overnight return finds a stale 15-minute access token; the server already persists per-step progress against the real account (#28), so surviving a sudden exit only needed the session itself to survive one
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`

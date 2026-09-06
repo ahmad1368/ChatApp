@@ -18,7 +18,7 @@ import {
   OrientationOption,
   OnboardingState,
 } from "@chatapp/shared";
-import { loadStoredAuth } from "../authClient";
+import { fetchWithAuth, loadStoredAuth } from "../authClient";
 import AvatarCropper from "../AvatarCropper";
 import LiveSelfieCapture from "../LiveSelfieCapture";
 import VerifiedBadge from "../VerifiedBadge";
@@ -337,7 +337,11 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (!auth) return;
-    fetch(`${API_URL}/api/onboarding`, { headers: { Authorization: `Bearer ${auth.tokens.accessToken}` } })
+    // A closed-tab-overnight "sudden exit" (#39) finds a stale 15-minute
+    // access token on return — fetchWithAuth retries once with a refreshed
+    // one rather than failing, so the server's already-persisted per-step
+    // progress (#28) actually gets resumed instead of erroring out.
+    fetchWithAuth(`${API_URL}/api/onboarding`)
       .then((res) => res.json())
       .then(setState);
   }, [auth?.tokens.accessToken]);
@@ -352,9 +356,9 @@ export default function OnboardingPage() {
 
   const submitStep = async (step: string, stepValue: unknown) => {
     setError(null);
-    const res = await fetch(`${API_URL}/api/onboarding/step`, {
+    const res = await fetchWithAuth(`${API_URL}/api/onboarding/step`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.tokens.accessToken}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ step, data: stepValue }),
     });
     if (!res.ok) {

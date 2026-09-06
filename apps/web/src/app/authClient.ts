@@ -63,3 +63,53 @@ export async function verifyOtp(phoneNumber: string, code: string): Promise<Stor
   saveStoredAuth(auth);
   return auth;
 }
+
+/**
+ * The access token backing an authenticated page like /onboarding is only
+ * good for 15 minutes (see TokenService) — closing the tab overnight and
+ * coming back is exactly the "sudden exit" scenario #39 asks to survive,
+ * and a stale access token would otherwise 401 on return. Rotates the
+ * refresh token on use and persists the result; clears the stored session
+ * entirely if the refresh token itself is invalid/expired (they'll need to
+ * sign in again — there's nothing left to resume with).
+ */
+export async function refreshAccessToken(): Promise<string | undefined> {
+  const auth = loadStoredAuth();
+  if (!auth) return undefined;
+
+  const res = await fetch(`${API_URL}/api/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken: auth.tokens.refreshToken }),
+  });
+  if (!res.ok) {
+    clearStoredAuth();
+    return undefined;
+  }
+  const { tokens } = await res.json();
+  saveStoredAuth({ user: auth.user, tokens });
+  return tokens.accessToken;
+}
+
+/**
+ * fetch() with the current access token, retried once with a refreshed
+ * token if the server says it expired. Callers still get a plain Response
+ * back (401 if refresh also failed) rather than this throwing, so existing
+ * res.ok / res.json() handling keeps working unchanged.
+ */
+export async function fetchWithAuth(url: string, init: RequestInit = {}): Promise<Response> {
+  const auth = loadStoredAuth();
+  const withAuthHeader = (accessToken: string): RequestInit => ({
+    ...init,
+    headers: { ...init.headers, Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!auth) return fetch(url, init);
+
+  const res = await fetch(url, withAuthHeader(auth.tokens.accessToken));
+  if (res.status !== 401) return res;
+
+  const refreshed = await refreshAccessToken();
+  if (!refreshed) return res;
+  return fetch(url, withAuthHeader(refreshed));
+}
