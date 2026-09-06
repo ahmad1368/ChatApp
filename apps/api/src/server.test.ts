@@ -367,6 +367,7 @@ test("POST /api/uploads then GET /api/uploads/:id stores a valid image and serve
     const getRes = await fetch(`${baseUrl}${url}`);
     assert.equal(getRes.status, 200);
     assert.equal(getRes.headers.get("content-type"), "image/png");
+    assert.equal(getRes.headers.get("cache-control"), "public, max-age=31536000, immutable");
     const bytes = new Uint8Array(await getRes.arrayBuffer());
     assert.equal(bytes.length, Buffer.from(TINY_PNG_BASE64, "base64").byteLength);
   } finally {

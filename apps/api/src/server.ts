@@ -179,6 +179,9 @@ export function createApp(): {
       return;
     }
     res.set("Content-Type", upload.mimeType);
+    // Uploads are content-addressed by a random id and never mutated —
+    // safe for a CDN or browser to cache aggressively (see #13).
+    res.set("Cache-Control", "public, max-age=31536000, immutable");
     res.send(upload.data);
   });
 
