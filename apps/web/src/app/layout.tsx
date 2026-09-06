@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import ErrorBoundary from "./ErrorBoundary";
 import GlobalErrorReporter from "./GlobalErrorReporter";
 import { LocaleProvider } from "./LocaleProvider";
-import PwaRegister from "./PwaRegister";
+import UpdateNotifier from "./UpdateNotifier";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -51,7 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ErrorBoundary>
           <LocaleProvider>{children}</LocaleProvider>
         </ErrorBoundary>
-        <PwaRegister />
+        <UpdateNotifier />
       </body>
     </html>
   );

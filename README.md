@@ -38,6 +38,7 @@ npm run dev:web   # http://localhost:3000
 - #15 Smooth 60fps swipe-to-reply — Pointer Events + transform/rAF-only dragging on message bubbles, swipe right to quote-reply
 - #16 Keyboard shortcuts — Ctrl/Cmd+K to focus the composer, Shift+Enter for a new line, Esc to dismiss, and `?` for a shortcuts help overlay
 - #17 Automatic crash/error reporting — global error/rejection handlers plus a React error boundary report to `/api/error-reports`, the web equivalent of Crashlytics
+- #18 In-app update system — service worker update detection with an "Update now" prompt, the web equivalent of the Play Store in-app update flow
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`

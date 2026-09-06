@@ -241,8 +241,8 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
       setNotificationPermission(Notification.permission as NotificationPermissionState);
     }
 
-    // PwaRegister (see layout.tsx) already registers "/sw.js"; wait for that
-    // registration to check whether a push subscription already exists.
+    // UpdateNotifier (see layout.tsx) already registers "/sw.js"; wait for
+    // that registration to check whether a push subscription already exists.
     const supported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
     if (!supported) return;
 
