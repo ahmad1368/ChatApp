@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { VerificationStore } from "./verification";
-import { GENDER_OPTIONS, ORIENTATION_OPTIONS } from "@chatapp/shared";
+import { COMMUNITY_GUIDELINES_VERSION, GENDER_OPTIONS, ORIENTATION_OPTIONS } from "@chatapp/shared";
 import { OnboardingStore } from "./onboarding";
 
+function acceptGuidelines(store: OnboardingStore, userId: string) {
+  store.submitStep(userId, "communityGuidelines", { accepted: true });
+}
+
 function completeUpToGender(store: OnboardingStore, userId: string) {
+  acceptGuidelines(store, userId);
   store.submitStep(userId, "displayName", "Alice");
   store.submitStep(userId, "avatar", "");
   store.submitStep(userId, "bio", "");
@@ -35,13 +40,40 @@ function completeUpToSelfieStep(store: OnboardingStore, userId: string) {
 }
 
 describe("OnboardingStore", () => {
-  it("starts a new user at the first step with an empty profile", () => {
+  it("starts a new user at the community guidelines step", () => {
     const store = new OnboardingStore(new VerificationStore());
-    assert.deepEqual(store.getState("user-1"), { currentStep: "displayName", profile: {} });
+    assert.deepEqual(store.getState("user-1"), { currentStep: "communityGuidelines", profile: {} });
+  });
+
+  it("rejects continuing without accepting the guidelines", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    const result = store.submitStep("user-1", "communityGuidelines", { accepted: false });
+    assert.equal(result.success, false);
+  });
+
+  it("rejects a missing/malformed acceptance payload", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    const result = store.submitStep("user-1", "communityGuidelines", {});
+    assert.equal(result.success, false);
+  });
+
+  it("records the accepted version and advances once accepted", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    const result = store.submitStep("user-1", "communityGuidelines", { accepted: true });
+    assert.ok(result.success);
+    assert.equal(result.state.currentStep, "displayName");
+    assert.equal(result.state.profile.acceptedCommunityGuidelinesVersion, COMMUNITY_GUIDELINES_VERSION);
+  });
+
+  it("rejects displayName before guidelines are accepted (out-of-order)", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    const result = store.submitStep("user-1", "displayName", "Alice");
+    assert.equal(result.success, false);
   });
 
   it("advances through the full flow, including dating goal, ending on the gender step", () => {
     const store = new OnboardingStore(new VerificationStore());
+    acceptGuidelines(store, "user-1");
 
     const step1 = store.submitStep("user-1", "displayName", "Alice");
     assert.ok(step1.success);
@@ -59,16 +91,15 @@ describe("OnboardingStore", () => {
     const step4 = store.submitStep("user-1", "datingGoal", "marriage");
     assert.ok(step4.success);
     assert.equal(step4.state.currentStep, "gender");
-    assert.deepEqual(step4.state.profile, {
-      displayName: "Alice",
-      avatarUrl: "https://example.com/a.png",
-      bio: "Hello there",
-      datingGoal: "marriage",
-    });
+    assert.equal(step4.state.profile.displayName, "Alice");
+    assert.equal(step4.state.profile.avatarUrl, "https://example.com/a.png");
+    assert.equal(step4.state.profile.bio, "Hello there");
+    assert.equal(step4.state.profile.datingGoal, "marriage");
   });
 
   it("allows skipping the optional avatar step with an empty value", () => {
     const store = new OnboardingStore(new VerificationStore());
+    acceptGuidelines(store, "user-1");
     store.submitStep("user-1", "displayName", "Alice");
     const result = store.submitStep("user-1", "avatar", "");
     assert.ok(result.success);
@@ -78,6 +109,7 @@ describe("OnboardingStore", () => {
 
   it("accepts an uploaded avatar URL for the avatar step", () => {
     const store = new OnboardingStore(new VerificationStore());
+    acceptGuidelines(store, "user-1");
     store.submitStep("user-1", "displayName", "Alice");
     const result = store.submitStep("user-1", "avatar", "/api/uploads/abc-123");
     assert.ok(result.success);
@@ -86,6 +118,7 @@ describe("OnboardingStore", () => {
 
   it("rejects an invalid dating goal", () => {
     const store = new OnboardingStore(new VerificationStore());
+    acceptGuidelines(store, "user-1");
     store.submitStep("user-1", "displayName", "Alice");
     store.submitStep("user-1", "avatar", "");
     store.submitStep("user-1", "bio", "");
@@ -96,6 +129,7 @@ describe("OnboardingStore", () => {
   it("accepts each valid dating goal option", () => {
     for (const goal of ["marriage", "friendship", "casual"] as const) {
       const store = new OnboardingStore(new VerificationStore());
+      acceptGuidelines(store, "user-1");
       store.submitStep("user-1", "displayName", "Alice");
       store.submitStep("user-1", "avatar", "");
       store.submitStep("user-1", "bio", "");
@@ -210,20 +244,22 @@ describe("OnboardingStore", () => {
 
   it("rejects an empty display name", () => {
     const store = new OnboardingStore(new VerificationStore());
+    acceptGuidelines(store, "user-1");
     const result = store.submitStep("user-1", "displayName", "   ");
     assert.equal(result.success, false);
   });
 
   it("rejects submitting a step out of order", () => {
     const store = new OnboardingStore(new VerificationStore());
-    // Still on "displayName" — trying to submit "datingGoal" should fail
-    // rather than silently accept out-of-order data.
+    // Still on "communityGuidelines" — trying to submit "datingGoal" should
+    // fail rather than silently accept out-of-order data.
     const result = store.submitStep("user-1", "datingGoal", "marriage");
     assert.equal(result.success, false);
   });
 
   it("resumes exactly where a user left off", () => {
     const store = new OnboardingStore(new VerificationStore());
+    acceptGuidelines(store, "user-1");
     store.submitStep("user-1", "displayName", "Alice");
     // Simulate the user closing the app and coming back later.
     const resumed = store.getState("user-1");

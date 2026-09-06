@@ -30,6 +30,41 @@ const TEXT_STEP_LABELS: Partial<Record<(typeof ONBOARDING_STEPS)[number], { titl
   bio: { title: "Say a little about yourself", placeholder: "A short bio", optional: true },
 };
 
+function CommunityGuidelinesStep({ onSubmit, error }: { onSubmit: (accepted: boolean) => void; error: string | null }) {
+  const [accepted, setAccepted] = useState(false);
+
+  return (
+    <div>
+      <label style={{ display: "block", fontSize: 14, marginBottom: 8 }}>Community Guidelines</label>
+      <div
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 8,
+          padding: 12,
+          height: 160,
+          overflowY: "auto",
+          fontSize: 13,
+          color: "#4b5563",
+          marginBottom: 12,
+        }}
+      >
+        <p>Be respectful. Harassment, hate speech, and threats of any kind will get your account removed.</p>
+        <p>Be honest. Use your own, recent photos and accurate information about yourself.</p>
+        <p>Be safe. Never send money to someone you've matched with, and report anything that makes you uncomfortable.</p>
+        <p>You must be 18 or older to use this app.</p>
+      </div>
+      {error && <p style={{ color: "#c0392b", fontSize: 13 }}>{error}</p>}
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, marginBottom: 16 }}>
+        <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} style={{ marginTop: 2 }} />
+        I have read and agree to the Community Guidelines
+      </label>
+      <button onClick={() => onSubmit(accepted)} disabled={!accepted} style={{ width: "100%", padding: 10 }}>
+        Continue
+      </button>
+    </div>
+  );
+}
+
 function AvatarStep({ onSubmit, error }: { onSubmit: (avatarUrl: string) => void; error: string | null }) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -396,7 +431,9 @@ export default function OnboardingPage() {
         ))}
       </div>
 
-      {state.currentStep === "selfieVerification" ? (
+      {state.currentStep === "communityGuidelines" ? (
+        <CommunityGuidelinesStep error={error} onSubmit={(accepted) => submitStep("communityGuidelines", { accepted })} />
+      ) : state.currentStep === "selfieVerification" ? (
         <LiveSelfieCapture onDone={(verified) => submitStep("selfieVerification", verified ? {} : { skipped: true })} />
       ) : state.currentStep === "avatar" ? (
         <AvatarStep error={error} onSubmit={(avatarUrl) => submitStep("avatar", avatarUrl)} />

@@ -1086,13 +1086,13 @@ test("GET /api/onboarding rejects a request with no access token", async () => {
   }
 });
 
-test("GET /api/onboarding starts a fresh user at the displayName step", async () => {
+test("GET /api/onboarding starts a fresh user at the communityGuidelines step", async () => {
   const { server, baseUrl, otpService } = listen();
   try {
     const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110006");
     const res = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } });
     const body = await res.json();
-    assert.equal(body.currentStep, "displayName");
+    assert.equal(body.currentStep, "communityGuidelines");
   } finally {
     server.close();
   }
@@ -1113,11 +1113,33 @@ test("POST /api/onboarding/step rejects an unrecognized step", async () => {
   }
 });
 
+test("POST /api/onboarding/step rejects continuing without accepting the community guidelines", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110040");
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ step: "communityGuidelines", data: { accepted: false } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("POST /api/onboarding/step progresses through the flow and persists between requests", async () => {
   const { server, baseUrl, otpService } = listen();
   try {
     const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110008");
     const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+
+    const guidelinesStep = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "communityGuidelines", data: { accepted: true } }),
+    }).then((r) => r.json());
+    assert.equal(guidelinesStep.currentStep, "displayName");
 
     const step1 = await fetch(`${baseUrl}/api/onboarding/step`, {
       method: "POST",
@@ -1157,6 +1179,11 @@ test("POST /api/onboarding/step progresses through to the dating goal step and p
     const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110010");
     const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
 
+    await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "communityGuidelines", data: { accepted: true } }),
+    });
     await fetch(`${baseUrl}/api/onboarding/step`, {
       method: "POST",
       headers: authHeaders,
@@ -1200,6 +1227,11 @@ test("POST /api/onboarding/step rejects an invalid dating goal value", async () 
     await fetch(`${baseUrl}/api/onboarding/step`, {
       method: "POST",
       headers: authHeaders,
+      body: JSON.stringify({ step: "communityGuidelines", data: { accepted: true } }),
+    });
+    await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
       body: JSON.stringify({ step: "displayName", data: "Carol" }),
     });
     await fetch(`${baseUrl}/api/onboarding/step`, {
@@ -1224,6 +1256,11 @@ test("POST /api/onboarding/step rejects an invalid dating goal value", async () 
 });
 
 async function stepThroughToGender(baseUrl: string, authHeaders: Record<string, string>) {
+  await fetch(`${baseUrl}/api/onboarding/step`, {
+    method: "POST",
+    headers: authHeaders,
+    body: JSON.stringify({ step: "communityGuidelines", data: { accepted: true } }),
+  });
   for (const [step, data] of [
     ["displayName", "Bob"],
     ["avatar", ""],

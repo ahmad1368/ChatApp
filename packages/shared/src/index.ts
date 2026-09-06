@@ -55,7 +55,11 @@ export interface VerifyOtpPayload {
   code: string;
 }
 
+// communityGuidelines comes first, matching Tinder's actual flow: consent
+// is collected up front, before any profile information, not tacked on at
+// the end.
 export const ONBOARDING_STEPS = [
+  "communityGuidelines",
   "displayName",
   "avatar",
   "bio",
@@ -162,7 +166,13 @@ export interface CoarseLocation {
   lng: number;
 }
 
+// Bumped whenever the guidelines text materially changes, so re-acceptance
+// can be required from existing users in the future without touching the
+// onboarding step logic itself.
+export const COMMUNITY_GUIDELINES_VERSION = 1;
+
 export interface OnboardingProfile {
+  acceptedCommunityGuidelinesVersion?: number;
   displayName?: string;
   avatarUrl?: string;
   bio?: string;

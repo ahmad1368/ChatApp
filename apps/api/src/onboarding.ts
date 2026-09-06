@@ -1,4 +1,5 @@
 import {
+  COMMUNITY_GUIDELINES_VERSION,
   DATING_GOALS,
   DatingGoal,
   GENDER_OPTIONS,
@@ -55,6 +56,11 @@ function validateStepData(
   userId: string,
   verificationStore: VerificationStore
 ): { value: Partial<OnboardingProfile> } | { error: string } {
+  if (step === "communityGuidelines") {
+    const accepted = typeof data === "object" && data !== null && (data as { accepted?: unknown }).accepted === true;
+    if (!accepted) return { error: "You must accept the Community Guidelines to continue" };
+    return { value: { acceptedCommunityGuidelinesVersion: COMMUNITY_GUIDELINES_VERSION } };
+  }
   if (step === "displayName") {
     const displayName = typeof data === "string" ? data.trim() : "";
     if (!displayName) return { error: "displayName is required" };
