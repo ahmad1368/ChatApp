@@ -3,7 +3,7 @@ import express, { Express } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, ONBOARDING_STEPS, OnboardingStep, SendMessagePayload } from "@chatapp/shared";
-import { normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
+import { describeUserAgent, normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
 import { TwoFactorService } from "./twoFactor";
 import { WebAuthnService, WebAuthnStore } from "./webauthn";
 import { OnboardingStore } from "./onboarding";
@@ -138,6 +138,20 @@ export function createApp(deps?: {
       return undefined;
     }
     return verified.userId;
+  }
+
+  // Same verification as requireAuth, but also surfaces which session the
+  // caller is using — needed by the active-sessions endpoints below (#60)
+  // to mark "this device" and to exclude it from "log out of others".
+  function requireAuthWithSession(req: express.Request, res: express.Response): { userId: string; sessionId: string } | undefined {
+    const header = req.get("authorization");
+    const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
+    const verified = token ? tokenService.verifyAccessToken(token) : undefined;
+    if (!verified?.sessionId) {
+      res.status(401).json({ error: "A valid Authorization: Bearer <accessToken> header is required" });
+      return undefined;
+    }
+    return { userId: verified.userId, sessionId: verified.sessionId };
   }
 
   app.get("/health", (_req, res) => {
@@ -705,7 +719,7 @@ export function createApp(deps?: {
 
     const user = userStore.findOrCreateByGoogle(profile);
     duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
-    const tokens = tokenService.issueTokens(user.id);
+    const tokens = tokenService.issueTokens(user.id, describeUserAgent(req.get("user-agent")));
     res.json({ user, tokens });
   });
 
@@ -732,7 +746,7 @@ export function createApp(deps?: {
 
     const user = userStore.findOrCreateByApple(profile);
     duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
-    const tokens = tokenService.issueTokens(user.id);
+    const tokens = tokenService.issueTokens(user.id, describeUserAgent(req.get("user-agent")));
     res.json({ user, tokens });
   });
 
@@ -759,7 +773,7 @@ export function createApp(deps?: {
 
     const user = userStore.findOrCreateByFacebook(profile);
     duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
-    const tokens = tokenService.issueTokens(user.id);
+    const tokens = tokenService.issueTokens(user.id, describeUserAgent(req.get("user-agent")));
     res.json({ user, tokens });
   });
 
@@ -802,7 +816,7 @@ export function createApp(deps?: {
     }
 
     const user = userStore.findOrCreateByEmail(email);
-    const tokens = tokenService.issueTokens(user.id);
+    const tokens = tokenService.issueTokens(user.id, describeUserAgent(req.get("user-agent")));
     res.status(200).json({ user, tokens });
   });
 
@@ -929,7 +943,7 @@ export function createApp(deps?: {
       res.status(401).json({ error: "Biometric verification failed" });
       return;
     }
-    const tokens = tokenService.issueTokens(userId);
+    const tokens = tokenService.issueTokens(userId, describeUserAgent(req.get("user-agent")));
     res.json({ tokens });
   });
 
@@ -987,7 +1001,7 @@ export function createApp(deps?: {
 
     const user = userStore.findOrCreate(phoneNumber);
     duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
-    const tokens = tokenService.issueTokens(user.id);
+    const tokens = tokenService.issueTokens(user.id, describeUserAgent(req.get("user-agent")));
     res.status(200).json({ user, tokens });
   });
 
@@ -1036,6 +1050,42 @@ export function createApp(deps?: {
       return;
     }
     res.json({ tokens });
+  });
+
+  // Active sessions (#60): one entry per sign-in (see TokenService — a
+  // token refresh keeps the same session, it doesn't create a new one).
+  app.get("/api/auth/sessions", (req, res) => {
+    const auth = requireAuthWithSession(req, res);
+    if (!auth) return;
+    const sessions = tokenService.listSessions(auth.userId).map((session) => ({
+      ...session,
+      isCurrent: session.id === auth.sessionId,
+    }));
+    res.json({ sessions });
+  });
+
+  // Registered ahead of the :sessionId route below so "others" is never
+  // matched as a literal session id.
+  app.delete("/api/auth/sessions/others", (req, res) => {
+    const auth = requireAuthWithSession(req, res);
+    if (!auth) return;
+    const revokedCount = tokenService.revokeOtherSessions(auth.userId, auth.sessionId);
+    res.json({ revokedCount });
+  });
+
+  app.delete("/api/auth/sessions/:sessionId", (req, res) => {
+    const auth = requireAuthWithSession(req, res);
+    if (!auth) return;
+    if (req.params.sessionId === auth.sessionId) {
+      res.status(400).json({ error: "Use DELETE /api/auth/sessions/others to log out other devices, not this one" });
+      return;
+    }
+    const revoked = tokenService.revokeSession(auth.userId, req.params.sessionId);
+    if (!revoked) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+    res.status(204).send();
   });
 
   return {

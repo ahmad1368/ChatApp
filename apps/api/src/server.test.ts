@@ -2640,3 +2640,90 @@ test("POST /api/auth/signup/request-otp succeeds when reCAPTCHA verification pas
     server.close();
   }
 });
+
+test("GET /api/auth/sessions requires a valid access token", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/sessions`);
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/auth/sessions lists one session per sign-in, with exactly one marked current", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    await signUpAndGetAccessToken(baseUrl, otpService, "+15551110070");
+    const accessTokenB = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110070");
+
+    const res = await fetch(`${baseUrl}/api/auth/sessions`, { headers: { Authorization: `Bearer ${accessTokenB}` } });
+    const body = await res.json();
+    assert.equal(body.sessions.length, 2);
+    assert.equal(body.sessions.filter((s: { isCurrent: boolean }) => s.isCurrent).length, 1);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/auth/sessions/:sessionId revokes another session but not the caller's own", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    await signUpAndGetAccessToken(baseUrl, otpService, "+15551110071");
+    const accessTokenB = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110071");
+
+    const listRes = await fetch(`${baseUrl}/api/auth/sessions`, { headers: { Authorization: `Bearer ${accessTokenB}` } });
+    const { sessions } = (await listRes.json()) as { sessions: { id: string; isCurrent: boolean }[] };
+    const otherSession = sessions.find((s) => !s.isCurrent);
+    assert.ok(otherSession);
+
+    const deleteRes = await fetch(`${baseUrl}/api/auth/sessions/${otherSession!.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessTokenB}` },
+    });
+    assert.equal(deleteRes.status, 204);
+
+    const afterRes = await fetch(`${baseUrl}/api/auth/sessions`, { headers: { Authorization: `Bearer ${accessTokenB}` } });
+    assert.equal((await afterRes.json()).sessions.length, 1);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/auth/sessions/:sessionId rejects revoking your own current session", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110072");
+    const listRes = await fetch(`${baseUrl}/api/auth/sessions`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const { sessions } = await listRes.json();
+
+    const res = await fetch(`${baseUrl}/api/auth/sessions/${sessions[0].id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/auth/sessions/others logs out every other device, keeping the caller's own", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessTokenA = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110073");
+    await signUpAndGetAccessToken(baseUrl, otpService, "+15551110073");
+    await signUpAndGetAccessToken(baseUrl, otpService, "+15551110073");
+
+    const res = await fetch(`${baseUrl}/api/auth/sessions/others`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessTokenA}` },
+    });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).revokedCount, 2);
+
+    const afterRes = await fetch(`${baseUrl}/api/auth/sessions`, { headers: { Authorization: `Bearer ${accessTokenA}` } });
+    assert.equal((await afterRes.json()).sessions.length, 1);
+  } finally {
+    server.close();
+  }
+});

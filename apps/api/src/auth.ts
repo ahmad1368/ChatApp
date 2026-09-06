@@ -168,39 +168,131 @@ export class UserStore {
   }
 }
 
+/**
+ * A friendly "Chrome on Windows"-style label for the active-sessions list
+ * (#60) — the same heuristic parsing this codebase already uses for other
+ * first-pass detectors (contactInfoDetector.ts, scamDetector.ts), not a
+ * full UA-database lookup.
+ */
+export function describeUserAgent(userAgent: string | undefined): string {
+  if (!userAgent) return "Unknown device";
+
+  let browser = "Unknown browser";
+  if (/Edg\//.test(userAgent)) browser = "Edge";
+  else if (/Chrome\//.test(userAgent)) browser = "Chrome";
+  else if (/Firefox\//.test(userAgent)) browser = "Firefox";
+  else if (/Safari\//.test(userAgent)) browser = "Safari";
+
+  // iPhone/iPad checked ahead of "Mac OS X": real iOS user agents contain
+  // "like Mac OS X" as part of their string, so checking that first would
+  // misidentify every iPhone as a Mac.
+  let os = "Unknown OS";
+  if (/iPhone|iPad/.test(userAgent)) os = "iOS";
+  else if (/Android/.test(userAgent)) os = "Android";
+  else if (/Windows/.test(userAgent)) os = "Windows";
+  else if (/Mac OS X/.test(userAgent)) os = "macOS";
+  else if (/Linux/.test(userAgent)) os = "Linux";
+
+  const isMobile = /Mobile|Android|iPhone/.test(userAgent);
+  return `${browser} on ${os}${isMobile ? " (mobile)" : ""}`;
+}
+
 function loadJwtSecret(): string {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
   console.warn("JWT_SECRET not set — generating an ephemeral secret. Sessions won't survive a server restart.");
   return crypto.randomBytes(32).toString("hex");
 }
 
+export interface SessionInfo {
+  id: string;
+  userId: string;
+  deviceLabel: string;
+  createdAt: string;
+  lastUsedAt: string;
+}
+
+interface StoredSession extends SessionInfo {
+  refreshToken: string;
+}
+
+/**
+ * A "session" is one sign-in — it survives every access-token refresh
+ * (#39's refresh flow rotates the refresh token value but keeps the same
+ * session record, updating lastUsedAt) so the sessions list reflects real
+ * logins, not every 15-minute token renewal. See #60.
+ */
 export class TokenService {
   private readonly secret = loadJwtSecret();
-  private refreshTokens = new Map<string, string>(); // refresh token -> userId
+  private refreshTokenToSessionId = new Map<string, string>();
+  private sessionsById = new Map<string, StoredSession>();
 
-  issueTokens(userId: string): AuthTokens {
-    const accessToken = jwt.sign({ sub: userId }, this.secret, { expiresIn: ACCESS_TOKEN_TTL });
+  issueTokens(userId: string, deviceLabel = "Unknown device"): AuthTokens {
+    const sessionId = crypto.randomUUID();
     const refreshToken = crypto.randomUUID();
-    this.refreshTokens.set(refreshToken, userId);
+    const now = new Date().toISOString();
+    this.sessionsById.set(sessionId, { id: sessionId, userId, deviceLabel, createdAt: now, lastUsedAt: now, refreshToken });
+    this.refreshTokenToSessionId.set(refreshToken, sessionId);
+
+    const accessToken = jwt.sign({ sub: userId, sid: sessionId }, this.secret, { expiresIn: ACCESS_TOKEN_TTL });
     return { accessToken, refreshToken, expiresInSeconds: ACCESS_TOKEN_TTL_SECONDS };
   }
 
   refresh(refreshToken: string): AuthTokens | undefined {
-    const userId = this.refreshTokens.get(refreshToken);
-    if (!userId) return undefined;
-    this.refreshTokens.delete(refreshToken); // rotate on use
-    return this.issueTokens(userId);
+    const sessionId = this.refreshTokenToSessionId.get(refreshToken);
+    const session = sessionId ? this.sessionsById.get(sessionId) : undefined;
+    if (!sessionId || !session) return undefined;
+
+    this.refreshTokenToSessionId.delete(refreshToken); // rotate on use
+    const newRefreshToken = crypto.randomUUID();
+    session.refreshToken = newRefreshToken;
+    session.lastUsedAt = new Date().toISOString();
+    this.refreshTokenToSessionId.set(newRefreshToken, sessionId);
+
+    const accessToken = jwt.sign({ sub: session.userId, sid: sessionId }, this.secret, { expiresIn: ACCESS_TOKEN_TTL });
+    return { accessToken, refreshToken: newRefreshToken, expiresInSeconds: ACCESS_TOKEN_TTL_SECONDS };
   }
 
-  verifyAccessToken(token: string): { userId: string } | undefined {
+  verifyAccessToken(token: string): { userId: string; sessionId?: string } | undefined {
     try {
       const payload = jwt.verify(token, this.secret);
       if (typeof payload === "object" && typeof payload.sub === "string") {
-        return { userId: payload.sub };
+        return { userId: payload.sub, sessionId: typeof payload.sid === "string" ? payload.sid : undefined };
       }
       return undefined;
     } catch {
       return undefined;
     }
+  }
+
+  listSessions(userId: string): SessionInfo[] {
+    return Array.from(this.sessionsById.values())
+      .filter((session) => session.userId === userId)
+      .map(({ refreshToken, ...info }) => info)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  // Invalidates that device's refresh token, so it can't silently renew past
+  // its current 15-minute access token — there's no server-side revocation
+  // list for already-issued JWTs, so a revoked device stays usable for at
+  // most the remainder of that access token's lifetime, same trade-off as
+  // most JWT-based session systems.
+  revokeSession(userId: string, sessionId: string): boolean {
+    const session = this.sessionsById.get(sessionId);
+    if (!session || session.userId !== userId) return false;
+    this.refreshTokenToSessionId.delete(session.refreshToken);
+    this.sessionsById.delete(sessionId);
+    return true;
+  }
+
+  /** "Log out of other devices" — revokes every session except the caller's own. */
+  revokeOtherSessions(userId: string, currentSessionId: string): number {
+    const others = Array.from(this.sessionsById.values()).filter(
+      (session) => session.userId === userId && session.id !== currentSessionId
+    );
+    for (const session of others) {
+      this.refreshTokenToSessionId.delete(session.refreshToken);
+      this.sessionsById.delete(session.id);
+    }
+    return others.length;
   }
 }
