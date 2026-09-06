@@ -2,10 +2,11 @@ import cors from "cors";
 import express, { Express } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
+import { ChatMessage, DEFAULT_ROOM_ID, ONBOARDING_STEPS, OnboardingStep, SendMessagePayload } from "@chatapp/shared";
 import { normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
 import { TwoFactorService } from "./twoFactor";
 import { WebAuthnService } from "./webauthn";
+import { OnboardingStore } from "./onboarding";
 import { GoogleAuthService } from "./googleAuth";
 import { AppleAuthService } from "./appleAuth";
 import { FacebookAuthService } from "./facebookAuth";
@@ -26,6 +27,10 @@ const MAX_PAGE_SIZE = 100;
 const MESSAGE_RATE_LIMIT = 20;
 const MESSAGE_RATE_WINDOW_MS = 10_000;
 
+function isOnboardingStep(value: unknown): value is OnboardingStep {
+  return typeof value === "string" && (ONBOARDING_STEPS as readonly string[]).includes(value);
+}
+
 export function createApp(deps?: {
   googleAuthService?: GoogleAuthService;
   appleAuthService?: AppleAuthService;
@@ -39,6 +44,7 @@ export function createApp(deps?: {
   recoveryCodeService: RecoveryCodeService;
   twoFactorService: TwoFactorService;
   webAuthnService: WebAuthnService;
+  onboardingStore: OnboardingStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -63,6 +69,7 @@ export function createApp(deps?: {
     rpId: process.env.WEBAUTHN_RP_ID ?? "localhost",
     origin: process.env.WEBAUTHN_ORIGIN ?? "http://localhost:3000",
   });
+  const onboardingStore = new OnboardingStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -88,6 +95,32 @@ export function createApp(deps?: {
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // Server-persisted onboarding state machine: gated behind requireAuth
+  // (rather than trusting a :userId URL param, as the original branch
+  // documented as a known gap before #21-#25's TokenService existed) so one
+  // signed-in user can't read or overwrite another's in-progress profile.
+  app.get("/api/onboarding", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    res.json(onboardingStore.getState(userId));
+  });
+
+  app.post("/api/onboarding/step", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const { step, data } = req.body ?? {};
+    if (!isOnboardingStep(step)) {
+      res.status(400).json({ error: `step must be one of: ${ONBOARDING_STEPS.join(", ")}` });
+      return;
+    }
+    const result = onboardingStore.submitStep(userId, step, data);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(result.state);
   });
 
   // Two orthogonal, backward-compatible filters on top of the full history:
@@ -569,7 +602,7 @@ export function createApp(deps?: {
     res.json({ tokens });
   });
 
-  return { app, messagesByRoom, pushService, errorReportStore, otpService, recoveryCodeService, twoFactorService, webAuthnService };
+  return { app, messagesByRoom, pushService, errorReportStore, otpService, recoveryCodeService, twoFactorService, webAuthnService, onboardingStore };
 }
 
 export async function createChatServer() {

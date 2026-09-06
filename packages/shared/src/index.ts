@@ -48,3 +48,17 @@ export interface VerifyOtpPayload {
   phoneNumber: string;
   code: string;
 }
+
+export const ONBOARDING_STEPS = ["displayName", "avatar", "bio"] as const;
+export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+
+export interface OnboardingProfile {
+  displayName?: string;
+  avatarUrl?: string;
+  bio?: string;
+}
+
+export interface OnboardingState {
+  currentStep: OnboardingStep | "complete";
+  profile: OnboardingProfile;
+}

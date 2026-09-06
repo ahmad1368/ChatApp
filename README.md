@@ -48,6 +48,7 @@ npm run dev:web   # http://localhost:3000
 - #25 Account recovery via email — `/recover` two-step flow reinterpreting "password recovery" for this passwordless app (SMS recovery is already covered by #21's phone OTP)
 - #26 Two-factor authentication — TOTP (RFC 6238) setup with QR enrollment, confirm, verify, and disable, fully self-contained (no third-party 2FA provider needed); management endpoints gated behind a verified access token, demo UI at `/settings/security`
 - #27 Biometric login (Face ID / fingerprint) via WebAuthn — real platform-authenticator registration and sign-in (no biometric data ever reaches the server, by design of the standard); registration gated behind a verified access token, login identifies the account via a device-remembered userId, demo UI at `/settings/security`
+- #28 Step-by-step profile onboarding — server-persisted, resumable state machine (display name → avatar → bio) gated behind a verified access token, with a progress-bar UI at `/onboarding`
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`
