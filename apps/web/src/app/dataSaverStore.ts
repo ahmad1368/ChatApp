@@ -2,12 +2,15 @@ const STORAGE_KEY = "chatapp:dataSaver";
 
 interface NetworkInformationLike {
   saveData?: boolean;
+  effectiveType?: "slow-2g" | "2g" | "3g" | "4g";
 }
 
+// Combines the explicit Data Saver flag (see #7) with a slow effective
+// connection type — either is reason enough to default into Data Saver.
 function osSuggestsDataSaver(): boolean {
   if (typeof navigator === "undefined") return false;
   const connection = (navigator as Navigator & { connection?: NetworkInformationLike }).connection;
-  return Boolean(connection?.saveData);
+  return Boolean(connection?.saveData || connection?.effectiveType === "slow-2g" || connection?.effectiveType === "2g");
 }
 
 /** Explicit user preference, if they've ever touched the toggle; otherwise
