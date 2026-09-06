@@ -30,6 +30,7 @@ export interface AuthUser {
   email?: string;
   avatarUrl?: string;
   googleId?: string;
+  appleId?: string;
 }
 
 export interface AuthTokens {

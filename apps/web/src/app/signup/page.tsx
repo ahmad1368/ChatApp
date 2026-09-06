@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import GoogleSignInButton from "../GoogleSignInButton";
+import AppleSignInButton from "../AppleSignInButton";
 import { requestOtp, saveStoredAuth, verifyOtp } from "../authClient";
 
 type Step = "phone" | "otp";
@@ -107,6 +108,14 @@ export default function SignupPage() {
           router.push("/");
         }}
       />
+      <div style={{ marginTop: 8 }}>
+        <AppleSignInButton
+          onSignedIn={(auth) => {
+            saveStoredAuth(auth as Parameters<typeof saveStoredAuth>[0]);
+            router.push("/");
+          }}
+        />
+      </div>
     </main>
   );
 }

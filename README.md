@@ -43,6 +43,7 @@ npm run dev:web   # http://localhost:3000
 - #20 High-concurrency architecture readiness — optional Redis adapter for multi-instance Socket.io broadcasts, per-socket message rate limiting, and graceful shutdown
 - #21 Phone number + OTP signup — `/signup` two-step flow, backend OTP request/verify with expiry/attempt limits/resend cooldown, JWT access + rotating refresh tokens
 - #22 Google Sign-In — server-side ID token verification (`google-auth-library`), JWT session issuance, and a Google Identity Services button that gracefully degrades when unconfigured
+- #23 Sign in with Apple — server-side ID token verification against Apple's JWKS, JWT session issuance, and a Sign in with Apple button that gracefully degrades when unconfigured
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`

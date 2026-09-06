@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
 import { normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
 import { GoogleAuthService } from "./googleAuth";
+import { AppleAuthService } from "./appleAuth";
 import { RateLimiter } from "./rateLimiter";
 import { createRedisAdapterIfConfigured } from "./redisAdapter";
 import { ErrorReportStore } from "./errorReports";
@@ -21,7 +22,7 @@ const MAX_PAGE_SIZE = 100;
 const MESSAGE_RATE_LIMIT = 20;
 const MESSAGE_RATE_WINDOW_MS = 10_000;
 
-export function createApp(deps?: { googleAuthService?: GoogleAuthService }): {
+export function createApp(deps?: { googleAuthService?: GoogleAuthService; appleAuthService?: AppleAuthService }): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
   pushService: PushService;
@@ -48,6 +49,7 @@ export function createApp(deps?: { googleAuthService?: GoogleAuthService }): {
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
+  const appleAuthService = deps?.appleAuthService ?? new AppleAuthService();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -246,6 +248,32 @@ export function createApp(deps?: { googleAuthService?: GoogleAuthService }): {
     }
 
     const user = userStore.findOrCreateByGoogle(profile);
+    const tokens = tokenService.issueTokens(user.id);
+    res.json({ user, tokens });
+  });
+
+  // Sign in with Apple: same shape as Google Sign-In — real verification
+  // (fetches Apple's JWKS, validates signature/issuer/audience/expiry),
+  // gated behind APPLE_SERVICES_ID.
+  app.post("/api/auth/apple", async (req, res) => {
+    if (!appleAuthService.isConfigured()) {
+      res.status(503).json({ error: "Sign in with Apple is not configured on this server" });
+      return;
+    }
+
+    const idToken = typeof req.body?.idToken === "string" ? req.body.idToken : undefined;
+    if (!idToken) {
+      res.status(400).json({ error: "idToken is required" });
+      return;
+    }
+
+    const profile = await appleAuthService.verify(idToken);
+    if (!profile) {
+      res.status(401).json({ error: "Invalid Apple ID token" });
+      return;
+    }
+
+    const user = userStore.findOrCreateByApple(profile);
     const tokens = tokenService.issueTokens(user.id);
     res.json({ user, tokens });
   });

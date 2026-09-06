@@ -4,6 +4,7 @@ import { AddressInfo } from "net";
 import { ChatMessage } from "@chatapp/shared";
 import { createApp } from "./server";
 import { GoogleAuthService } from "./googleAuth";
+import { AppleAuthService } from "./appleAuth";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -24,6 +25,13 @@ function listen() {
 
 function listenWithGoogleAuth(googleAuthService: GoogleAuthService) {
   const { app } = createApp({ googleAuthService });
+  const server = app.listen(0);
+  const { port } = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+function listenWithAppleAuth(appleAuthService: AppleAuthService) {
+  const { app } = createApp({ appleAuthService });
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}` };
@@ -595,6 +603,88 @@ test("POST /api/auth/google returns the same user id on repeat sign-in", async (
       body: JSON.stringify({ idToken: "valid-token" }),
     }).then((r) => r.json());
     const second = await fetch(`${baseUrl}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "valid-token" }),
+    }).then((r) => r.json());
+    assert.equal(first.user.id, second.user.id);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/apple responds 503 when APPLE_SERVICES_ID isn't set", async () => {
+  const { server, baseUrl } = listenWithAppleAuth(new AppleAuthService(undefined, async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/apple`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "anything" }),
+    });
+    assert.equal(res.status, 503);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/apple requires an idToken", async () => {
+  const { server, baseUrl } = listenWithAppleAuth(new AppleAuthService("com.example.app.web", async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/apple`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/apple rejects an invalid token", async () => {
+  const { server, baseUrl } = listenWithAppleAuth(new AppleAuthService("com.example.app.web", async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/apple`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "garbage" }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/apple signs a user in and issues tokens for a valid token", async () => {
+  const fakeVerifier = async (idToken: string) =>
+    idToken === "valid-token" ? { appleId: "a-1", email: "user@privaterelay.appleid.com" } : undefined;
+  const { server, baseUrl } = listenWithAppleAuth(new AppleAuthService("com.example.app.web", fakeVerifier));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/apple`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "valid-token" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.user.email, "user@privaterelay.appleid.com");
+    assert.ok(body.tokens.accessToken);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/apple returns the same user id on repeat sign-in", async () => {
+  const fakeVerifier = async (idToken: string) =>
+    idToken === "valid-token" ? { appleId: "a-1", email: "user@privaterelay.appleid.com" } : undefined;
+  const { server, baseUrl } = listenWithAppleAuth(new AppleAuthService("com.example.app.web", fakeVerifier));
+  try {
+    const first = await fetch(`${baseUrl}/api/auth/apple`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "valid-token" }),
+    }).then((r) => r.json());
+    const second = await fetch(`${baseUrl}/api/auth/apple`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken: "valid-token" }),
