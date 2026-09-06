@@ -207,6 +207,8 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [obscured, setObscured] = useState(false);
   const [photoId, setPhotoId] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [albumAccessLevel, setAlbumAccessLevel] = useState<"public" | "private" | "requestAccess">("public");
+  const [pendingAlbumRequests, setPendingAlbumRequests] = useState<string[]>([]);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [contactNumbers, setContactNumbers] = useState("");
   const [contactBlockStatus, setContactBlockStatus] = useState<string | null>(null);
@@ -327,9 +329,44 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       .catch(() => setBlockedAuthors([]));
   };
 
+  const refreshPendingAlbumRequests = () => {
+    fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/access-requests`)
+      .then((res) => res.json())
+      .then((body) => setPendingAlbumRequests(body.pending ?? []))
+      .catch(() => setPendingAlbumRequests([]));
+  };
+
+  const changeAlbumAccessLevel = async (accessLevel: "public" | "private" | "requestAccess") => {
+    const res = await fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/access-level`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessLevel }),
+    });
+    if (res.ok) {
+      setAlbumAccessLevel(accessLevel);
+      if (accessLevel === "requestAccess") refreshPendingAlbumRequests();
+    }
+  };
+
+  const respondToAlbumRequest = async (requester: string, approve: boolean) => {
+    await fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/access-requests/${encodeURIComponent(requester)}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approve }),
+    });
+    setPendingAlbumRequests((prev) => prev.filter((r) => r !== requester));
+  };
+
   useEffect(() => {
     refreshBlockedAuthors();
     setContactPickerSupported(Boolean(getContactsManager()));
+    fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/access-level`)
+      .then((res) => res.json())
+      .then((body) => {
+        setAlbumAccessLevel(body.accessLevel ?? "public");
+        if (body.accessLevel === "requestAccess") refreshPendingAlbumRequests();
+      })
+      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -935,6 +972,31 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             style={{ marginTop: 8, maxWidth: "100%", borderRadius: 8 }}
           />
         )}
+
+        <div style={{ marginTop: 12 }}>
+          <label style={{ display: "block", marginBottom: 4 }}>Album access</label>
+          <select
+            value={albumAccessLevel}
+            onChange={(e) => changeAlbumAccessLevel(e.target.value as "public" | "private" | "requestAccess")}
+            style={{ padding: 6 }}
+          >
+            <option value="public">Public — anyone can view</option>
+            <option value="private">Private — only me</option>
+            <option value="requestAccess">Request access — approve each viewer</option>
+          </select>
+          {albumAccessLevel === "requestAccess" && (
+            <div style={{ marginTop: 8 }}>
+              {pendingAlbumRequests.length === 0 && <p style={{ color: "var(--color-muted)" }}>No pending requests.</p>}
+              {pendingAlbumRequests.map((requester) => (
+                <div key={requester} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span>{requester} wants access</span>
+                  <button onClick={() => respondToAlbumRequest(requester, true)}>Approve</button>
+                  <button onClick={() => respondToAlbumRequest(requester, false)}>Deny</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
