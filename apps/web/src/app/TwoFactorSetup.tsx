@@ -1,28 +1,29 @@
 "use client";
 
 import { useState } from "react";
+import { loadStoredAuth } from "./authClient";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
-// This UI calls the backend's 2FA endpoints directly with a client-supplied
-// userId, matching a known limitation documented in apps/api/src/server.ts:
-// those endpoints aren't gated behind a verified access token yet (no
-// merged auth session to check against — see #21-#25), so this component
-// is a demonstration of the setup flow, not yet safe to expose to real
-// users signed in as someone else.
-export default function TwoFactorSetup({ userId }: { userId: string }) {
+export default function TwoFactorSetup() {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const auth = loadStoredAuth();
+  if (!auth) {
+    return <p style={{ fontSize: 14, color: "#6b7280" }}>Sign in to set up two-factor authentication.</p>;
+  }
+  const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${auth.tokens.accessToken}` };
+
   const beginSetup = async () => {
     setError(null);
     const res = await fetch(`${API_URL}/api/auth/2fa/setup`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, accountLabel: userId }),
+      headers: authHeaders,
+      body: JSON.stringify({ accountLabel: auth.user.displayName }),
     });
     if (!res.ok) {
       setError("Failed to start 2FA setup");
@@ -38,8 +39,8 @@ export default function TwoFactorSetup({ userId }: { userId: string }) {
     setError(null);
     const res = await fetch(`${API_URL}/api/auth/2fa/confirm-setup`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, token: code }),
+      headers: authHeaders,
+      body: JSON.stringify({ token: code }),
     });
     if (!res.ok) {
       setError("Invalid code — check your authenticator app and try again");
