@@ -10,37 +10,20 @@ const SHORTCUTS: [string, string][] = [
 
 export default function KeyboardShortcutsHelp({ onClose }: { onClose: () => void }) {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Keyboard shortcuts"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 50,
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ background: "#fff", borderRadius: 8, padding: 20, minWidth: 260, fontSize: 14 }}
-      >
-        <h2 style={{ marginTop: 0, fontSize: 16 }}>Keyboard shortcuts</h2>
-        <table>
+    <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" className="chat-app__modal-overlay" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="chat-app__modal">
+        <h2 className="chat-app__modal-title">Keyboard shortcuts</h2>
+        <table className="chat-app__shortcuts-table">
           <tbody>
             {SHORTCUTS.map(([keys, description]) => (
               <tr key={keys}>
-                <td style={{ padding: "4px 12px 4px 0", fontFamily: "monospace", whiteSpace: "nowrap" }}>{keys}</td>
-                <td style={{ padding: "4px 0", color: "#4b5563" }}>{description}</td>
+                <td className="chat-app__shortcuts-keys">{keys}</td>
+                <td className="chat-app__shortcuts-description">{description}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <button onClick={onClose} style={{ marginTop: 12 }}>
+        <button className="chat-app__send" onClick={onClose}>
           Close
         </button>
       </div>
