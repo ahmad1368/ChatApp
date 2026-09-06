@@ -202,6 +202,8 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
   const [watermarkLabel, setWatermarkLabel] = useState<string | null>(null);
   const [obscured, setObscured] = useState(false);
+  const [photoId, setPhotoId] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [contactNumbers, setContactNumbers] = useState("");
   const [contactBlockStatus, setContactBlockStatus] = useState<string | null>(null);
@@ -423,6 +425,30 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     } catch {
       // user cancelled the picker or permission was denied
     }
+  };
+
+  const uploadPhoto = async (file: File) => {
+    setPhotoError(null);
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const base64 = dataUrl.split(",")[1] ?? "";
+
+    const res = await fetch(`${API_URL}/api/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author, mimeType: file.type, data: base64 }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setPhotoError(body.error ?? "Failed to upload photo");
+      return;
+    }
+    const body = await res.json();
+    setPhotoId(body.id);
   };
 
   // The server also filters blocked authors out of the initial/paginated
@@ -872,6 +898,27 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           </div>
         )}
         {contactBlockStatus && <p style={{ color: "var(--color-muted)" }}>{contactBlockStatus}</p>}
+      </section>
+      <section style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, marginTop: 12, fontSize: 13 }}>
+        <h2 style={{ fontSize: 14 }}>Profile photo</h2>
+        <p style={{ color: "var(--color-muted)" }}>
+          Uploaded photos are watermarked with your name every time they&apos;re served, to deter
+          photo theft — the watermark is burned into the image itself, not just shown on top of it.
+        </p>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={(e) => e.target.files?.[0] && uploadPhoto(e.target.files[0])}
+        />
+        {photoError && <p style={{ color: "var(--color-danger)" }}>{photoError}</p>}
+        {photoId && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`${API_URL}/api/photos/${photoId}?viewer=${encodeURIComponent(author)}`}
+            alt="Watermarked upload preview"
+            style={{ marginTop: 8, maxWidth: "100%", borderRadius: 8 }}
+          />
+        )}
       </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (

@@ -26,6 +26,8 @@ import { ReportStore } from "./reports";
 import { BlockStore } from "./blocks";
 import { ContactBlockStore } from "./contactBlocks";
 import { WatermarkStore } from "./watermark";
+import { PhotoStore } from "./photos";
+import { applyWatermark } from "./watermarkImage";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -56,6 +58,7 @@ export function createApp(deps?: {
   blockStore: BlockStore;
   contactBlockStore: ContactBlockStore;
   watermarkStore: WatermarkStore;
+  photoStore: PhotoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -86,6 +89,7 @@ export function createApp(deps?: {
   const blockStore = new BlockStore();
   const contactBlockStore = new ContactBlockStore();
   const watermarkStore = new WatermarkStore();
+  const photoStore = new PhotoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -199,6 +203,37 @@ export function createApp(deps?: {
       return;
     }
     res.status(201).json(session);
+  });
+
+  // Photo theft deterrence: this is its own high-priority, dependency-free
+  // safety path, independent of any matching/discovery service.
+  app.post("/api/photos", (req, res) => {
+    const result = photoStore.upload(req.body?.author, req.body?.mimeType, req.body?.data);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ id: result.photo.id });
+  });
+
+  // Watermarks are burned into the pixel data dynamically on every serve
+  // (never stored pre-watermarked), so they survive any copy of the bytes —
+  // a download, a re-upload, a screenshot of the raw file — not just a DOM
+  // overlay a determined thief could strip before saving.
+  app.get("/api/photos/:id", async (req, res) => {
+    const photo = photoStore.get(req.params.id);
+    if (!photo) {
+      res.status(404).json({ error: "Photo not found" });
+      return;
+    }
+    const viewer = typeof req.query.viewer === "string" && req.query.viewer.trim() ? req.query.viewer.trim() : "ChatApp";
+    try {
+      const watermarked = await applyWatermark(photo.data, viewer);
+      res.setHeader("Content-Type", "image/png");
+      res.status(200).send(watermarked);
+    } catch {
+      res.status(500).json({ error: "Failed to render photo" });
+    }
   });
 
   // No GET endpoint for verification selfies, deliberately — see the
@@ -758,6 +793,7 @@ export function createApp(deps?: {
     blockStore,
     contactBlockStore,
     watermarkStore,
+    photoStore,
   };
 }
 
