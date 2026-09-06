@@ -52,6 +52,7 @@ npm run dev:web   # http://localhost:3000
 - #29 Dating goal selection — extends #28's onboarding state machine with a fourth step (marriage / friendship / casual chat), eHarmony-style choice cards; first feature of the app's dating-app pivot
 - #30 Gender identity selection — extends the onboarding state machine with a fifth step offering diverse options (OkCupid-style) plus a custom free-text option and "prefer not to say"
 - #31 Sexual orientation and match preferences — sixth onboarding step (diverse orientation options + who to be matched with), reusing the gender-options list for preferences
+- #32 Preferred age range — seventh onboarding step, dual range sliders (18-99) validated against the legal minimum
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`

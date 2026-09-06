@@ -49,7 +49,7 @@ export interface VerifyOtpPayload {
   code: string;
 }
 
-export const ONBOARDING_STEPS = ["displayName", "avatar", "bio", "datingGoal", "gender", "orientation"] as const;
+export const ONBOARDING_STEPS = ["displayName", "avatar", "bio", "datingGoal", "gender", "orientation", "ageRange"] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
 export const DATING_GOALS = ["marriage", "friendship", "casual"] as const;
@@ -125,6 +125,16 @@ export const ORIENTATION_OPTION_LABELS: Record<OrientationOption, string> = {
   preferNotToSay: "Prefer not to say",
 };
 
+// Legal minimum for a dating app; 99 stands in for "no upper limit" without
+// making range-slider math handle Infinity.
+export const MIN_PREFERRED_AGE = 18;
+export const MAX_PREFERRED_AGE = 99;
+
+export interface AgeRange {
+  min: number;
+  max: number;
+}
+
 export interface OnboardingProfile {
   displayName?: string;
   avatarUrl?: string;
@@ -137,6 +147,7 @@ export interface OnboardingProfile {
   // Who they'd like to be matched with — reuses GENDER_OPTIONS so "everyone"
   // is just "select all" rather than a separate special case.
   interestedIn?: GenderOption[];
+  preferredAgeRange?: AgeRange;
 }
 
 export interface OnboardingState {

@@ -1318,7 +1318,7 @@ async function stepThroughToOrientation(baseUrl: string, authHeaders: Record<str
   });
 }
 
-test("POST /api/onboarding/step completes the orientation step and persists between requests", async () => {
+test("POST /api/onboarding/step completes the orientation step, advancing to age range, and persists between requests", async () => {
   const { server, baseUrl, otpService } = listen();
   try {
     const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110016");
@@ -1332,14 +1332,14 @@ test("POST /api/onboarding/step completes the orientation step and persists betw
     });
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.currentStep, "complete");
+    assert.equal(body.currentStep, "ageRange");
     assert.equal(body.profile.orientation, "bisexual");
     assert.deepEqual(body.profile.interestedIn, ["man", "woman", "nonBinary"]);
 
     const resumed = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) =>
       r.json()
     );
-    assert.equal(resumed.currentStep, "complete");
+    assert.equal(resumed.currentStep, "ageRange");
   } finally {
     server.close();
   }
@@ -1389,6 +1389,92 @@ test("POST /api/onboarding/step rejects submitting the orientation step out of o
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ step: "orientation", data: { option: "straight", interestedIn: ["woman"] } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+async function stepThroughToAgeRange(baseUrl: string, authHeaders: Record<string, string>) {
+  await stepThroughToOrientation(baseUrl, authHeaders);
+  await fetch(`${baseUrl}/api/onboarding/step`, {
+    method: "POST",
+    headers: authHeaders,
+    body: JSON.stringify({ step: "orientation", data: { option: "bisexual", interestedIn: ["man", "woman"] } }),
+  });
+}
+
+test("POST /api/onboarding/step completes the age range step and persists between requests", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110020");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToAgeRange(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "ageRange", data: { min: 22, max: 40 } }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.currentStep, "complete");
+    assert.deepEqual(body.profile.preferredAgeRange, { min: 22, max: 40 });
+
+    const resumed = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) =>
+      r.json()
+    );
+    assert.equal(resumed.currentStep, "complete");
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects a range below the legal minimum age", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110021");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToAgeRange(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "ageRange", data: { min: 15, max: 25 } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects min greater than max for age range", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110022");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToAgeRange(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "ageRange", data: { min: 50, max: 30 } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects submitting the age range step out of order", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110023");
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ step: "ageRange", data: { min: 25, max: 35 } }),
     });
     assert.equal(res.status, 400);
   } finally {

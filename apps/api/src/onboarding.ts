@@ -3,6 +3,8 @@ import {
   DatingGoal,
   GENDER_OPTIONS,
   GenderOption,
+  MAX_PREFERRED_AGE,
+  MIN_PREFERRED_AGE,
   ONBOARDING_STEPS,
   ORIENTATION_OPTIONS,
   OnboardingProfile,
@@ -85,6 +87,17 @@ function validateStepData(step: OnboardingStep, data: unknown): { value: Partial
       return { value: { orientation: option, orientationCustomText: trimmed, interestedIn } };
     }
     return { value: { orientation: option, orientationCustomText: undefined, interestedIn } };
+  }
+  if (step === "ageRange") {
+    const { min, max } = (typeof data === "object" && data !== null ? data : {}) as { min?: unknown; max?: unknown };
+    if (typeof min !== "number" || typeof max !== "number" || !Number.isInteger(min) || !Number.isInteger(max)) {
+      return { error: "min and max must be whole numbers" };
+    }
+    if (min < MIN_PREFERRED_AGE || max > MAX_PREFERRED_AGE) {
+      return { error: `Age range must be between ${MIN_PREFERRED_AGE} and ${MAX_PREFERRED_AGE}` };
+    }
+    if (min > max) return { error: "min cannot be greater than max" };
+    return { value: { preferredAgeRange: { min, max } } };
   }
   return { error: "Unknown step" };
 }

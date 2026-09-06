@@ -8,6 +8,8 @@ import {
   GENDER_OPTIONS,
   GENDER_OPTION_LABELS,
   GenderOption,
+  MAX_PREFERRED_AGE,
+  MIN_PREFERRED_AGE,
   ONBOARDING_STEPS,
   ORIENTATION_OPTIONS,
   ORIENTATION_OPTION_LABELS,
@@ -152,6 +154,53 @@ function OrientationStep({
   );
 }
 
+function AgeRangeStep({ onSubmit, error }: { onSubmit: (data: { min: number; max: number }) => void; error: string | null }) {
+  const [min, setMin] = useState(Math.max(MIN_PREFERRED_AGE, 21));
+  const [max, setMax] = useState(Math.min(MAX_PREFERRED_AGE, 40));
+
+  return (
+    <div>
+      <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>Preferred age range</label>
+      <p style={{ fontSize: 18, fontWeight: 600, margin: "8px 0 16px" }}>
+        {min} – {max}
+      </p>
+      {error && <p style={{ color: "#c0392b", fontSize: 13 }}>{error}</p>}
+
+      <label style={{ display: "block", fontSize: 12, color: "#6b7280" }}>Minimum: {min}</label>
+      <input
+        type="range"
+        min={MIN_PREFERRED_AGE}
+        max={MAX_PREFERRED_AGE}
+        value={min}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          setMin(next);
+          if (next > max) setMax(next);
+        }}
+        style={{ width: "100%", marginBottom: 12 }}
+      />
+
+      <label style={{ display: "block", fontSize: 12, color: "#6b7280" }}>Maximum: {max}</label>
+      <input
+        type="range"
+        min={MIN_PREFERRED_AGE}
+        max={MAX_PREFERRED_AGE}
+        value={max}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          setMax(next);
+          if (next < min) setMin(next);
+        }}
+        style={{ width: "100%", marginBottom: 16 }}
+      />
+
+      <button onClick={() => onSubmit({ min, max })} style={{ width: "100%", padding: 10 }}>
+        Continue
+      </button>
+    </div>
+  );
+}
+
 export default function OnboardingPage() {
   const auth = loadStoredAuth();
   const [state, setState] = useState<OnboardingState | null>(null);
@@ -214,7 +263,9 @@ export default function OnboardingPage() {
         ))}
       </div>
 
-      {state.currentStep === "orientation" ? (
+      {state.currentStep === "ageRange" ? (
+        <AgeRangeStep error={error} onSubmit={(data) => submitStep("ageRange", data)} />
+      ) : state.currentStep === "orientation" ? (
         <OrientationStep error={error} onSubmit={(data) => submitStep("orientation", data)} />
       ) : state.currentStep === "gender" ? (
         <GenderStep error={error} onSubmit={(data) => submitStep("gender", data)} />
