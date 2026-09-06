@@ -1764,3 +1764,43 @@ test("GET /api/users/:userId/badge is independent per user", async () => {
     server.close();
   }
 });
+
+test("POST /api/reports rejects a report with an invalid reason", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "bob", reason: "nonsense" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/reports accepts a valid report", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "bob", reason: "harassment", messageId: "msg-1" }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.ok(body.id);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/reports has no route exposing stored reports", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/reports`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});

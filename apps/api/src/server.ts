@@ -22,6 +22,7 @@ import { PushService } from "./push";
 import { UploadStore } from "./uploads";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
+import { ReportStore } from "./reports";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -48,6 +49,7 @@ export function createApp(deps?: {
   webAuthnService: WebAuthnService;
   onboardingStore: OnboardingStore;
   verificationStore: VerificationStore;
+  reportStore: ReportStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -74,6 +76,7 @@ export function createApp(deps?: {
   });
   const verificationStore = new VerificationStore();
   const onboardingStore = new OnboardingStore(verificationStore);
+  const reportStore = new ReportStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -99,6 +102,27 @@ export function createApp(deps?: {
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // Safety-critical action: kept as its own tiny route with no dependency
+  // on the chat/upload/onboarding subsystems, per the issue's
+  // implementation guide ("no dependency on heavier services"). No GET
+  // endpoint exposes stored reports — they contain claims about other
+  // users and aren't safe to serve without real moderator auth.
+  // reporterAuthor is self-reported like every other chat `author` in
+  // this codebase (see ChatRoom.tsx) rather than derived from requireAuth:
+  // chat identity and the #21-#25 account system aren't wired together
+  // yet, so gating this alone wouldn't actually verify anything the rest
+  // of chat doesn't already trust.
+  app.post("/api/reports", (req, res) => {
+    const reporterAuthor = typeof req.body?.reporterAuthor === "string" ? req.body.reporterAuthor : "";
+    const result = reportStore.submit(reporterAuthor, req.body ?? {});
+    if (!result.success) {
+      const status = result.error.startsWith("Too many") ? 429 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ id: result.report.id });
   });
 
   // No GET endpoint for verification selfies, deliberately — see the
@@ -648,6 +672,7 @@ export function createApp(deps?: {
     webAuthnService,
     onboardingStore,
     verificationStore,
+    reportStore,
   };
 }
 

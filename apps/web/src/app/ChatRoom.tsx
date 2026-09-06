@@ -10,6 +10,7 @@ import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { compressImage } from "./imageCompression";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
+import ReportDialog from "./ReportDialog";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -79,12 +80,16 @@ function MessageRow({
   registerRef,
   onReply,
   onCopyLink,
+  onReport,
+  isOwnMessage,
 }: {
   message: ChatMessage;
   highlighted: boolean;
   registerRef: (el: HTMLDivElement | null) => void;
   onReply: (target: ReplyTarget) => void;
   onCopyLink: (messageId: string) => void;
+  onReport: (target: { author: string; messageId: string }) => void;
+  isOwnMessage: boolean;
 }) {
   const { dragX, handlers } = useSwipeToReply(() =>
     onReply({ id: message.id, author: message.author, text: message.text })
@@ -123,6 +128,15 @@ function MessageRow({
         >
           🔗
         </button>
+        {!isOwnMessage && (
+          <button
+            className="chat-app__report-button"
+            onClick={() => onReport({ author: message.author, messageId: message.id })}
+            title="Report this message"
+          >
+            ⚠
+          </button>
+        )}
       </div>
     </div>
   );
@@ -166,6 +180,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [showShortcuts, setShowShortcuts] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  const [reportTarget, setReportTarget] = useState<{ author: string; messageId: string } | null>(null);
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -579,6 +594,8 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             }}
             onReply={setReplyTarget}
             onCopyLink={copyMessageLink}
+            onReport={setReportTarget}
+            isOwnMessage={m.author === author}
           />
         ))}
         {queue.map((q) => (
@@ -637,6 +654,14 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         </button>
       </div>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
+      {reportTarget && (
+        <ReportDialog
+          reporterAuthor={author}
+          reportedAuthor={reportTarget.author}
+          messageId={reportTarget.messageId}
+          onClose={() => setReportTarget(null)}
+        />
+      )}
     </main>
   );
 }
