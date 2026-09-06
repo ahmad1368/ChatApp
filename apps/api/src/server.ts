@@ -28,6 +28,7 @@ import { ContactBlockStore } from "./contactBlocks";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore } from "./photos";
 import { SharedDateStore } from "./sharedDates";
+import { SOSStore } from "./sos";
 import { applyWatermark } from "./watermarkImage";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
@@ -61,6 +62,7 @@ export function createApp(deps?: {
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   sharedDateStore: SharedDateStore;
+  sosStore: SOSStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -93,6 +95,7 @@ export function createApp(deps?: {
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const sharedDateStore = new SharedDateStore();
+  const sosStore = new SOSStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -277,6 +280,58 @@ export function createApp(deps?: {
     const view = sharedDateStore.viewByShareCode(req.params.shareCode);
     if (!view) {
       res.status(404).json({ error: "Shared date not found" });
+      return;
+    }
+    res.json(view);
+  });
+
+  // Emergency SOS: its own high-priority, dependency-free safety path,
+  // same as Report/Block/Share My Date.
+  app.post("/api/sos/contacts", (req, res) => {
+    const result = sosStore.addContact(req.body?.author, req.body?.name, req.body?.contactMethod);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.contact);
+  });
+
+  app.get("/api/sos/contacts/:author", (req, res) => {
+    res.json({ contacts: sosStore.listContacts(req.params.author) });
+  });
+
+  app.post("/api/sos/alerts", (req, res) => {
+    const result = sosStore.triggerSOS(req.body?.author, req.body);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.alert);
+  });
+
+  app.patch("/api/sos/alerts/:id/location", (req, res) => {
+    const result = sosStore.updateLocation(req.body?.author, req.params.id, req.body);
+    if (!result.success) {
+      const status = result.error === "Alert not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json(result.alert);
+  });
+
+  app.post("/api/sos/alerts/:id/resolve", (req, res) => {
+    const resolved = sosStore.resolve(req.body?.author, req.params.id);
+    if (!resolved) {
+      res.status(404).json({ error: "Alert not found" });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  app.get("/api/sos/alerts/shared/:shareCode", (req, res) => {
+    const view = sosStore.viewByShareCode(req.params.shareCode);
+    if (!view) {
+      res.status(404).json({ error: "Alert not found" });
       return;
     }
     res.json(view);
@@ -841,6 +896,7 @@ export function createApp(deps?: {
     watermarkStore,
     photoStore,
     sharedDateStore,
+    sosStore,
   };
 }
 

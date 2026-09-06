@@ -11,6 +11,7 @@ import { compressImage } from "./imageCompression";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
 import ReportDialog from "./ReportDialog";
+import SOSButton from "./SOSButton";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -708,6 +709,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           </label>
         </div>
       </div>
+      <SOSButton author={author} />
       {imageError && <p className="chat-app__status chat-app__status--offline">{imageError}</p>}
       {liveUpdatesEnabled ? (
         <p
