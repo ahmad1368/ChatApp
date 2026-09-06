@@ -143,6 +143,15 @@ body {
   cursor: pointer;
 }
 
+.chat-app__locale-toggle {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-text);
+}
+
 .chat-app__status {
   font-size: 12px;
   color: var(--color-muted);

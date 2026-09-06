@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { LocaleProvider } from "./LocaleProvider";
 import PwaRegister from "./PwaRegister";
 import "./globals.css";
 
@@ -18,14 +19,20 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-// Applies a stored theme override before first paint so switching themes
-// doesn't flash the previous one on reload.
-const themeInitScript = `
+// Applies a stored locale's lang/dir and a stored theme override before
+// first paint, so switching either (especially into/out of RTL) doesn't
+// flash the previous layout/theme on reload.
+const prePaintInitScript = `
 (function () {
   try {
-    var stored = window.localStorage.getItem("chatapp:theme");
-    if (stored === "light" || stored === "dark") {
-      document.documentElement.setAttribute("data-theme", stored);
+    var storedLocale = window.localStorage.getItem("chatapp:locale");
+    if (storedLocale === "fa") {
+      document.documentElement.lang = "fa";
+      document.documentElement.dir = "rtl";
+    }
+    var storedTheme = window.localStorage.getItem("chatapp:theme");
+    if (storedTheme === "light" || storedTheme === "dark") {
+      document.documentElement.setAttribute("data-theme", storedTheme);
     }
   } catch (e) {}
 })();
@@ -33,12 +40,12 @@ const themeInitScript = `
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" dir="ltr">
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script dangerouslySetInnerHTML={{ __html: prePaintInitScript }} />
       </head>
       <body>
-        {children}
+        <LocaleProvider>{children}</LocaleProvider>
         <PwaRegister />
       </body>
     </html>

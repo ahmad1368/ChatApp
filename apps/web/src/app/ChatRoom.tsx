@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
 import {
   loadCachedMessages,
@@ -54,6 +55,7 @@ function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessag
 }
 
 export default function ChatRoom() {
+  const { t } = useLocale();
   // Hydrate synchronously from the local cache so there's something on
   // screen immediately, even before the network fetch (or if it never
   // succeeds because we're offline).
@@ -254,12 +256,13 @@ export default function ChatRoom() {
   return (
     <main className="chat-app">
       <div className="chat-app__header">
-        <h1>ChatApp</h1>
+        <h1>{t("title")}</h1>
         <div className="chat-app__header-links">
           <Link href={`/privacy?author=${encodeURIComponent(author)}`}>Privacy</Link>
           <Link href={`/privacy/export?author=${encodeURIComponent(author)}`}>Download my data</Link>
           <Link href={`/privacy/location?author=${encodeURIComponent(author)}`}>Location privacy</Link>
           <ThemeToggle />
+          <LocaleToggle />
         </div>
       </div>
       {liveUpdatesEnabled ? (
@@ -322,11 +325,11 @@ export default function ChatRoom() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          placeholder="Type a message"
+          placeholder={t("placeholder")}
           disabled={!liveUpdatesEnabled}
         />
         <button className="chat-app__send" onClick={sendMessage} disabled={!liveUpdatesEnabled}>
-          Send
+          {t("send")}
         </button>
       </div>
     </main>
