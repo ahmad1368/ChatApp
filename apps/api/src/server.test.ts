@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AddressInfo } from "net";
+import { authenticator } from "otplib";
 import { ChatMessage } from "@chatapp/shared";
 import { createApp } from "./server";
 import { GoogleAuthService } from "./googleAuth";
 import { AppleAuthService } from "./appleAuth";
 import { FacebookAuthService } from "./facebookAuth";
+import { OtpService } from "./auth";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -43,6 +45,21 @@ function listenWithFacebookAuth(facebookAuthService: FacebookAuthService) {
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+// Signs a phone number up for real via the OTP endpoints (rather than
+// forging a JWT) so 2FA tests exercise requireAuth exactly as a real client
+// would: reading the code straight off OtpService instead of a fake SMS provider.
+async function signUpAndGetAccessToken(baseUrl: string, otpService: OtpService, phoneNumber: string): Promise<string> {
+  const result = otpService.requestOtp(phoneNumber);
+  const code = "code" in result ? result.code : (() => { throw new Error("expected a fresh code"); })();
+  const verifyRes = await fetch(`${baseUrl}/api/auth/signup/verify-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phoneNumber, code }),
+  });
+  const { tokens } = await verifyRes.json();
+  return tokens.accessToken;
 }
 
 test("GET /health reports healthy", async () => {
@@ -849,6 +866,120 @@ test("POST /api/auth/recovery/verify-code rejects a wrong code", async () => {
       body: JSON.stringify({ email, code: "000000" }),
     });
     assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/2fa/setup rejects a request with no access token", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/2fa/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountLabel: "alice@example.com" }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("2FA: completes setup, confirm, and login-verify end-to-end", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110001");
+
+    const setupRes = await fetch(`${baseUrl}/api/auth/2fa/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ accountLabel: "alice@example.com" }),
+    });
+    assert.equal(setupRes.status, 200);
+    const { secret, qrCodeDataUrl } = await setupRes.json();
+    assert.ok(secret);
+    assert.match(qrCodeDataUrl, /^data:image\/png;base64,/);
+
+    const statusBefore = await fetch(`${baseUrl}/api/auth/2fa/status`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).then((r) => r.json());
+    assert.equal(statusBefore.enabled, false);
+
+    const confirmRes = await fetch(`${baseUrl}/api/auth/2fa/confirm-setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ token: authenticator.generate(secret) }),
+    });
+    assert.equal(confirmRes.status, 200);
+
+    const statusAfter = await fetch(`${baseUrl}/api/auth/2fa/status`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).then((r) => r.json());
+    assert.equal(statusAfter.enabled, true);
+
+    // /verify runs at login time (pre-session), so it takes userId directly
+    // rather than a bearer token — see the comment on the endpoint.
+    const decoded = JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString());
+    const verifyRes = await fetch(`${baseUrl}/api/auth/2fa/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: decoded.sub, token: authenticator.generate(secret) }),
+    });
+    assert.equal(verifyRes.status, 200);
+  } finally {
+    server.close();
+  }
+});
+
+test("2FA: rejects verification with a wrong code", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110002");
+    const decoded = JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString());
+
+    await fetch(`${baseUrl}/api/auth/2fa/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ accountLabel: "bob@example.com" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/auth/2fa/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: decoded.sub, token: "000000" }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("2FA: disables 2FA", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110003");
+
+    const setupRes = await fetch(`${baseUrl}/api/auth/2fa/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ accountLabel: "carol@example.com" }),
+    }).then((r) => r.json());
+    await fetch(`${baseUrl}/api/auth/2fa/confirm-setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ token: authenticator.generate(setupRes.secret) }),
+    });
+
+    const disableRes = await fetch(`${baseUrl}/api/auth/2fa/disable`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(disableRes.status, 200);
+
+    const status = await fetch(`${baseUrl}/api/auth/2fa/status`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).then((r) => r.json());
+    assert.equal(status.enabled, false);
   } finally {
     server.close();
   }

@@ -4,6 +4,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
 import { normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
+import { TwoFactorService } from "./twoFactor";
 import { GoogleAuthService } from "./googleAuth";
 import { AppleAuthService } from "./appleAuth";
 import { FacebookAuthService } from "./facebookAuth";
@@ -35,6 +36,7 @@ export function createApp(deps?: {
   errorReportStore: ErrorReportStore;
   otpService: OtpService;
   recoveryCodeService: RecoveryCodeService;
+  twoFactorService: TwoFactorService;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -54,6 +56,7 @@ export function createApp(deps?: {
   const recoveryCodeService = new RecoveryCodeService();
   const userStore = new UserStore();
   const tokenService = new TokenService();
+  const twoFactorService = new TwoFactorService();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -62,6 +65,20 @@ export function createApp(deps?: {
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
+
+  // Verifies the caller's access token (issued by any of the #21-#25 sign-in
+  // methods) and derives userId from it, rather than trusting a client-
+  // supplied value — used to gate the 2FA management endpoints below.
+  function requireAuth(req: express.Request, res: express.Response): string | undefined {
+    const header = req.get("authorization");
+    const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
+    const verified = token ? tokenService.verifyAccessToken(token) : undefined;
+    if (!verified) {
+      res.status(401).json({ error: "A valid Authorization: Bearer <accessToken> header is required" });
+      return undefined;
+    }
+    return verified.userId;
+  }
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
@@ -356,6 +373,72 @@ export function createApp(deps?: {
     res.status(200).json({ user, tokens });
   });
 
+  // Two-factor authentication (TOTP, RFC 6238): setup/confirm-setup/disable/
+  // status manage the *current* user's own 2FA and are gated behind
+  // requireAuth (userId comes from the verified access token, not the
+  // request body/params) now that #21-#25's TokenService exists to check
+  // against — the original unsafe client-supplied-userId design this issue
+  // shipped with, fixed as part of merging it in.
+  //
+  // `verify` is intentionally NOT gated the same way: it runs at login
+  // time, before a full session exists, so there's no access token yet to
+  // check. None of the five sign-in endpoints above currently pause to
+  // require a 2FA code before issuing tokens — wiring "issue a pending
+  // token, then require /2fa/verify before the real one" into all five is
+  // a real follow-up, left for whenever 2FA actually needs to be mandatory
+  // rather than a standalone opt-in demonstrated at /settings/security.
+  app.post("/api/auth/2fa/setup", async (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const accountLabel = typeof req.body?.accountLabel === "string" ? req.body.accountLabel : userId;
+    const result = await twoFactorService.beginSetup(userId, accountLabel);
+    res.status(200).json(result);
+  });
+
+  app.post("/api/auth/2fa/confirm-setup", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const token = typeof req.body?.token === "string" ? req.body.token : undefined;
+    if (!token) {
+      res.status(400).json({ error: "token is required" });
+      return;
+    }
+    const confirmed = twoFactorService.confirmSetup(userId, token);
+    if (!confirmed) {
+      res.status(400).json({ error: "Invalid verification code" });
+      return;
+    }
+    res.json({ enabled: true });
+  });
+
+  app.post("/api/auth/2fa/verify", (req, res) => {
+    const userId = typeof req.body?.userId === "string" ? req.body.userId : undefined;
+    const token = typeof req.body?.token === "string" ? req.body.token : undefined;
+    if (!userId || !token) {
+      res.status(400).json({ error: "userId and token are required" });
+      return;
+    }
+    const valid = twoFactorService.verify(userId, token);
+    if (!valid) {
+      res.status(401).json({ error: "Invalid or expired code" });
+      return;
+    }
+    res.json({ verified: true });
+  });
+
+  app.get("/api/auth/2fa/status", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    res.json({ enabled: twoFactorService.isEnabled(userId) });
+  });
+
+  app.post("/api/auth/2fa/disable", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    twoFactorService.disable(userId);
+    res.json({ enabled: false });
+  });
+
   // Phone + OTP signup. The chat itself still uses anonymous guest
   // identities — wiring this auth into ChatRoom is left for a follow-up
   // once more auth/profile issues land, so this stays additive.
@@ -413,7 +496,7 @@ export function createApp(deps?: {
     res.json({ tokens });
   });
 
-  return { app, messagesByRoom, pushService, errorReportStore, otpService, recoveryCodeService };
+  return { app, messagesByRoom, pushService, errorReportStore, otpService, recoveryCodeService, twoFactorService };
 }
 
 export async function createChatServer() {
