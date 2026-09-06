@@ -7,6 +7,16 @@ import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+// PushManager.subscribe needs the VAPID public key as a Uint8Array, but the
+// server hands it over base64url-encoded.
+function urlBase64ToUint8Array(base64Url: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64Url.length % 4)) % 4);
+  const base64 = (base64Url + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
+}
+
+type WebPushStatus = "unsupported" | "default" | "subscribing" | "subscribed" | "denied";
 type NotificationPermissionState = "unsupported" | "default" | "granted" | "denied";
 
 function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
@@ -20,6 +30,7 @@ export default function ChatRoom() {
   const [text, setText] = useState("");
   const [syncStatus, setSyncStatus] = useState<"connecting" | "synced" | "offline">("connecting");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
+  const [webPushStatus, setWebPushStatus] = useState<WebPushStatus>("unsupported");
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState>(
     "unsupported"
   );
@@ -35,7 +46,44 @@ export default function ChatRoom() {
     if (typeof window !== "undefined" && "Notification" in window) {
       setNotificationPermission(Notification.permission as NotificationPermissionState);
     }
+
+    // PwaRegister (see layout.tsx) already registers "/sw.js"; wait for that
+    // registration to check whether a push subscription already exists.
+    const supported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
+    if (!supported) return;
+
+    navigator.serviceWorker.ready.then(async (registration) => {
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) {
+        setWebPushStatus("subscribed");
+      } else if (Notification.permission === "denied") {
+        setWebPushStatus("denied");
+      } else {
+        setWebPushStatus("default");
+      }
+    });
   }, []);
+
+  const enableWebPush = async () => {
+    setWebPushStatus("subscribing");
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const { publicKey } = await fetch(`${API_URL}/api/push/public-key`).then((res) => res.json());
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
+      });
+      await fetch(`${API_URL}/api/push/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ author, subscription: subscription.toJSON() }),
+      });
+      setWebPushStatus("subscribed");
+    } catch (err) {
+      console.error("Web Push subscription failed:", err);
+      setWebPushStatus(Notification.permission === "denied" ? "denied" : "default");
+    }
+  };
 
   useEffect(() => {
     const syncSince = (since?: string) =>
@@ -116,6 +164,17 @@ export default function ChatRoom() {
         {syncStatus === "synced" && "Synced"}
         {syncStatus === "offline" && "Offline — reconnecting…"}
       </p>
+      {(webPushStatus === "default" || webPushStatus === "subscribing" || webPushStatus === "denied") && (
+        <button
+          className="chat-app__notify-button"
+          onClick={enableWebPush}
+          disabled={webPushStatus === "subscribing" || webPushStatus === "denied"}
+        >
+          {webPushStatus === "subscribing" && "Enabling…"}
+          {webPushStatus === "denied" && "Push notifications blocked (enable in browser settings)"}
+          {webPushStatus === "default" && "Enable push notifications"}
+        </button>
+      )}
       {notificationPermission !== "unsupported" && notificationPermission !== "granted" && (
         <button
           className="chat-app__notify-button"

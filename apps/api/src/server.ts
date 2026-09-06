@@ -6,16 +6,18 @@ import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/share
 import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
+import { PushService } from "./push";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 
-export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMessage[]> } {
+export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMessage[]>; pushService: PushService } {
   const app = express();
   app.use(cors());
   app.use(express.json());
 
   const messagesByRoom = new Map<string, ChatMessage[]>();
   const locations = new LocationStore();
+  const pushService = new PushService();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -89,11 +91,38 @@ export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMes
     res.json({ approximate });
   });
 
-  return { app, messagesByRoom };
+  // Web Push: delivers new-message alerts even when the tab is fully closed
+  // (see the Notification-API path in ChatRoom.tsx for the backgrounded-tab
+  // equivalent, which doesn't need a push subscription).
+  app.get("/api/push/public-key", (_req, res) => {
+    res.json({ publicKey: pushService.publicKey });
+  });
+
+  app.post("/api/push/subscribe", (req, res) => {
+    const { author, subscription } = req.body ?? {};
+    if (!author || !subscription?.endpoint) {
+      res.status(400).json({ error: "author and subscription.endpoint are required" });
+      return;
+    }
+    pushService.subscribe(author, subscription);
+    res.status(201).json({ status: "subscribed" });
+  });
+
+  app.post("/api/push/unsubscribe", (req, res) => {
+    const { endpoint } = req.body ?? {};
+    if (!endpoint) {
+      res.status(400).json({ error: "endpoint is required" });
+      return;
+    }
+    pushService.unsubscribe(endpoint);
+    res.json({ status: "unsubscribed" });
+  });
+
+  return { app, messagesByRoom, pushService };
 }
 
 export function createChatServer() {
-  const { app, messagesByRoom } = createApp();
+  const { app, messagesByRoom, pushService } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
@@ -117,6 +146,9 @@ export function createChatServer() {
       existing.push(message);
       messagesByRoom.set(roomId, existing);
       io.to(roomId).emit("message:new", message);
+      pushService.notifyOthers(message.author, { title: message.author, body: message.text }).catch((err) => {
+        console.error("Failed to deliver push notifications:", err);
+      });
     });
   });
 

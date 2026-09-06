@@ -25,6 +25,7 @@ npm run dev:web   # http://localhost:3000
 - #2 Real-time sync between mobile and web — reconnect/catch-up sync (`since` query param) so clients recover missed messages after a dropped connection, plus a live sync-status indicator
 - #3 Responsive design for tablet and desktop — CSS custom properties + media-query breakpoints replace fixed inline layout
 - #4 Local push-style notifications — Notification API alerts for new messages while the tab is backgrounded (foreground/open-tab equivalent of mobile push; full Web Push tracked separately in #5)
+- #5 Web Push notifications — VAPID-backed subscribe/notify flow (service worker `push` handler, `/api/push/*` endpoints) so new messages can be delivered even when the tab is fully closed
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`

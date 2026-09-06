@@ -195,3 +195,71 @@ test("GET /api/users/:author/location returns the same approximation set via PUT
     server.close();
   }
 });
+
+test("GET /api/push/public-key exposes a VAPID public key", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/push/public-key`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(typeof body.publicKey, "string");
+    assert.ok(body.publicKey.length > 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/push/subscribe rejects a request missing required fields", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/push/subscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/push/subscribe then /unsubscribe accepts a valid subscription", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const subscribeRes = await fetch(`${baseUrl}/api/push/subscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        author: "alice",
+        subscription: {
+          endpoint: "https://push.example.com/abc123",
+          keys: { p256dh: "key", auth: "auth" },
+        },
+      }),
+    });
+    assert.equal(subscribeRes.status, 201);
+
+    const unsubscribeRes = await fetch(`${baseUrl}/api/push/unsubscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: "https://push.example.com/abc123" }),
+    });
+    assert.equal(unsubscribeRes.status, 200);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/push/unsubscribe rejects a request missing an endpoint", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/push/unsubscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
