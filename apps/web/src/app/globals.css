@@ -1,0 +1,236 @@
+:root {
+  --color-bg: #ffffff;
+  --color-text: #111827;
+  --color-muted: #6b7280;
+  --color-border: #cccccc;
+  --color-panel: #f9fafb;
+  --color-accent: #2563eb;
+  --color-accent-text: #ffffff;
+  --color-danger: #c0392b;
+
+  --chat-max-width: 480px;
+  --chat-padding: 16px;
+  --chat-gap: 8px;
+  --chat-messages-height: 240px;
+  --chat-font-size: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #0b0f19;
+    --color-text: #e7ebf3;
+    --color-muted: #9aa4b8;
+    --color-border: #2a3040;
+    --color-panel: #131826;
+    --color-accent: #5b8dff;
+    --color-accent-text: #0b0f19;
+    --color-danger: #ff6b6b;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #0b0f19;
+  --color-text: #e7ebf3;
+  --color-muted: #9aa4b8;
+  --color-border: #2a3040;
+  --color-panel: #131826;
+  --color-accent: #5b8dff;
+  --color-accent-text: #0b0f19;
+  --color-danger: #ff6b6b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.chat-app {
+  max-width: var(--chat-max-width);
+  margin: 0 auto;
+  padding: var(--chat-padding);
+  font-size: var(--chat-font-size);
+}
+
+.chat-app__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-app__header-links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-app__header-links a {
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.chat-app__load-more-button {
+  font-size: 12px;
+  margin-bottom: 8px;
+  align-self: flex-start;
+}
+
+.chat-app__notify-button {
+  margin-bottom: 12px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.chat-app__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-panel);
+  border-radius: 8px;
+  padding: 12px;
+  height: var(--chat-messages-height);
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.chat-app__message {
+  word-break: break-word;
+  border-radius: 4px;
+  padding: 4px;
+  transition: background 0.3s;
+}
+
+.chat-app__message--highlighted {
+  background: #fff3cd;
+}
+
+.chat-app__copy-link-button {
+  margin-left: 6px;
+  font-size: 11px;
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.chat-app__message--queued {
+  opacity: 0.6;
+}
+
+.chat-app__queued-tag {
+  font-size: 11px;
+  margin-left: 6px;
+}
+
+.chat-app__shared-image {
+  max-width: 100%;
+  border-radius: 6px;
+  display: block;
+  margin-top: 4px;
+}
+
+.chat-app__composer {
+  display: flex;
+  gap: var(--chat-gap);
+}
+
+.chat-app__file-input {
+  display: none;
+}
+
+.chat-app__image-button {
+  padding: 8px 12px;
+  font-size: inherit;
+  background: var(--color-panel);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chat-app__input {
+  flex: 1;
+  padding: 8px;
+  font-size: inherit;
+  font-family: inherit;
+  background: var(--color-panel);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.chat-app__send {
+  padding: 8px 16px;
+  font-size: inherit;
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chat-app__theme-toggle {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.chat-app__locale-toggle {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-text);
+}
+
+.chat-app__status {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin: 0 0 8px;
+}
+
+.chat-app__status--offline {
+  color: var(--color-danger);
+}
+
+.chat-app__link-button {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Tablet */
+@media (min-width: 640px) {
+  :root {
+    --chat-max-width: 640px;
+    --chat-padding: 24px;
+    --chat-messages-height: 360px;
+  }
+}
+
+/* Desktop */
+@media (min-width: 1024px) {
+  :root {
+    --chat-max-width: 840px;
+    --chat-padding: 32px;
+    --chat-messages-height: 520px;
+    --chat-font-size: 1.05rem;
+  }
+}
