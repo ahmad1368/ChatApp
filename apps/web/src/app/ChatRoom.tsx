@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { compressImage } from "./imageCompression";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
@@ -176,6 +177,8 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
   const [text, setText] = useState("");
   const [syncStatus, setSyncStatus] = useState<"connecting" | "synced" | "offline">("connecting");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -460,6 +463,38 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
     if (file) sendImage(file);
   };
 
+  // Global shortcuts: Ctrl/Cmd+K works even while typing elsewhere; `?` is
+  // only treated as a shortcut when the user isn't actively typing a message.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isTyping = e.target instanceof HTMLElement && ["INPUT", "TEXTAREA"].includes(e.target.tagName);
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        composerRef.current?.focus();
+        return;
+      }
+      if (e.key === "Escape") {
+        setShowShortcuts(false);
+        composerRef.current?.blur();
+        return;
+      }
+      if (e.key === "?" && !isTyping) {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
   return (
     <main className="chat-app">
       <div className="chat-app__header">
@@ -470,6 +505,9 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
           <Link href={`/privacy/location?author=${encodeURIComponent(author)}`}>Location privacy</Link>
           <ThemeToggle />
           <LocaleToggle />
+          <button className="chat-app__theme-toggle" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)">
+            ⌨ Shortcuts
+          </button>
         </div>
       </div>
       {imageError && <p className="chat-app__status chat-app__status--offline">{imageError}</p>}
@@ -551,13 +589,15 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
         </div>
       )}
       <div className="chat-app__composer">
-        <input
-          className="chat-app__input"
+        <textarea
+          ref={composerRef}
+          className="chat-app__input chat-app__input--textarea"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+          onKeyDown={handleComposerKeyDown}
           placeholder={t("placeholder")}
           disabled={!liveUpdatesEnabled}
+          rows={1}
         />
         <input
           ref={fileInputRef}
@@ -578,6 +618,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
           {t("send")}
         </button>
       </div>
+      {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
     </main>
   );
 }
