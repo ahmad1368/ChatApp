@@ -2812,3 +2812,63 @@ test("DELETE /api/photo-albums/:owner/photos/:photoId removes a photo from the a
     server.close();
   }
 });
+
+test("PUT /api/photo-albums/:owner/photos/order reorders the album", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+      const id = uploaded.success ? uploaded.photo.id : "";
+      ids.push(id);
+      await fetch(`${baseUrl}/api/photo-albums/alice/photos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoId: id }),
+      });
+    }
+
+    const reversed = [...ids].reverse();
+    const res = await fetch(`${baseUrl}/api/photo-albums/alice/photos/order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoIds: reversed }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { photoIds: reversed });
+
+    const listRes = await fetch(`${baseUrl}/api/photo-albums/alice/photos`);
+    assert.deepEqual(await listRes.json(), { photoIds: reversed });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/photo-albums/:owner/photos/order rejects a reorder that drops a photo", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded1 = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const id1 = uploaded1.success ? uploaded1.photo.id : "";
+    const uploaded2 = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const id2 = uploaded2.success ? uploaded2.photo.id : "";
+    await fetch(`${baseUrl}/api/photo-albums/alice/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId: id1 }),
+    });
+    await fetch(`${baseUrl}/api/photo-albums/alice/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId: id2 }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/photo-albums/alice/photos/order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoIds: [id1] }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});

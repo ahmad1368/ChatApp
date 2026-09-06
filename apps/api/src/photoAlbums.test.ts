@@ -143,3 +143,42 @@ test("each owner's album is independent", () => {
   assert.deepEqual(store.listPhotos("alice"), ["1"]);
   assert.deepEqual(store.listPhotos("bob"), ["2"]);
 });
+
+test("reorderPhotos() rearranges the same set of photos", () => {
+  const store = new PhotoAlbumStore();
+  store.addPhoto("alice", "1");
+  store.addPhoto("alice", "2");
+  store.addPhoto("alice", "3");
+  const result = store.reorderPhotos("alice", ["3", "1", "2"]);
+  assert.equal(result.success, true);
+  assert.deepEqual(store.listPhotos("alice"), ["3", "1", "2"]);
+});
+
+test("reorderPhotos() rejects a list that drops a photo", () => {
+  const store = new PhotoAlbumStore();
+  store.addPhoto("alice", "1");
+  store.addPhoto("alice", "2");
+  const result = store.reorderPhotos("alice", ["1"]);
+  assert.equal(result.success, false);
+  assert.deepEqual(store.listPhotos("alice"), ["1", "2"]);
+});
+
+test("reorderPhotos() rejects a list that adds an unknown photo", () => {
+  const store = new PhotoAlbumStore();
+  store.addPhoto("alice", "1");
+  const result = store.reorderPhotos("alice", ["1", "not-in-album"]);
+  assert.equal(result.success, false);
+});
+
+test("reorderPhotos() rejects a non-array payload", () => {
+  const store = new PhotoAlbumStore();
+  store.addPhoto("alice", "1");
+  const result = store.reorderPhotos("alice", "1");
+  assert.equal(result.success, false);
+});
+
+test("reorderPhotos() rejects a missing owner", () => {
+  const store = new PhotoAlbumStore();
+  const result = store.reorderPhotos("", []);
+  assert.equal(result.success, false);
+});
