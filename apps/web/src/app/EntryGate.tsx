@@ -2,20 +2,24 @@
 
 import { useEffect, useState } from "react";
 import ChatRoom from "./ChatRoom";
+import { loadStoredAuth } from "./authClient";
 
 const STORAGE_KEY = "chatapp:mode";
 
 /**
  * Tinder-style guest mode: browsing needs no signup, but full access
  * (sending messages, and — once they exist — matching/discovery) does.
- * There's no real member session to check yet (no auth PR — #21-#25 — is
- * merged), so "chose guest" is just a remembered local choice; a signed-up
- * user would bypass this gate entirely once that lands.
+ * A signed-in user (via any of #21-#25's methods) bypasses this gate
+ * entirely; "chose guest" is otherwise just a remembered local choice.
  */
-export default function EntryGate() {
-  const [mode, setMode] = useState<"loading" | "choosing" | "guest">("loading");
+export default function EntryGate({ roomId }: { roomId?: string }) {
+  const [mode, setMode] = useState<"loading" | "choosing" | "guest" | "member">("loading");
 
   useEffect(() => {
+    if (loadStoredAuth()) {
+      setMode("member");
+      return;
+    }
     let stored: string | null = null;
     try {
       stored = window.localStorage.getItem(STORAGE_KEY);
@@ -36,7 +40,9 @@ export default function EntryGate() {
 
   if (mode === "loading") return null;
 
-  if (mode === "guest") return <ChatRoom isGuest />;
+  if (mode === "member") return <ChatRoom roomId={roomId} />;
+
+  if (mode === "guest") return <ChatRoom roomId={roomId} isGuest />;
 
   return (
     <main style={{ maxWidth: 360, margin: "80px auto", padding: 16, fontFamily: "sans-serif", textAlign: "center" }}>
