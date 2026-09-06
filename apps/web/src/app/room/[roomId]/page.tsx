@@ -1,5 +1,5 @@
-import ChatRoom from "../../ChatRoom";
+import EntryGate from "../../EntryGate";
 
 export default function RoomPage({ params }: { params: { roomId: string } }) {
-  return <ChatRoom roomId={params.roomId} />;
+  return <EntryGate roomId={params.roomId} />;
 }

@@ -21,6 +21,7 @@ import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
 import { UploadStore } from "./uploads";
 import { VerificationStore } from "./verification";
+import { isGuestSendAllowed } from "./guestMode";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -670,6 +671,14 @@ export async function createChatServer() {
     socket.on("message:send", (payload: SendMessagePayload) => {
       if (!messageRateLimiter.isAllowed(socket.id)) {
         socket.emit("message:rejected", { reason: "rate_limited" });
+        return;
+      }
+
+      // Guest mode is read-only by design (Tinder-style limited access
+      // without signing up): reject a send even if a client bypasses the
+      // disabled UI and emits directly.
+      if (!isGuestSendAllowed(payload)) {
+        socket.emit("message:rejected", { reason: "guest_mode" });
         return;
       }
 

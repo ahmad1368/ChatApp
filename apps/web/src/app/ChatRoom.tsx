@@ -151,7 +151,7 @@ function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessag
   return additions.length ? [...prev, ...additions] : prev;
 }
 
-export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string }) {
+export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: { roomId?: string; isGuest?: boolean }) {
   const { t } = useLocale();
   // Hydrate synchronously from the local cache so there's something on
   // screen immediately, even before the network fetch (or if it never
@@ -398,6 +398,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
   };
 
   const sendMessage = () => {
+    if (isGuest) return;
     const trimmed = text.trim();
     if (!trimmed) return;
     setText("");
@@ -410,6 +411,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
         replyToId: replyTarget?.id,
         replyToAuthor: replyTarget?.author,
         replyToText: replyTarget?.text,
+        asGuest: isGuest,
       });
       setReplyTarget(null);
       return;
@@ -432,6 +434,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
   };
 
   const sendImage = async (file: File) => {
+    if (isGuest) return;
     setImageError(null);
     setIsSendingImage(true);
     try {
@@ -451,6 +454,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
         author,
         text: "",
         imageUrl: `${API_URL}${url}`,
+        asGuest: isGuest,
       });
     } catch (err) {
       setImageError(err instanceof Error ? err.message : "Failed to send image");
@@ -596,6 +600,12 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
           </button>
         </div>
       )}
+      {isGuest && (
+        <div className="chat-app__guest-banner">
+          You're browsing as a guest — you can read messages, but{" "}
+          <a href="/signup">sign up</a> to send your own.
+        </div>
+      )}
       <div className="chat-app__composer">
         <textarea
           ref={composerRef}
@@ -603,8 +613,8 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleComposerKeyDown}
-          placeholder={t("placeholder")}
-          disabled={!liveUpdatesEnabled}
+          placeholder={isGuest ? "Sign up to send a message" : t("placeholder")}
+          disabled={isGuest || !liveUpdatesEnabled}
           rows={1}
         />
         <input
@@ -617,12 +627,12 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
         <button
           className="chat-app__image-button"
           onClick={() => fileInputRef.current?.click()}
-          disabled={isSendingImage || !liveUpdatesEnabled}
+          disabled={isGuest || isSendingImage || !liveUpdatesEnabled}
           title="Send an image"
         >
           📷
         </button>
-        <button className="chat-app__send" onClick={sendMessage} disabled={!liveUpdatesEnabled}>
+        <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}
         </button>
       </div>
