@@ -12,6 +12,8 @@ import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
 import ReportDialog from "./ReportDialog";
 import SOSButton from "./SOSButton";
+import BiometricLock from "./BiometricLock";
+import { getOrCreateGuestIdentity } from "./guestIdentity";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -195,7 +197,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [loadingMore, setLoadingMore] = useState(false);
   const [text, setText] = useState("");
   const [syncStatus, setSyncStatus] = useState<"connecting" | "synced" | "offline">("connecting");
-  const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
+  const [author] = useState(() => getOrCreateGuestIdentity());
   const [showShortcuts, setShowShortcuts] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
@@ -689,6 +691,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   };
 
   return (
+    <BiometricLock author={author}>
     <main className="chat-app">
       <div className="chat-app__header">
         <h1>{t("title")}</h1>
@@ -934,5 +937,6 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         />
       )}
     </main>
+    </BiometricLock>
   );
 }

@@ -5,7 +5,7 @@ import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, ONBOARDING_STEPS, OnboardingStep, SendMessagePayload } from "@chatapp/shared";
 import { normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
 import { TwoFactorService } from "./twoFactor";
-import { WebAuthnService } from "./webauthn";
+import { WebAuthnService, WebAuthnStore } from "./webauthn";
 import { OnboardingStore } from "./onboarding";
 import { GoogleAuthService } from "./googleAuth";
 import { AppleAuthService } from "./appleAuth";
@@ -63,6 +63,7 @@ export function createApp(deps?: {
   photoStore: PhotoStore;
   sharedDateStore: SharedDateStore;
   sosStore: SOSStore;
+  webAuthnStore: WebAuthnStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -96,6 +97,12 @@ export function createApp(deps?: {
   const photoStore = new PhotoStore();
   const sharedDateStore = new SharedDateStore();
   const sosStore = new SOSStore();
+  // Distinct from webAuthnService above: that one re-authenticates a real
+  // account (userId, from #21-#25 sign-in) for login; this one re-
+  // authenticates the ephemeral chat `author` identity for the app-lock
+  // screen below, matching the rest of chat's un-unified author-keyed
+  // safety stores (Report/Block/SOS).
+  const webAuthnStore = new WebAuthnStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -335,6 +342,50 @@ export function createApp(deps?: {
       return;
     }
     res.json(view);
+  });
+
+  // Biometric re-authentication for the app-lock screen: its own high-
+  // priority, dependency-free safety path, same as Report/Block/SOS above.
+  // Keyed by the chat `author` identity (see webAuthnStore's note), not
+  // requireAuth's userId.
+  app.get("/api/webauthn/status/:author", (req, res) => {
+    res.json({ registered: webAuthnStore.isRegistered(req.params.author) });
+  });
+
+  app.post("/api/webauthn/registration/options", async (req, res) => {
+    const result = await webAuthnStore.createRegistrationOptions(req.body?.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(result.options);
+  });
+
+  app.post("/api/webauthn/registration/verify", async (req, res) => {
+    const result = await webAuthnStore.verifyRegistration(req.body?.author, req.body?.response);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  app.post("/api/webauthn/authentication/options", async (req, res) => {
+    const result = await webAuthnStore.createAuthenticationOptions(req.body?.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(result.options);
+  });
+
+  app.post("/api/webauthn/authentication/verify", async (req, res) => {
+    const result = await webAuthnStore.verifyAuthentication(req.body?.author, req.body?.response);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(204).send();
   });
 
   // No GET endpoint for verification selfies, deliberately — see the
@@ -897,6 +948,7 @@ export function createApp(deps?: {
     photoStore,
     sharedDateStore,
     sosStore,
+    webAuthnStore,
   };
 }
 
