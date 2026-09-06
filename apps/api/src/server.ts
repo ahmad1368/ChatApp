@@ -35,6 +35,7 @@ import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
 import { RecaptchaService } from "./recaptcha";
 import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetector";
+import { PhotoAlbumStore } from "./photoAlbums";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -72,6 +73,7 @@ export function createApp(deps?: {
   webAuthnStore: WebAuthnStore;
   duplicateAccountStore: DuplicateAccountStore;
   discoveryVisibilityStore: DiscoveryVisibilityStore;
+  photoAlbumStore: PhotoAlbumStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -113,6 +115,7 @@ export function createApp(deps?: {
   const webAuthnStore = new WebAuthnStore();
   const duplicateAccountStore = new DuplicateAccountStore();
   const discoveryVisibilityStore = new DiscoveryVisibilityStore();
+  const photoAlbumStore = new PhotoAlbumStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -250,7 +253,14 @@ export function createApp(deps?: {
       res.status(404).json({ error: "Photo not found" });
       return;
     }
-    const viewer = typeof req.query.viewer === "string" && req.query.viewer.trim() ? req.query.viewer.trim() : "ChatApp";
+    const requestedViewer = typeof req.query.viewer === "string" ? req.query.viewer.trim() : "";
+    // #59's album access level (public/private/request-access) gates the
+    // photo itself, ahead of the #45 watermarking step below.
+    if (!photoAlbumStore.canView(requestedViewer, photo.author)) {
+      res.status(403).json({ error: "This album isn't public — request access from its owner" });
+      return;
+    }
+    const viewer = requestedViewer || "ChatApp";
     try {
       const watermarked = await applyWatermark(photo.data, viewer);
       res.setHeader("Content-Type", "image/png");
@@ -258,6 +268,48 @@ export function createApp(deps?: {
     } catch {
       res.status(500).json({ error: "Failed to render photo" });
     }
+  });
+
+  // Photo album access level (#59): Bumble's real "Private Album" control,
+  // generalized to public/private/request-access. Its own high-priority
+  // path, same as Report/Block, gating #45's photo serve above.
+  app.put("/api/photo-albums/:owner/access-level", (req, res) => {
+    const result = photoAlbumStore.setAccessLevel(req.params.owner, req.body?.accessLevel);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ accessLevel: result.accessLevel });
+  });
+
+  app.get("/api/photo-albums/:owner/access-level", (req, res) => {
+    res.json({ accessLevel: photoAlbumStore.getAccessLevel(req.params.owner) });
+  });
+
+  app.post("/api/photo-albums/:owner/access-requests", (req, res) => {
+    const result = photoAlbumStore.requestAccess(req.body?.requester, req.params.owner);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ success: true });
+  });
+
+  // Self-declared trust boundary, same as Block's list endpoint: the owner
+  // param is client-supplied (chat identity isn't wired to real accounts
+  // yet), but only the claimed owner's own pending requests are returned —
+  // never anything that would leak one requester's interest to another.
+  app.get("/api/photo-albums/:owner/access-requests", (req, res) => {
+    res.json({ pending: photoAlbumStore.listPendingRequests(req.params.owner) });
+  });
+
+  app.post("/api/photo-albums/:owner/access-requests/:requester/respond", (req, res) => {
+    const result = photoAlbumStore.respondToRequest(req.params.owner, req.params.requester, req.body?.approve);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1007,6 +1059,7 @@ export function createApp(deps?: {
     webAuthnStore,
     duplicateAccountStore,
     discoveryVisibilityStore,
+    photoAlbumStore,
   };
 }
 

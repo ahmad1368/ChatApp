@@ -2086,6 +2086,96 @@ test("GET /api/photos/:id 404s for an unknown id", async () => {
   }
 });
 
+test("PUT /api/photo-albums/:owner/access-level sets and GET reads it back", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/photo-albums/alice/access-level`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessLevel: "private" }),
+    });
+    assert.equal(putRes.status, 200);
+
+    const getRes = await fetch(`${baseUrl}/api/photo-albums/alice/access-level`);
+    assert.deepEqual(await getRes.json(), { accessLevel: "private" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/photo-albums/:owner/access-level rejects an invalid level", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/photo-albums/alice/access-level`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessLevel: "hidden" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/photos/:id 403s a private album for anyone but the owner", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const id = uploaded.success ? uploaded.photo.id : "";
+    await fetch(`${baseUrl}/api/photo-albums/alice/access-level`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessLevel: "private" }),
+    });
+
+    const strangerRes = await fetch(`${baseUrl}/api/photos/${id}?viewer=bob`);
+    assert.equal(strangerRes.status, 403);
+
+    const ownerRes = await fetch(`${baseUrl}/api/photos/${id}?viewer=alice`);
+    assert.equal(ownerRes.status, 200);
+  } finally {
+    server.close();
+  }
+});
+
+test("request-access flow: pending until approved, then GET succeeds", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const id = uploaded.success ? uploaded.photo.id : "";
+    await fetch(`${baseUrl}/api/photo-albums/alice/access-level`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessLevel: "requestAccess" }),
+    });
+
+    const beforeRes = await fetch(`${baseUrl}/api/photos/${id}?viewer=bob`);
+    assert.equal(beforeRes.status, 403);
+
+    const requestRes = await fetch(`${baseUrl}/api/photo-albums/alice/access-requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requester: "bob" }),
+    });
+    assert.equal(requestRes.status, 201);
+
+    const pendingRes = await fetch(`${baseUrl}/api/photo-albums/alice/access-requests`);
+    assert.deepEqual(await pendingRes.json(), { pending: ["bob"] });
+
+    const respondRes = await fetch(`${baseUrl}/api/photo-albums/alice/access-requests/bob/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approve: true }),
+    });
+    assert.equal(respondRes.status, 200);
+
+    const afterRes = await fetch(`${baseUrl}/api/photos/${id}?viewer=bob`);
+    assert.equal(afterRes.status, 200);
+  } finally {
+    server.close();
+  }
+});
+
 const VALID_SHARED_DATE_PAYLOAD = {
   meetingWith: "Jordan",
   location: "Blue Bottle Coffee",
