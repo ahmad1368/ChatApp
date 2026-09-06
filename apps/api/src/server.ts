@@ -326,6 +326,37 @@ export function createApp(deps?: {
     res.json({ success: true });
   });
 
+  // Photo album, up to 9 photos (#61): a photo must already be uploaded via
+  // POST /api/photos before it can be added here — this endpoint only
+  // manages membership/order, not the raw bytes.
+  app.post("/api/photo-albums/:owner/photos", (req, res) => {
+    const photoId = req.body?.photoId;
+    const photo = typeof photoId === "string" ? photoStore.get(photoId) : undefined;
+    if (!photo || photo.author !== req.params.owner) {
+      res.status(400).json({ error: "photoId must reference a photo you uploaded" });
+      return;
+    }
+    const result = photoAlbumStore.addPhoto(req.params.owner, photoId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ photoIds: result.photoIds });
+  });
+
+  app.get("/api/photo-albums/:owner/photos", (req, res) => {
+    res.json({ photoIds: photoAlbumStore.listPhotos(req.params.owner) });
+  });
+
+  app.delete("/api/photo-albums/:owner/photos/:photoId", (req, res) => {
+    const result = photoAlbumStore.removePhoto(req.params.owner, req.params.photoId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ photoIds: result.photoIds });
+  });
+
   // "Share My Date": its own high-priority, dependency-free safety path,
   // same as Report/Block. Each trusted contact gets a distinct share code,
   // and the sharer can push a live status update or revoke access. This is

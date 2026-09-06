@@ -80,3 +80,66 @@ test("switching an album back to public grants access to everyone again", () => 
   store.setAccessLevel("alice", "public");
   assert.equal(store.canView("bob", "alice"), true);
 });
+
+test("listPhotos() starts empty", () => {
+  const store = new PhotoAlbumStore();
+  assert.deepEqual(store.listPhotos("alice"), []);
+});
+
+test("addPhoto() appends in order", () => {
+  const store = new PhotoAlbumStore();
+  store.addPhoto("alice", "1");
+  const result = store.addPhoto("alice", "2");
+  assert.equal(result.success, true);
+  assert.deepEqual(store.listPhotos("alice"), ["1", "2"]);
+});
+
+test("addPhoto() rejects a duplicate photoId", () => {
+  const store = new PhotoAlbumStore();
+  store.addPhoto("alice", "1");
+  const result = store.addPhoto("alice", "1");
+  assert.equal(result.success, false);
+});
+
+test("addPhoto() rejects a missing owner or photoId", () => {
+  const store = new PhotoAlbumStore();
+  assert.equal(store.addPhoto("", "1").success, false);
+  assert.equal(store.addPhoto("alice", "").success, false);
+});
+
+test("addPhoto() caps an album at 9 photos", () => {
+  const store = new PhotoAlbumStore();
+  for (let i = 0; i < 9; i++) {
+    assert.equal(store.addPhoto("alice", String(i)).success, true);
+  }
+  const result = store.addPhoto("alice", "overflow");
+  assert.equal(result.success, false);
+  assert.equal(store.listPhotos("alice").length, 9);
+});
+
+test("removePhoto() removes a photo and leaves the rest in order", () => {
+  const store = new PhotoAlbumStore();
+  store.addPhoto("alice", "1");
+  store.addPhoto("alice", "2");
+  store.addPhoto("alice", "3");
+  const result = store.removePhoto("alice", "2");
+  assert.equal(result.success, true);
+  assert.deepEqual(store.listPhotos("alice"), ["1", "3"]);
+});
+
+test("removing a photo frees a slot for a new one", () => {
+  const store = new PhotoAlbumStore();
+  for (let i = 0; i < 9; i++) store.addPhoto("alice", String(i));
+  store.removePhoto("alice", "0");
+  const result = store.addPhoto("alice", "new-photo");
+  assert.equal(result.success, true);
+  assert.equal(store.listPhotos("alice").length, 9);
+});
+
+test("each owner's album is independent", () => {
+  const store = new PhotoAlbumStore();
+  store.addPhoto("alice", "1");
+  store.addPhoto("bob", "2");
+  assert.deepEqual(store.listPhotos("alice"), ["1"]);
+  assert.deepEqual(store.listPhotos("bob"), ["2"]);
+});

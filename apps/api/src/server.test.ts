@@ -2727,3 +2727,88 @@ test("DELETE /api/auth/sessions/others logs out every other device, keeping the 
     server.close();
   }
 });
+
+test("POST /api/photo-albums/:owner/photos adds an uploaded photo to the album", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const id = uploaded.success ? uploaded.photo.id : "";
+
+    const res = await fetch(`${baseUrl}/api/photo-albums/alice/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId: id }),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(await res.json(), { photoIds: [id] });
+
+    const listRes = await fetch(`${baseUrl}/api/photo-albums/alice/photos`);
+    assert.deepEqual(await listRes.json(), { photoIds: [id] });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-albums/:owner/photos rejects a photoId uploaded by someone else", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("bob", "image/png", TINY_PNG_BASE64);
+    const id = uploaded.success ? uploaded.photo.id : "";
+
+    const res = await fetch(`${baseUrl}/api/photo-albums/alice/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId: id }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-albums/:owner/photos rejects a 10th photo", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    for (let i = 0; i < 9; i++) {
+      const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+      const id = uploaded.success ? uploaded.photo.id : "";
+      await fetch(`${baseUrl}/api/photo-albums/alice/photos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoId: id }),
+      });
+    }
+    const overflow = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const overflowId = overflow.success ? overflow.photo.id : "";
+    const res = await fetch(`${baseUrl}/api/photo-albums/alice/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId: overflowId }),
+    });
+    assert.equal(res.status, 400);
+
+    const listRes = await fetch(`${baseUrl}/api/photo-albums/alice/photos`);
+    assert.equal((await listRes.json()).photoIds.length, 9);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/photo-albums/:owner/photos/:photoId removes a photo from the album", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const id = uploaded.success ? uploaded.photo.id : "";
+    await fetch(`${baseUrl}/api/photo-albums/alice/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId: id }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/photo-albums/alice/photos/${id}`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { photoIds: [] });
+  } finally {
+    server.close();
+  }
+});
