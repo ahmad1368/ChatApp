@@ -23,6 +23,7 @@ import { UploadStore } from "./uploads";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
+import { BlockStore } from "./blocks";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -50,6 +51,7 @@ export function createApp(deps?: {
   onboardingStore: OnboardingStore;
   verificationStore: VerificationStore;
   reportStore: ReportStore;
+  blockStore: BlockStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -77,6 +79,7 @@ export function createApp(deps?: {
   const verificationStore = new VerificationStore();
   const onboardingStore = new OnboardingStore(verificationStore);
   const reportStore = new ReportStore();
+  const blockStore = new BlockStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -123,6 +126,33 @@ export function createApp(deps?: {
       return;
     }
     res.status(201).json({ id: result.report.id });
+  });
+
+  // Blocking is a safety-critical, high-priority path kept independent of
+  // any heavier service (matching, discovery, etc.) so it always works.
+  app.post("/api/blocks", (req, res) => {
+    const result = blockStore.block(req.body?.blockerAuthor, req.body?.blockedAuthor);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.record);
+  });
+
+  app.delete("/api/blocks", (req, res) => {
+    const removed = blockStore.unblock(req.body?.blockerAuthor, req.body?.blockedAuthor);
+    if (!removed) {
+      res.status(404).json({ error: "Block not found" });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  // Self-lookup only: returns the authors *this* blocker has blocked, never
+  // who has blocked a given author (that would leak block state to the
+  // blocked party).
+  app.get("/api/blocks/:blockerAuthor", (req, res) => {
+    res.json({ blockedAuthors: blockStore.getBlockedAuthors(req.params.blockerAuthor) });
   });
 
   // No GET endpoint for verification selfies, deliberately — see the
@@ -193,7 +223,13 @@ export function createApp(deps?: {
   // as before (full history, plain array).
   app.get("/api/rooms/:roomId/messages", (req, res) => {
     const { roomId } = req.params;
-    const all = messagesByRoom.get(roomId) ?? [];
+    const viewer = typeof req.query.viewer === "string" ? req.query.viewer : undefined;
+    const unfiltered = messagesByRoom.get(roomId) ?? [];
+    // Blocking is mutual for "not re-encountering" purposes — see blocks.ts.
+    // The client also filters message:new the same way, since this app has
+    // no per-viewer socket delivery to filter against without breaking
+    // #20's Redis-backed multi-instance broadcast.
+    const all = viewer ? unfiltered.filter((m) => !blockStore.isMutuallyBlocked(viewer, m.author)) : unfiltered;
 
     const since = typeof req.query.since === "string" ? req.query.since : undefined;
     if (since !== undefined) {
@@ -673,6 +709,7 @@ export function createApp(deps?: {
     onboardingStore,
     verificationStore,
     reportStore,
+    blockStore,
   };
 }
 

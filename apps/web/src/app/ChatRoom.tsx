@@ -81,6 +81,7 @@ function MessageRow({
   onReply,
   onCopyLink,
   onReport,
+  onBlock,
   isOwnMessage,
 }: {
   message: ChatMessage;
@@ -89,6 +90,7 @@ function MessageRow({
   onReply: (target: ReplyTarget) => void;
   onCopyLink: (messageId: string) => void;
   onReport: (target: { author: string; messageId: string }) => void;
+  onBlock: (author: string) => void;
   isOwnMessage: boolean;
 }) {
   const { dragX, handlers } = useSwipeToReply(() =>
@@ -137,6 +139,11 @@ function MessageRow({
             ⚠
           </button>
         )}
+        {!isOwnMessage && (
+          <button className="chat-app__report-button" onClick={() => onBlock(message.author)} title={`Block ${message.author}`}>
+            🚫
+          </button>
+        )}
       </div>
     </div>
   );
@@ -181,6 +188,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [reportTarget, setReportTarget] = useState<{ author: string; messageId: string } | null>(null);
+  const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -219,7 +227,9 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   // below pages further back on demand.
   const syncSince = (since?: string) =>
     fetch(
-      `${API_URL}/api/rooms/${roomId}/messages${since ? `?since=${encodeURIComponent(since)}` : `?limit=${PAGE_SIZE}`}`
+      `${API_URL}/api/rooms/${roomId}/messages${
+        since ? `?since=${encodeURIComponent(since)}` : `?limit=${PAGE_SIZE}`
+      }&viewer=${encodeURIComponent(author)}`
     )
       .then((res) => {
         if (!since) setHasMore(res.headers.get("x-has-more") === "true");
@@ -279,7 +289,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     const oldest = messages[0];
     if (!oldest || loadingMore) return;
     setLoadingMore(true);
-    fetch(`${API_URL}/api/rooms/${roomId}/messages?limit=${PAGE_SIZE}&before=${oldest.id}`)
+    fetch(`${API_URL}/api/rooms/${roomId}/messages?limit=${PAGE_SIZE}&before=${oldest.id}&viewer=${encodeURIComponent(author)}`)
       .then((res) => {
         setHasMore(res.headers.get("x-has-more") === "true");
         return res.json();
@@ -287,6 +297,45 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       .then((older: ChatMessage[]) => setMessages((prev) => [...older, ...prev]))
       .finally(() => setLoadingMore(false));
   };
+
+  const refreshBlockedAuthors = () => {
+    fetch(`${API_URL}/api/blocks/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setBlockedAuthors(body.blockedAuthors ?? []))
+      .catch(() => setBlockedAuthors([]));
+  };
+
+  useEffect(() => {
+    refreshBlockedAuthors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const blockUser = async (blockedAuthor: string) => {
+    if (!confirm(`Block ${blockedAuthor}? You won't see each other's messages anymore.`)) return;
+    await fetch(`${API_URL}/api/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockerAuthor: author, blockedAuthor }),
+    });
+    setBlockedAuthors((prev) => [...prev, blockedAuthor]);
+  };
+
+  const unblockUser = async (blockedAuthor: string) => {
+    await fetch(`${API_URL}/api/blocks`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockerAuthor: author, blockedAuthor }),
+    });
+    setBlockedAuthors((prev) => prev.filter((a) => a !== blockedAuthor));
+  };
+
+  // The server also filters blocked authors out of the initial/paginated
+  // REST fetch (see `viewer=` above), but a live message:new delivered over
+  // the socket bypasses that — this app broadcasts to the whole room rather
+  // than filtering per-socket (doing so would break #20's Redis-backed
+  // multi-instance delivery), so the client is the one place that can
+  // reliably keep a blocked author out of view for every message path.
+  const visibleMessages = messages.filter((m) => !blockedAuthors.includes(m.author));
 
   const enableWebPush = async () => {
     setWebPushStatus("subscribing");
@@ -583,7 +632,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             {loadingMore ? "Loading…" : "Load older messages"}
           </button>
         )}
-        {messages.map((m) => (
+        {visibleMessages.map((m) => (
           <MessageRow
             key={m.id}
             message={m}
@@ -595,6 +644,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             onReply={setReplyTarget}
             onCopyLink={copyMessageLink}
             onReport={setReportTarget}
+            onBlock={blockUser}
             isOwnMessage={m.author === author}
           />
         ))}
@@ -653,6 +703,21 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           {t("send")}
         </button>
       </div>
+      {blockedAuthors.length > 0 && (
+        <div className="chat-app__guest-banner">
+          <strong>Blocked users:</strong>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
+            {blockedAuthors.map((blockedAuthor) => (
+              <li key={blockedAuthor}>
+                {blockedAuthor}{" "}
+                <button className="chat-app__link-button" onClick={() => unblockUser(blockedAuthor)}>
+                  Unblock
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
         <ReportDialog

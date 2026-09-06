@@ -28,6 +28,15 @@ export interface SendMessagePayload {
 
 export const DEFAULT_ROOM_ID = "general";
 
+export interface BlockPayload {
+  blockerAuthor: string;
+  blockedAuthor: string;
+}
+
+export interface BlockRecord extends BlockPayload {
+  createdAt: string;
+}
+
 // Categorized report reasons — matches the "Report" half of Bumble's
 // Report/Block/SOS safety trio (Block and SOS are separate issues).
 export const REPORT_REASONS = [
