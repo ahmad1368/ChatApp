@@ -45,6 +45,7 @@ npm run dev:web   # http://localhost:3000
 - #22 Google Sign-In — server-side ID token verification (`google-auth-library`), JWT session issuance, and a Google Identity Services button that gracefully degrades when unconfigured
 - #23 Sign in with Apple — server-side ID token verification against Apple's JWKS, JWT session issuance, and a Sign in with Apple button that gracefully degrades when unconfigured
 - #24 Sign in with Facebook — server-side access token verification via the Graph API's `debug_token`, JWT session issuance, gracefully-degrading button
+- #25 Account recovery via email — `/recover` two-step flow reinterpreting "password recovery" for this passwordless app (SMS recovery is already covered by #21's phone OTP)
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`

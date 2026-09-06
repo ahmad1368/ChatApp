@@ -18,10 +18,10 @@ function makePaginationMessage(id: string, index: number): ChatMessage {
 }
 
 function listen() {
-  const { app, messagesByRoom, errorReportStore, otpService } = createApp();
+  const { app, messagesByRoom, errorReportStore, otpService, recoveryCodeService } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
-  return { server, baseUrl: `http://127.0.0.1:${port}`, messagesByRoom, errorReportStore, otpService };
+  return { server, baseUrl: `http://127.0.0.1:${port}`, messagesByRoom, errorReportStore, otpService, recoveryCodeService };
 }
 
 function listenWithGoogleAuth(googleAuthService: GoogleAuthService) {
@@ -780,6 +780,75 @@ test("POST /api/auth/facebook returns the same user id on repeat sign-in", async
       body: JSON.stringify({ accessToken: "valid-token" }),
     }).then((r) => r.json());
     assert.equal(first.user.id, second.user.id);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/recovery/request-code rejects an invalid email", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/recovery/request-code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "not-an-email" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/recovery/request-code accepts a valid email and never echoes the code", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/recovery/request-code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "bob@example.com" }),
+    });
+    assert.equal(res.status, 202);
+    const body = await res.json();
+    assert.equal(body.code, undefined);
+    assert.equal(/\d{6}/.test(JSON.stringify(body)), false);
+  } finally {
+    server.close();
+  }
+});
+
+test("account recovery completes end-to-end and issues tokens", async () => {
+  const { server, baseUrl, recoveryCodeService } = listen();
+  try {
+    const email = "carol@example.com";
+    const requested = recoveryCodeService.requestCode(email);
+    assert.ok("code" in requested);
+
+    const res = await fetch(`${baseUrl}/api/auth/recovery/verify-code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code: (requested as { code: string }).code }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.user.email, email);
+    assert.ok(body.tokens.accessToken);
+    assert.ok(body.tokens.refreshToken);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/recovery/verify-code rejects a wrong code", async () => {
+  const { server, baseUrl, recoveryCodeService } = listen();
+  try {
+    const email = "dave@example.com";
+    recoveryCodeService.requestCode(email);
+    const res = await fetch(`${baseUrl}/api/auth/recovery/verify-code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code: "000000" }),
+    });
+    assert.equal(res.status, 400);
   } finally {
     server.close();
   }

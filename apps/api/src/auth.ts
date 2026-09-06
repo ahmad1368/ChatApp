@@ -87,6 +87,7 @@ export class UserStore {
   private usersByGoogleId = new Map<string, AuthUser>();
   private usersByAppleId = new Map<string, AuthUser>();
   private usersByFacebookId = new Map<string, AuthUser>();
+  private usersByEmail = new Map<string, AuthUser>();
 
   findOrCreate(phoneNumber: string): AuthUser {
     const existing = this.usersByPhone.get(phoneNumber);
@@ -146,6 +147,23 @@ export class UserStore {
       createdAt: new Date().toISOString(),
     };
     this.usersByFacebookId.set(profile.facebookId, user);
+    return user;
+  }
+
+  // Email-based account recovery (see recovery.ts): a user with no phone
+  // access anymore is found-or-created by email, same as every other
+  // provider identifier.
+  findOrCreateByEmail(email: string): AuthUser {
+    const existing = this.usersByEmail.get(email);
+    if (existing) return existing;
+
+    const user: AuthUser = {
+      id: crypto.randomUUID(),
+      email,
+      displayName: email.split("@")[0],
+      createdAt: new Date().toISOString(),
+    };
+    this.usersByEmail.set(email, user);
     return user;
   }
 }

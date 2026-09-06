@@ -7,6 +7,7 @@ import { normalizePhoneNumber, OtpService, TokenService, UserStore } from "./aut
 import { GoogleAuthService } from "./googleAuth";
 import { AppleAuthService } from "./appleAuth";
 import { FacebookAuthService } from "./facebookAuth";
+import { normalizeEmail, RecoveryCodeService } from "./recovery";
 import { RateLimiter } from "./rateLimiter";
 import { createRedisAdapterIfConfigured } from "./redisAdapter";
 import { ErrorReportStore } from "./errorReports";
@@ -33,6 +34,7 @@ export function createApp(deps?: {
   pushService: PushService;
   errorReportStore: ErrorReportStore;
   otpService: OtpService;
+  recoveryCodeService: RecoveryCodeService;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -49,6 +51,7 @@ export function createApp(deps?: {
   const uploadStore = new UploadStore();
   const errorReportStore = new ErrorReportStore();
   const otpService = new OtpService();
+  const recoveryCodeService = new RecoveryCodeService();
   const userStore = new UserStore();
   const tokenService = new TokenService();
   // Injectable so tests can exercise real branching logic (configured vs.
@@ -310,6 +313,49 @@ export function createApp(deps?: {
     res.json({ user, tokens });
   });
 
+  // Account recovery for this passwordless app: an email-based access-
+  // recovery code for when a user can no longer complete phone
+  // verification (lost/changed number). Mirrors #21's OTP mechanics.
+  app.post("/api/auth/recovery/request-code", (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    if (!email) {
+      res.status(400).json({ error: "A valid email address is required" });
+      return;
+    }
+
+    const result = recoveryCodeService.requestCode(email);
+    if ("error" in result) {
+      res.status(429).json({ error: "Please wait before requesting another code", retryAfterMs: result.retryAfterMs });
+      return;
+    }
+
+    // Stand-in for a real email provider (SES, SendGrid, etc.), which needs
+    // credentials this environment doesn't have. Never included in the
+    // HTTP response.
+    console.log(`[recovery] ${email}: ${result.code} (expires in 15 minutes)`);
+    res.status(202).json({ message: "Recovery code sent" });
+  });
+
+  app.post("/api/auth/recovery/verify-code", (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    const code = typeof req.body?.code === "string" ? req.body.code : undefined;
+    if (!email || !code) {
+      res.status(400).json({ error: "email and code are required" });
+      return;
+    }
+
+    const result = recoveryCodeService.verifyCode(email, code);
+    if (!result.success) {
+      const status = result.error === "invalid" ? 400 : result.error === "expired" ? 410 : 429;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+
+    const user = userStore.findOrCreateByEmail(email);
+    const tokens = tokenService.issueTokens(user.id);
+    res.status(200).json({ user, tokens });
+  });
+
   // Phone + OTP signup. The chat itself still uses anonymous guest
   // identities — wiring this auth into ChatRoom is left for a follow-up
   // once more auth/profile issues land, so this stays additive.
@@ -367,7 +413,7 @@ export function createApp(deps?: {
     res.json({ tokens });
   });
 
-  return { app, messagesByRoom, pushService, errorReportStore, otpService };
+  return { app, messagesByRoom, pushService, errorReportStore, otpService, recoveryCodeService };
 }
 
 export async function createChatServer() {
