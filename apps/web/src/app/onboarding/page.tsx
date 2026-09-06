@@ -9,7 +9,9 @@ import {
   GENDER_OPTION_LABELS,
   GenderOption,
   MAX_PREFERRED_AGE,
+  MAX_SEARCH_RADIUS_KM,
   MIN_PREFERRED_AGE,
+  MIN_SEARCH_RADIUS_KM,
   ONBOARDING_STEPS,
   ORIENTATION_OPTIONS,
   ORIENTATION_OPTION_LABELS,
@@ -201,6 +203,73 @@ function AgeRangeStep({ onSubmit, error }: { onSubmit: (data: { min: number; max
   );
 }
 
+function SearchRadiusStep({
+  onSubmit,
+  error,
+}: {
+  onSubmit: (data: { radiusKm: number; location?: { lat: number; lng: number } }) => void;
+  error: string | null;
+}) {
+  const [radiusKm, setRadiusKm] = useState(25);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationStatus, setLocationStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
+
+  const requestLocation = () => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocationStatus("denied");
+      return;
+    }
+    setLocationStatus("requesting");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setLocationStatus("granted");
+      },
+      () => setLocationStatus("denied"),
+      { timeout: 10_000 }
+    );
+  };
+
+  return (
+    <div>
+      <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>How far should we look?</label>
+      <p style={{ fontSize: 18, fontWeight: 600, margin: "8px 0 16px" }}>
+        {radiusKm} km {radiusKm === MAX_SEARCH_RADIUS_KM ? "(anywhere)" : ""}
+      </p>
+      {error && <p style={{ color: "#c0392b", fontSize: 13 }}>{error}</p>}
+      <input
+        type="range"
+        min={MIN_SEARCH_RADIUS_KM}
+        max={MAX_SEARCH_RADIUS_KM}
+        value={radiusKm}
+        onChange={(e) => setRadiusKm(Number(e.target.value))}
+        style={{ width: "100%", marginBottom: 16 }}
+      />
+
+      <div style={{ marginBottom: 16, padding: 12, background: "#f9fafb", borderRadius: 8, fontSize: 13 }}>
+        {locationStatus === "granted" ? (
+          <span style={{ color: "#16a34a" }}>Location enabled — we'll only ever share your approximate area, never an exact address.</span>
+        ) : locationStatus === "denied" ? (
+          <span style={{ color: "#6b7280" }}>No location — you can still set a radius, but we won't be able to sort by distance yet.</span>
+        ) : (
+          <>
+            <p style={{ margin: "0 0 8px", color: "#6b7280" }}>
+              Enable location to find people near you. We only ever use an approximate area — never your exact address.
+            </p>
+            <button onClick={requestLocation} disabled={locationStatus === "requesting"} style={{ padding: 8 }}>
+              {locationStatus === "requesting" ? "Requesting…" : "Enable location"}
+            </button>
+          </>
+        )}
+      </div>
+
+      <button onClick={() => onSubmit({ radiusKm, location: location ?? undefined })} style={{ width: "100%", padding: 10 }}>
+        Continue
+      </button>
+    </div>
+  );
+}
+
 export default function OnboardingPage() {
   const auth = loadStoredAuth();
   const [state, setState] = useState<OnboardingState | null>(null);
@@ -263,7 +332,9 @@ export default function OnboardingPage() {
         ))}
       </div>
 
-      {state.currentStep === "ageRange" ? (
+      {state.currentStep === "searchRadius" ? (
+        <SearchRadiusStep error={error} onSubmit={(data) => submitStep("searchRadius", data)} />
+      ) : state.currentStep === "ageRange" ? (
         <AgeRangeStep error={error} onSubmit={(data) => submitStep("ageRange", data)} />
       ) : state.currentStep === "orientation" ? (
         <OrientationStep error={error} onSubmit={(data) => submitStep("orientation", data)} />

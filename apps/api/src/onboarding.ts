@@ -4,7 +4,9 @@ import {
   GENDER_OPTIONS,
   GenderOption,
   MAX_PREFERRED_AGE,
+  MAX_SEARCH_RADIUS_KM,
   MIN_PREFERRED_AGE,
+  MIN_SEARCH_RADIUS_KM,
   ONBOARDING_STEPS,
   ORIENTATION_OPTIONS,
   OnboardingProfile,
@@ -16,6 +18,11 @@ import {
 const MAX_DISPLAY_NAME_LENGTH = 40;
 const MAX_BIO_LENGTH = 280;
 const MAX_CUSTOM_TEXT_LENGTH = 60;
+// Rounding to 2 decimal degrees is ~1.1km of imprecision at the equator —
+// enough to compute "nearby" without ever storing/exposing an exact
+// coordinate. This is a hard server-side rule, not a client option: the
+// server rounds whatever it receives regardless of what the client sent.
+const LOCATION_PRECISION_DECIMALS = 2;
 
 export type SubmitStepResult = { success: true; state: OnboardingState } | { success: false; error: string };
 
@@ -34,6 +41,11 @@ function isGenderOption(value: unknown): value is GenderOption {
 
 function isOrientationOption(value: unknown): value is OrientationOption {
   return typeof value === "string" && (ORIENTATION_OPTIONS as readonly string[]).includes(value);
+}
+
+function roundCoordinate(value: number): number {
+  const factor = 10 ** LOCATION_PRECISION_DECIMALS;
+  return Math.round(value * factor) / factor;
 }
 
 function validateStepData(step: OnboardingStep, data: unknown): { value: Partial<OnboardingProfile> } | { error: string } {
@@ -98,6 +110,29 @@ function validateStepData(step: OnboardingStep, data: unknown): { value: Partial
     }
     if (min > max) return { error: "min cannot be greater than max" };
     return { value: { preferredAgeRange: { min, max } } };
+  }
+  if (step === "searchRadius") {
+    const { radiusKm, location } = (typeof data === "object" && data !== null ? data : {}) as {
+      radiusKm?: unknown;
+      location?: unknown;
+    };
+    if (typeof radiusKm !== "number" || !Number.isInteger(radiusKm)) return { error: "radiusKm must be a whole number" };
+    if (radiusKm < MIN_SEARCH_RADIUS_KM || radiusKm > MAX_SEARCH_RADIUS_KM) {
+      return { error: `radiusKm must be between ${MIN_SEARCH_RADIUS_KM} and ${MAX_SEARCH_RADIUS_KM}` };
+    }
+
+    // Location is optional — geolocation permission may be denied, and the
+    // radius preference is still meaningful without it (applied once a
+    // location is available some other way, e.g. a manually entered city
+    // in a future issue).
+    if (location === undefined || location === null) {
+      return { value: { searchRadiusKm: radiusKm, location: undefined } };
+    }
+    const { lat, lng } = location as { lat?: unknown; lng?: unknown };
+    if (typeof lat !== "number" || typeof lng !== "number" || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return { error: "location must have valid lat/lng coordinates" };
+    }
+    return { value: { searchRadiusKm: radiusKm, location: { lat: roundCoordinate(lat), lng: roundCoordinate(lng) } } };
   }
   return { error: "Unknown step" };
 }

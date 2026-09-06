@@ -1405,7 +1405,7 @@ async function stepThroughToAgeRange(baseUrl: string, authHeaders: Record<string
   });
 }
 
-test("POST /api/onboarding/step completes the age range step and persists between requests", async () => {
+test("POST /api/onboarding/step completes the age range step, advancing to search radius, and persists between requests", async () => {
   const { server, baseUrl, otpService } = listen();
   try {
     const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110020");
@@ -1419,13 +1419,13 @@ test("POST /api/onboarding/step completes the age range step and persists betwee
     });
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.currentStep, "complete");
+    assert.equal(body.currentStep, "searchRadius");
     assert.deepEqual(body.profile.preferredAgeRange, { min: 22, max: 40 });
 
     const resumed = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) =>
       r.json()
     );
-    assert.equal(resumed.currentStep, "complete");
+    assert.equal(resumed.currentStep, "searchRadius");
   } finally {
     server.close();
   }
@@ -1475,6 +1475,96 @@ test("POST /api/onboarding/step rejects submitting the age range step out of ord
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ step: "ageRange", data: { min: 25, max: 35 } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+async function stepThroughToSearchRadius(baseUrl: string, authHeaders: Record<string, string>) {
+  await stepThroughToAgeRange(baseUrl, authHeaders);
+  await fetch(`${baseUrl}/api/onboarding/step`, {
+    method: "POST",
+    headers: authHeaders,
+    body: JSON.stringify({ step: "ageRange", data: { min: 22, max: 40 } }),
+  });
+}
+
+test("POST /api/onboarding/step completes the search radius step with a rounded location and persists", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110024");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToSearchRadius(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "searchRadius", data: { radiusKm: 30, location: { lat: 51.507351, lng: -0.127758 } } }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.currentStep, "complete");
+    assert.equal(body.profile.searchRadiusKm, 30);
+    assert.deepEqual(body.profile.location, { lat: 51.51, lng: -0.13 });
+
+    const resumed = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) =>
+      r.json()
+    );
+    assert.equal(resumed.currentStep, "complete");
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step completes without a location when geolocation is denied", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110025");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToSearchRadius(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "searchRadius", data: { radiusKm: 80 } }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.profile.searchRadiusKm, 80);
+    assert.equal(body.profile.location, undefined);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects a search radius outside the allowed bounds", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110026");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToSearchRadius(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "searchRadius", data: { radiusKm: 500 } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects submitting the search radius step out of order", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110027");
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ step: "searchRadius", data: { radiusKm: 25 } }),
     });
     assert.equal(res.status, 400);
   } finally {

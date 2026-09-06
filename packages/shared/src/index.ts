@@ -49,7 +49,16 @@ export interface VerifyOtpPayload {
   code: string;
 }
 
-export const ONBOARDING_STEPS = ["displayName", "avatar", "bio", "datingGoal", "gender", "orientation", "ageRange"] as const;
+export const ONBOARDING_STEPS = [
+  "displayName",
+  "avatar",
+  "bio",
+  "datingGoal",
+  "gender",
+  "orientation",
+  "ageRange",
+  "searchRadius",
+] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
 export const DATING_GOALS = ["marriage", "friendship", "casual"] as const;
@@ -135,6 +144,17 @@ export interface AgeRange {
   max: number;
 }
 
+export const MIN_SEARCH_RADIUS_KM = 1;
+export const MAX_SEARCH_RADIUS_KM = 160; // ~100 miles, doubling as "anywhere"
+
+// Deliberately coarse — see onboarding.ts's rounding. Never store or expose
+// a user's exact coordinates; a few hundred meters of imprecision is enough
+// to compute "nearby" without pinpointing someone's location.
+export interface CoarseLocation {
+  lat: number;
+  lng: number;
+}
+
 export interface OnboardingProfile {
   displayName?: string;
   avatarUrl?: string;
@@ -148,6 +168,8 @@ export interface OnboardingProfile {
   // is just "select all" rather than a separate special case.
   interestedIn?: GenderOption[];
   preferredAgeRange?: AgeRange;
+  searchRadiusKm?: number;
+  location?: CoarseLocation;
 }
 
 export interface OnboardingState {
