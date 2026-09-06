@@ -120,6 +120,17 @@ export function createApp(deps?: {
     res.status(201).json({ verified: true });
   });
 
+  // Public-safe badge lookup: a stable read API for "is this user verified"
+  // that any future profile-card UI can call, independent of onboarding
+  // state (which represents in-progress signup, not a durable profile
+  // lookup). Returns only the boolean — never the underlying selfie. Unlike
+  // the onboarding/verification-submission endpoints, this is intentionally
+  // NOT gated behind requireAuth: a verified badge is meant to be visible
+  // to other users viewing this profile, not just its owner.
+  app.get("/api/users/:userId/badge", (req, res) => {
+    res.json({ verified: verificationStore.isVerified(req.params.userId) });
+  });
+
   // Server-persisted onboarding state machine: gated behind requireAuth
   // (rather than trusting a :userId URL param, as the original branch
   // documented as a known gap before #21-#25's TokenService existed) so one

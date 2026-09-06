@@ -1683,3 +1683,47 @@ test("POST /api/onboarding/step rejects submitting the selfie verification step 
     server.close();
   }
 });
+
+test("GET /api/users/:userId/badge reports unverified for a user who never submitted a selfie", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/users/user-1/badge`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { verified: false });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/users/:userId/badge reports verified after a selfie is accepted, without exposing the image", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110032");
+    const decoded = JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString());
+
+    await fetch(`${baseUrl}/api/verification/selfie`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/users/${decoded.sub}/badge`);
+    const body = await res.json();
+    assert.deepEqual(body, { verified: true });
+    assert.equal("selfie" in body, false);
+    assert.equal("data" in body, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/users/:userId/badge is independent per user", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/users/some-other-user/badge`);
+    const body = await res.json();
+    assert.equal(body.verified, false);
+  } finally {
+    server.close();
+  }
+});

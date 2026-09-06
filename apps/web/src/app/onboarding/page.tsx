@@ -21,6 +21,7 @@ import {
 import { loadStoredAuth } from "../authClient";
 import AvatarCropper from "../AvatarCropper";
 import LiveSelfieCapture from "../LiveSelfieCapture";
+import VerifiedBadge from "../VerifiedBadge";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -372,9 +373,9 @@ export default function OnboardingPage() {
       <main style={{ maxWidth: 360, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
         <h1>You're all set!</h1>
         <p style={{ color: "#6b7280" }}>
-          Welcome, {state.profile.displayName}. Looking for{" "}
+          Welcome, {state.profile.displayName}
+          {state.profile.isSelfieVerified && <VerifiedBadge />}. Looking for{" "}
           {state.profile.datingGoal && DATING_GOAL_LABELS[state.profile.datingGoal].toLowerCase()}.
-          {state.profile.isSelfieVerified ? " Your identity is verified." : ""}
         </p>
       </main>
     );

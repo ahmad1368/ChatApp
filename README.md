@@ -57,6 +57,7 @@ npm run dev:web   # http://localhost:3000
 - #34 Avatar upload and crop — replaces the onboarding avatar step's URL paste with a real upload + drag/zoom circular crop, backed by the existing #12 upload store
 - #35 Automatic face detection in the main photo — on-device MediaPipe face detection during avatar crop, with a soft "use anyway" warning rather than a hard block
 - #36 Live selfie verification — ninth onboarding step: live camera capture (never a picked file) + on-device face-presence check, stored privately with only a boolean "verified" flag ever exposed to clients, gated behind a verified access token
+- #37 Verified badge — `GET /api/users/:userId/badge` (boolean-only, no image exposure, intentionally public/unauthenticated) plus a reusable blue-checkmark `VerifiedBadge` component shown after selfie verification
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`
