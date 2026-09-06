@@ -71,46 +71,42 @@ export default function ChatRoom() {
   };
 
   return (
-    <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <main className="chat-app">
+      <div className="chat-app__header">
         <h1>ChatApp</h1>
-        <div style={{ display: "flex", gap: 12 }}>
-          <Link href={`/privacy?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
-            Privacy
-          </Link>
-          <Link href={`/privacy/export?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
-            Download my data
-          </Link>
-          <Link href={`/privacy/location?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
-            Location privacy
-          </Link>
+        <div className="chat-app__header-links">
+          <Link href={`/privacy?author=${encodeURIComponent(author)}`}>Privacy</Link>
+          <Link href={`/privacy/export?author=${encodeURIComponent(author)}`}>Download my data</Link>
+          <Link href={`/privacy/location?author=${encodeURIComponent(author)}`}>Location privacy</Link>
         </div>
       </div>
       <p
         role="status"
-        style={{ fontSize: 12, color: syncStatus === "offline" ? "#c0392b" : "#6b7280", margin: "0 0 8px" }}
+        className={`chat-app__status${syncStatus === "offline" ? " chat-app__status--offline" : ""}`}
       >
         {syncStatus === "connecting" && "Connecting…"}
         {syncStatus === "synced" && "Synced"}
         {syncStatus === "offline" && "Offline — reconnecting…"}
       </p>
-      <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12, minHeight: 240, marginBottom: 12 }}>
+      <div className="chat-app__messages">
         {messages.map((m) => (
-          <div key={m.id} style={{ marginBottom: 6 }}>
+          <div key={m.id} className="chat-app__message">
             <strong>{m.author}: </strong>
             <span>{m.text}</span>
           </div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="chat-app__composer">
         <input
+          className="chat-app__input"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Type a message"
-          style={{ flex: 1, padding: 8 }}
         />
-        <button onClick={sendMessage}>Send</button>
+        <button className="chat-app__send" onClick={sendMessage}>
+          Send
+        </button>
       </div>
     </main>
   );
