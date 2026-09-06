@@ -24,9 +24,13 @@ export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMes
     res.json({ status: "ok" });
   });
 
+  // `since` (ISO timestamp) lets a reconnecting client fetch only the
+  // messages it missed instead of the full room history.
   app.get("/api/rooms/:roomId/messages", (req, res) => {
     const { roomId } = req.params;
-    res.json(messagesByRoom.get(roomId) ?? []);
+    const since = typeof req.query.since === "string" ? req.query.since : undefined;
+    const all = messagesByRoom.get(roomId) ?? [];
+    res.json(since ? all.filter((m) => m.createdAt > since) : all);
   });
 
   // GDPR data portability: its own high-priority, dependency-free path,

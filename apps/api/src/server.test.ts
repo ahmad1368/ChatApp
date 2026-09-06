@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AddressInfo } from "net";
+import { ChatMessage } from "@chatapp/shared";
 import { createApp } from "./server";
 
 function listen() {
@@ -9,6 +10,57 @@ function listen() {
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}`, messagesByRoom };
 }
+
+test("GET /health reports healthy", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/health`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { status: "ok" });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages returns an empty history for a room with no messages", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/empty-room/messages`);
+    assert.deepEqual(await res.json(), []);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages?since= returns only messages after that timestamp, for reconnect sync", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  const older: ChatMessage = {
+    id: "1",
+    roomId: "room-a",
+    author: "alice",
+    text: "hi",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  const newer: ChatMessage = {
+    id: "2",
+    roomId: "room-a",
+    author: "bob",
+    text: "hey",
+    createdAt: "2026-01-01T00:01:00.000Z",
+  };
+  messagesByRoom.set("room-a", [older, newer]);
+  try {
+    const full = await fetch(`${baseUrl}/api/rooms/room-a/messages`).then((r) => r.json());
+    assert.deepEqual(full, [older, newer]);
+
+    const sinceOlder = await fetch(
+      `${baseUrl}/api/rooms/room-a/messages?since=${encodeURIComponent(older.createdAt)}`
+    ).then((r) => r.json());
+    assert.deepEqual(sinceOlder, [newer]);
+  } finally {
+    server.close();
+  }
+});
 
 test("DELETE /api/account/:author erases only that author's messages", async () => {
   const { server, baseUrl, messagesByRoom } = listen();
