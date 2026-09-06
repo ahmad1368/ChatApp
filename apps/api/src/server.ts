@@ -3,6 +3,7 @@ import express, { Express } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
+import { normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
 import { RateLimiter } from "./rateLimiter";
 import { createRedisAdapterIfConfigured } from "./redisAdapter";
 import { ErrorReportStore } from "./errorReports";
@@ -24,6 +25,7 @@ export function createApp(): {
   messagesByRoom: Map<string, ChatMessage[]>;
   pushService: PushService;
   errorReportStore: ErrorReportStore;
+  otpService: OtpService;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -39,6 +41,9 @@ export function createApp(): {
   const pushService = new PushService();
   const uploadStore = new UploadStore();
   const errorReportStore = new ErrorReportStore();
+  const otpService = new OtpService();
+  const userStore = new UserStore();
+  const tokenService = new TokenService();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -214,7 +219,64 @@ export function createApp(): {
     res.status(202).json({ id: report.id });
   });
 
-  return { app, messagesByRoom, pushService, errorReportStore };
+  // Phone + OTP signup. The chat itself still uses anonymous guest
+  // identities — wiring this auth into ChatRoom is left for a follow-up
+  // once more auth/profile issues land, so this stays additive.
+  app.post("/api/auth/signup/request-otp", (req, res) => {
+    const phoneNumber = normalizePhoneNumber(req.body?.phoneNumber);
+    if (!phoneNumber) {
+      res.status(400).json({ error: "A valid phone number (E.164-ish, e.g. +15551234567) is required" });
+      return;
+    }
+
+    const result = otpService.requestOtp(phoneNumber);
+    if ("error" in result) {
+      res.status(429).json({ error: "Please wait before requesting another code", retryAfterMs: result.retryAfterMs });
+      return;
+    }
+
+    // Stand-in for a real SMS provider (Twilio, etc.), which needs
+    // credentials this environment doesn't have. The code is deliberately
+    // never included in the HTTP response.
+    console.log(`[otp] ${phoneNumber}: ${result.code} (expires in 5 minutes)`);
+    res.status(202).json({ message: "Verification code sent" });
+  });
+
+  app.post("/api/auth/signup/verify-otp", (req, res) => {
+    const phoneNumber = normalizePhoneNumber(req.body?.phoneNumber);
+    const code = typeof req.body?.code === "string" ? req.body.code : undefined;
+    if (!phoneNumber || !code) {
+      res.status(400).json({ error: "phoneNumber and code are required" });
+      return;
+    }
+
+    const result = otpService.verifyOtp(phoneNumber, code);
+    if (!result.success) {
+      const status = result.error === "invalid" ? 400 : result.error === "expired" ? 410 : 429;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+
+    const user = userStore.findOrCreate(phoneNumber);
+    const tokens = tokenService.issueTokens(user.id);
+    res.status(200).json({ user, tokens });
+  });
+
+  app.post("/api/auth/refresh", (req, res) => {
+    const refreshToken = typeof req.body?.refreshToken === "string" ? req.body.refreshToken : undefined;
+    if (!refreshToken) {
+      res.status(400).json({ error: "refreshToken is required" });
+      return;
+    }
+    const tokens = tokenService.refresh(refreshToken);
+    if (!tokens) {
+      res.status(401).json({ error: "Invalid or expired refresh token" });
+      return;
+    }
+    res.json({ tokens });
+  });
+
+  return { app, messagesByRoom, pushService, errorReportStore, otpService };
 }
 
 export async function createChatServer() {

@@ -41,6 +41,7 @@ npm run dev:web   # http://localhost:3000
 - #18 In-app update system — service worker update detection with an "Update now" prompt, the web equivalent of the Play Store in-app update flow
 - #19 Data Saver Mode — a persistent, user-controlled toggle (defaulting to the OS Data Saver signal) that holds off loading messages/opening the live connection until the user asks for it
 - #20 High-concurrency architecture readiness — optional Redis adapter for multi-instance Socket.io broadcasts, per-socket message rate limiting, and graceful shutdown
+- #21 Phone number + OTP signup — `/signup` two-step flow, backend OTP request/verify with expiry/attempt limits/resend cooldown, JWT access + rotating refresh tokens
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`
