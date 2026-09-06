@@ -31,6 +31,7 @@ import { SharedDateStore } from "./sharedDates";
 import { SOSStore } from "./sos";
 import { applyWatermark } from "./watermarkImage";
 import { DuplicateAccountStore } from "./duplicateAccounts";
+import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -66,6 +67,7 @@ export function createApp(deps?: {
   sosStore: SOSStore;
   webAuthnStore: WebAuthnStore;
   duplicateAccountStore: DuplicateAccountStore;
+  discoveryVisibilityStore: DiscoveryVisibilityStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -106,6 +108,7 @@ export function createApp(deps?: {
   // safety stores (Report/Block/SOS).
   const webAuthnStore = new WebAuthnStore();
   const duplicateAccountStore = new DuplicateAccountStore();
+  const discoveryVisibilityStore = new DiscoveryVisibilityStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -934,6 +937,28 @@ export function createApp(deps?: {
     res.json(duplicateAccountStore.getStatus(userId));
   });
 
+  // "Don't show my profile to people from my city/workplace" (#54): stores
+  // the preference and the pure matching check a future discovery/matching
+  // feature would call before showing this profile to another — same
+  // scoping as #33's search radius, which stores a preference well before
+  // any "nearby" feature consumes it.
+  app.get("/api/discovery-visibility", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    res.json(discoveryVisibilityStore.getPreferences(userId));
+  });
+
+  app.put("/api/discovery-visibility", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const result = discoveryVisibilityStore.setPreferences(userId, req.body);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(result.preferences);
+  });
+
   app.post("/api/auth/refresh", (req, res) => {
     const refreshToken = typeof req.body?.refreshToken === "string" ? req.body.refreshToken : undefined;
     if (!refreshToken) {
@@ -968,6 +993,7 @@ export function createApp(deps?: {
     sosStore,
     webAuthnStore,
     duplicateAccountStore,
+    discoveryVisibilityStore,
   };
 }
 
