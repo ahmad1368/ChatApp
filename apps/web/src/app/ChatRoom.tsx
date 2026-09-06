@@ -21,6 +21,17 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const PAGE_SIZE = 20;
+
+// Contact Picker API: supported on Chrome for Android only. Where it's missing
+// (all desktop browsers, iOS Safari) we fall back to manual number entry as the
+// web equivalent of "import phone contacts."
+type ContactsManager = {
+  select: (properties: string[], options?: { multiple?: boolean }) => Promise<Array<{ tel?: string[] }>>;
+};
+
+function getContactsManager(): ContactsManager | undefined {
+  return (navigator as unknown as { contacts?: ContactsManager }).contacts;
+}
 const SWIPE_TRIGGER_PX = 56;
 const SWIPE_MAX_PX = 84;
 
@@ -189,6 +200,10 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [reportTarget, setReportTarget] = useState<{ author: string; messageId: string } | null>(null);
   const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [contactNumbers, setContactNumbers] = useState("");
+  const [contactBlockStatus, setContactBlockStatus] = useState<string | null>(null);
+  const [contactPickerSupported, setContactPickerSupported] = useState(false);
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -307,6 +322,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
 
   useEffect(() => {
     refreshBlockedAuthors();
+    setContactPickerSupported(Boolean(getContactsManager()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -327,6 +343,54 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       body: JSON.stringify({ blockerAuthor: author, blockedAuthor }),
     });
     setBlockedAuthors((prev) => prev.filter((a) => a !== blockedAuthor));
+  };
+
+  const savePhoneNumber = async () => {
+    if (!phoneNumber.trim()) return;
+    await fetch(`${API_URL}/api/profile/phone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author, phoneNumber: phoneNumber.trim() }),
+    });
+    setContactBlockStatus("Phone number saved.");
+  };
+
+  const blockByContactNumbers = async (numbers: string[]) => {
+    const res = await fetch(`${API_URL}/api/contacts/block`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author, phoneNumbers: numbers }),
+    });
+    const body = await res.json();
+    const newlyBlocked: string[] = body.blockedAuthors ?? [];
+    if (newlyBlocked.length > 0) {
+      setBlockedAuthors((prev) => Array.from(new Set([...prev, ...newlyBlocked])));
+      setContactBlockStatus(`Blocked ${newlyBlocked.length} contact(s) already on ChatApp.`);
+    } else {
+      setContactBlockStatus("None of those contacts were found on ChatApp.");
+    }
+  };
+
+  const blockPastedContacts = () => {
+    const numbers = contactNumbers
+      .split(/[\n,]+/)
+      .map((n) => n.trim())
+      .filter(Boolean);
+    if (numbers.length === 0) return;
+    blockByContactNumbers(numbers);
+    setContactNumbers("");
+  };
+
+  const pickDeviceContacts = async () => {
+    const contactsManager = getContactsManager();
+    if (!contactsManager) return;
+    try {
+      const picked = await contactsManager.select(["tel"], { multiple: true });
+      const numbers = picked.flatMap((c) => c.tel ?? []);
+      if (numbers.length > 0) blockByContactNumbers(numbers);
+    } catch {
+      // user cancelled the picker or permission was denied
+    }
   };
 
   // The server also filters blocked authors out of the initial/paginated
@@ -718,6 +782,40 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           </ul>
         </div>
       )}
+      <section style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, marginTop: 12, fontSize: 13 }}>
+        <h2 style={{ fontSize: 14 }}>Block phone contacts</h2>
+        <p style={{ color: "var(--color-muted)" }}>
+          Save your number so people who have you saved can find you, then block any of your phone
+          contacts who are already on ChatApp.
+        </p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            placeholder="Your phone number"
+            style={{ flex: 1, padding: 6 }}
+          />
+          <button onClick={savePhoneNumber}>Save</button>
+        </div>
+
+        {contactPickerSupported ? (
+          <button onClick={pickDeviceContacts}>Import contacts to block</button>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <textarea
+              value={contactNumbers}
+              onChange={(e) => setContactNumbers(e.target.value)}
+              placeholder="Paste contact phone numbers, one per line"
+              rows={3}
+              style={{ padding: 6 }}
+            />
+            <button onClick={blockPastedContacts} style={{ alignSelf: "flex-start" }}>
+              Block matching contacts
+            </button>
+          </div>
+        )}
+        {contactBlockStatus && <p style={{ color: "var(--color-muted)" }}>{contactBlockStatus}</p>}
+      </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
         <ReportDialog

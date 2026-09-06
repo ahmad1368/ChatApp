@@ -20,8 +20,16 @@ function makePaginationMessage(id: string, index: number): ChatMessage {
 }
 
 function listen() {
-  const { app, messagesByRoom, errorReportStore, otpService, recoveryCodeService, verificationStore, blockStore } =
-    createApp();
+  const {
+    app,
+    messagesByRoom,
+    errorReportStore,
+    otpService,
+    recoveryCodeService,
+    verificationStore,
+    blockStore,
+    contactBlockStore,
+  } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return {
@@ -33,6 +41,7 @@ function listen() {
     recoveryCodeService,
     verificationStore,
     blockStore,
+    contactBlockStore,
   };
 }
 
@@ -1892,6 +1901,64 @@ test("GET /api/rooms/:roomId/messages filters mutually-blocked authors for a vie
     const unfiltered = await fetch(`${baseUrl}/api/rooms/general/messages`);
     const unfilteredBody = await unfiltered.json();
     assert.equal(unfilteredBody.length, 2);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/profile/phone registers a phone, rejects invalid input", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const ok = await fetch(`${baseUrl}/api/profile/phone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob", phoneNumber: "555-123-4567" }),
+    });
+    assert.equal(ok.status, 204);
+
+    const bad = await fetch(`${baseUrl}/api/profile/phone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob", phoneNumber: "123" }),
+    });
+    assert.equal(bad.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/contacts/block blocks authors matching an uploaded contact list", async () => {
+  const { server, baseUrl, blockStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/profile/phone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob", phoneNumber: "555-123-4567" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/contacts/block`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", phoneNumbers: ["555.123.4567", "000-000-0000"] }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.blockedAuthors, ["bob"]);
+    assert.equal(blockStore.isMutuallyBlocked("alice", "bob"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/contacts/block requires an author", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/contacts/block`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumbers: ["5551234567"] }),
+    });
+    assert.equal(res.status, 400);
   } finally {
     server.close();
   }

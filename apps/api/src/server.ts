@@ -24,6 +24,7 @@ import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
 import { BlockStore } from "./blocks";
+import { ContactBlockStore } from "./contactBlocks";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -52,6 +53,7 @@ export function createApp(deps?: {
   verificationStore: VerificationStore;
   reportStore: ReportStore;
   blockStore: BlockStore;
+  contactBlockStore: ContactBlockStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -80,6 +82,7 @@ export function createApp(deps?: {
   const onboardingStore = new OnboardingStore(verificationStore);
   const reportStore = new ReportStore();
   const blockStore = new BlockStore();
+  const contactBlockStore = new ContactBlockStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -153,6 +156,32 @@ export function createApp(deps?: {
   // blocked party).
   app.get("/api/blocks/:blockerAuthor", (req, res) => {
     res.json({ blockedAuthors: blockStore.getBlockedAuthors(req.params.blockerAuthor) });
+  });
+
+  // Self-declared phone number (same client-supplied-identity limitation as
+  // every other author-scoped endpoint, pending real auth). Stored only as
+  // a hash — see the privacy note in contactBlocks.ts.
+  app.post("/api/profile/phone", (req, res) => {
+    const result = contactBlockStore.registerPhone(req.body?.author, req.body?.phoneNumber);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  // "Block phone contacts": given the caller's phone contact list, find any
+  // registered author whose phone matches a contact and block them via the
+  // same BlockStore a manual block would use (message filtering just works).
+  app.post("/api/contacts/block", (req, res) => {
+    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    const matches = contactBlockStore.findMatchingAuthors(author, req.body?.phoneNumbers);
+    const blockedAuthors = matches.filter((matched) => blockStore.block(author, matched).success);
+    res.status(200).json({ blockedAuthors });
   });
 
   // No GET endpoint for verification selfies, deliberately — see the
@@ -710,6 +739,7 @@ export function createApp(deps?: {
     verificationStore,
     reportStore,
     blockStore,
+    contactBlockStore,
   };
 }
 
