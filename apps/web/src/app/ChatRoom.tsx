@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import ThemeToggle from "./ThemeToggle";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -258,6 +259,7 @@ export default function ChatRoom() {
           <Link href={`/privacy?author=${encodeURIComponent(author)}`}>Privacy</Link>
           <Link href={`/privacy/export?author=${encodeURIComponent(author)}`}>Download my data</Link>
           <Link href={`/privacy/location?author=${encodeURIComponent(author)}`}>Location privacy</Link>
+          <ThemeToggle />
         </div>
       </div>
       {liveUpdatesEnabled ? (
