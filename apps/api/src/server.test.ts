@@ -1230,7 +1230,7 @@ async function stepThroughToGender(baseUrl: string, authHeaders: Record<string, 
   }
 }
 
-test("POST /api/onboarding/step completes the gender step and persists between requests", async () => {
+test("POST /api/onboarding/step completes the gender step, advancing to orientation, and persists between requests", async () => {
   const { server, baseUrl, otpService } = listen();
   try {
     const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110012");
@@ -1244,13 +1244,13 @@ test("POST /api/onboarding/step completes the gender step and persists between r
     });
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.currentStep, "complete");
+    assert.equal(body.currentStep, "orientation");
     assert.equal(body.profile.gender, "nonBinary");
 
     const resumed = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) =>
       r.json()
     );
-    assert.equal(resumed.currentStep, "complete");
+    assert.equal(resumed.currentStep, "orientation");
   } finally {
     server.close();
   }
@@ -1302,6 +1302,93 @@ test("POST /api/onboarding/step rejects submitting the gender step out of order"
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ step: "gender", data: { option: "woman" } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+async function stepThroughToOrientation(baseUrl: string, authHeaders: Record<string, string>) {
+  await stepThroughToGender(baseUrl, authHeaders);
+  await fetch(`${baseUrl}/api/onboarding/step`, {
+    method: "POST",
+    headers: authHeaders,
+    body: JSON.stringify({ step: "gender", data: { option: "man" } }),
+  });
+}
+
+test("POST /api/onboarding/step completes the orientation step and persists between requests", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110016");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToOrientation(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "orientation", data: { option: "bisexual", interestedIn: ["man", "woman", "nonBinary"] } }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.currentStep, "complete");
+    assert.equal(body.profile.orientation, "bisexual");
+    assert.deepEqual(body.profile.interestedIn, ["man", "woman", "nonBinary"]);
+
+    const resumed = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) =>
+      r.json()
+    );
+    assert.equal(resumed.currentStep, "complete");
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects an empty interestedIn list", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110017");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToOrientation(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "orientation", data: { option: "gay", interestedIn: [] } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects a custom orientation missing its description", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110018");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToOrientation(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "orientation", data: { option: "custom", interestedIn: ["woman"] } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects submitting the orientation step out of order", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110019");
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ step: "orientation", data: { option: "straight", interestedIn: ["woman"] } }),
     });
     assert.equal(res.status, 400);
   } finally {

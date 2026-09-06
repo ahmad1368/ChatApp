@@ -9,6 +9,9 @@ import {
   GENDER_OPTION_LABELS,
   GenderOption,
   ONBOARDING_STEPS,
+  ORIENTATION_OPTIONS,
+  ORIENTATION_OPTION_LABELS,
+  OrientationOption,
   OnboardingState,
 } from "@chatapp/shared";
 import { loadStoredAuth } from "../authClient";
@@ -61,6 +64,86 @@ function GenderStep({ onSubmit, error }: { onSubmit: (data: { option: GenderOpti
       <button
         onClick={() => selected && onSubmit({ option: selected, customText: customText || undefined })}
         disabled={!selected}
+        style={{ width: "100%", padding: 10 }}
+      >
+        Continue
+      </button>
+    </div>
+  );
+}
+
+function OrientationStep({
+  onSubmit,
+  error,
+}: {
+  onSubmit: (data: { option: OrientationOption; customText?: string; interestedIn: GenderOption[] }) => void;
+  error: string | null;
+}) {
+  const [selected, setSelected] = useState<OrientationOption | null>(null);
+  const [customText, setCustomText] = useState("");
+  const [interestedIn, setInterestedIn] = useState<GenderOption[]>([]);
+
+  const toggleInterest = (option: GenderOption) => {
+    setInterestedIn((prev) => (prev.includes(option) ? prev.filter((o) => o !== option) : [...prev, option]));
+  };
+
+  const canSubmit = selected && interestedIn.length > 0;
+
+  return (
+    <div>
+      <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>What's your orientation?</label>
+      {error && <p style={{ color: "#c0392b", fontSize: 13 }}>{error}</p>}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        {ORIENTATION_OPTIONS.map((option) => (
+          <button
+            key={option}
+            onClick={() => setSelected(option)}
+            style={{
+              padding: "8px 14px",
+              fontSize: 14,
+              border: selected === option ? "2px solid #2563eb" : "1px solid #e5e7eb",
+              borderRadius: 20,
+              background: selected === option ? "#eff6ff" : "#fff",
+              cursor: "pointer",
+            }}
+          >
+            {ORIENTATION_OPTION_LABELS[option]}
+          </button>
+        ))}
+      </div>
+      {selected === "custom" && (
+        <input
+          value={customText}
+          onChange={(e) => setCustomText(e.target.value)}
+          placeholder="Describe your orientation"
+          style={{ width: "100%", padding: 8, marginBottom: 12, boxSizing: "border-box" }}
+        />
+      )}
+
+      <label style={{ display: "block", fontSize: 14, margin: "16px 0 4px" }}>Who would you like to meet?</label>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        {GENDER_OPTIONS.filter((o) => o !== "custom" && o !== "preferNotToSay").map((option) => (
+          <label
+            key={option}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 10px",
+              border: "1px solid #e5e7eb",
+              borderRadius: 20,
+              fontSize: 13,
+            }}
+          >
+            <input type="checkbox" checked={interestedIn.includes(option)} onChange={() => toggleInterest(option)} />
+            {GENDER_OPTION_LABELS[option]}
+          </label>
+        ))}
+      </div>
+
+      <button
+        onClick={() => selected && onSubmit({ option: selected, customText: customText || undefined, interestedIn })}
+        disabled={!canSubmit}
         style={{ width: "100%", padding: 10 }}
       >
         Continue
@@ -131,7 +214,9 @@ export default function OnboardingPage() {
         ))}
       </div>
 
-      {state.currentStep === "gender" ? (
+      {state.currentStep === "orientation" ? (
+        <OrientationStep error={error} onSubmit={(data) => submitStep("orientation", data)} />
+      ) : state.currentStep === "gender" ? (
         <GenderStep error={error} onSubmit={(data) => submitStep("gender", data)} />
       ) : state.currentStep === "datingGoal" ? (
         <div>

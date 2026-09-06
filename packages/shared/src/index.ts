@@ -49,7 +49,7 @@ export interface VerifyOtpPayload {
   code: string;
 }
 
-export const ONBOARDING_STEPS = ["displayName", "avatar", "bio", "datingGoal", "gender"] as const;
+export const ONBOARDING_STEPS = ["displayName", "avatar", "bio", "datingGoal", "gender", "orientation"] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
 export const DATING_GOALS = ["marriage", "friendship", "casual"] as const;
@@ -94,6 +94,37 @@ export const GENDER_OPTION_LABELS: Record<GenderOption, string> = {
   preferNotToSay: "Prefer not to say",
 };
 
+// Same inclusivity approach as GENDER_OPTIONS: a broad fixed list plus a
+// custom free-text escape hatch and an explicit "prefer not to say".
+export const ORIENTATION_OPTIONS = [
+  "straight",
+  "gay",
+  "lesbian",
+  "bisexual",
+  "pansexual",
+  "asexual",
+  "demisexual",
+  "queer",
+  "questioning",
+  "custom",
+  "preferNotToSay",
+] as const;
+export type OrientationOption = (typeof ORIENTATION_OPTIONS)[number];
+
+export const ORIENTATION_OPTION_LABELS: Record<OrientationOption, string> = {
+  straight: "Straight",
+  gay: "Gay",
+  lesbian: "Lesbian",
+  bisexual: "Bisexual",
+  pansexual: "Pansexual",
+  asexual: "Asexual",
+  demisexual: "Demisexual",
+  queer: "Queer",
+  questioning: "Questioning",
+  custom: "Something else",
+  preferNotToSay: "Prefer not to say",
+};
+
 export interface OnboardingProfile {
   displayName?: string;
   avatarUrl?: string;
@@ -101,6 +132,11 @@ export interface OnboardingProfile {
   datingGoal?: DatingGoal;
   gender?: GenderOption;
   genderCustomText?: string;
+  orientation?: OrientationOption;
+  orientationCustomText?: string;
+  // Who they'd like to be matched with — reuses GENDER_OPTIONS so "everyone"
+  // is just "select all" rather than a separate special case.
+  interestedIn?: GenderOption[];
 }
 
 export interface OnboardingState {

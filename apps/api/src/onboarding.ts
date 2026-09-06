@@ -4,14 +4,16 @@ import {
   GENDER_OPTIONS,
   GenderOption,
   ONBOARDING_STEPS,
+  ORIENTATION_OPTIONS,
   OnboardingProfile,
   OnboardingState,
   OnboardingStep,
+  OrientationOption,
 } from "@chatapp/shared";
 
 const MAX_DISPLAY_NAME_LENGTH = 40;
 const MAX_BIO_LENGTH = 280;
-const MAX_GENDER_CUSTOM_TEXT_LENGTH = 60;
+const MAX_CUSTOM_TEXT_LENGTH = 60;
 
 export type SubmitStepResult = { success: true; state: OnboardingState } | { success: false; error: string };
 
@@ -28,6 +30,10 @@ function isGenderOption(value: unknown): value is GenderOption {
   return typeof value === "string" && (GENDER_OPTIONS as readonly string[]).includes(value);
 }
 
+function isOrientationOption(value: unknown): value is OrientationOption {
+  return typeof value === "string" && (ORIENTATION_OPTIONS as readonly string[]).includes(value);
+}
+
 function validateStepData(step: OnboardingStep, data: unknown): { value: Partial<OnboardingProfile> } | { error: string } {
   if (step === "displayName") {
     const displayName = typeof data === "string" ? data.trim() : "";
@@ -36,7 +42,6 @@ function validateStepData(step: OnboardingStep, data: unknown): { value: Partial
     return { value: { displayName } };
   }
   if (step === "avatar") {
-    // Optional step — an empty/absent value just means "skip for now".
     const avatarUrl = typeof data === "string" ? data.trim() : "";
     return { value: avatarUrl ? { avatarUrl } : {} };
   }
@@ -57,12 +62,29 @@ function validateStepData(step: OnboardingStep, data: unknown): { value: Partial
       const customText = typeof data === "object" && data !== null ? (data as { customText?: unknown }).customText : undefined;
       const trimmed = typeof customText === "string" ? customText.trim() : "";
       if (!trimmed) return { error: "Please describe your gender identity" };
-      if (trimmed.length > MAX_GENDER_CUSTOM_TEXT_LENGTH) {
-        return { error: `Description must be ${MAX_GENDER_CUSTOM_TEXT_LENGTH} characters or fewer` };
-      }
+      if (trimmed.length > MAX_CUSTOM_TEXT_LENGTH) return { error: `Description must be ${MAX_CUSTOM_TEXT_LENGTH} characters or fewer` };
       return { value: { gender: option, genderCustomText: trimmed } };
     }
     return { value: { gender: option, genderCustomText: undefined } };
+  }
+  if (step === "orientation") {
+    const { option, interestedIn } = (typeof data === "object" && data !== null ? data : {}) as {
+      option?: unknown;
+      interestedIn?: unknown;
+    };
+    if (!isOrientationOption(option)) return { error: `orientation must be one of: ${ORIENTATION_OPTIONS.join(", ")}` };
+    if (!Array.isArray(interestedIn) || interestedIn.length === 0 || !interestedIn.every(isGenderOption)) {
+      return { error: "interestedIn must be a non-empty list of valid gender options" };
+    }
+
+    if (option === "custom") {
+      const customText = (data as { customText?: unknown }).customText;
+      const trimmed = typeof customText === "string" ? customText.trim() : "";
+      if (!trimmed) return { error: "Please describe your orientation" };
+      if (trimmed.length > MAX_CUSTOM_TEXT_LENGTH) return { error: `Description must be ${MAX_CUSTOM_TEXT_LENGTH} characters or fewer` };
+      return { value: { orientation: option, orientationCustomText: trimmed, interestedIn } };
+    }
+    return { value: { orientation: option, orientationCustomText: undefined, interestedIn } };
   }
   return { error: "Unknown step" };
 }
