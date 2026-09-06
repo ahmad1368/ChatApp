@@ -97,6 +97,34 @@ describe("OnboardingStore", () => {
     assert.equal(step4.state.profile.datingGoal, "marriage");
   });
 
+  it("rejects a bio containing a phone number", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    acceptGuidelines(store, "user-1");
+    store.submitStep("user-1", "displayName", "Alice");
+    store.submitStep("user-1", "avatar", "");
+    const result = store.submitStep("user-1", "bio", "Text me at 555-123-4567");
+    assert.equal(result.success, false);
+    if (!result.success) assert.match(result.error, /phone number/i);
+  });
+
+  it("rejects a bio containing a street address", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    acceptGuidelines(store, "user-1");
+    store.submitStep("user-1", "displayName", "Alice");
+    store.submitStep("user-1", "avatar", "");
+    const result = store.submitStep("user-1", "bio", "Come find me at 123 Main Street");
+    assert.equal(result.success, false);
+    if (!result.success) assert.match(result.error, /address/i);
+  });
+
+  it("rejects a display name containing a phone number", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    acceptGuidelines(store, "user-1");
+    const result = store.submitStep("user-1", "displayName", "Call 555-123-4567");
+    assert.equal(result.success, false);
+    if (!result.success) assert.match(result.error, /phone number/i);
+  });
+
   it("allows skipping the optional avatar step with an empty value", () => {
     const store = new OnboardingStore(new VerificationStore());
     acceptGuidelines(store, "user-1");
