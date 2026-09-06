@@ -46,11 +46,11 @@ export default function ChatRoom() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1>ChatApp</h1>
         <div style={{ display: "flex", gap: 12 }}>
+          <Link href={`/privacy?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
+            Privacy
+          </Link>
           <Link href={`/privacy/export?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
             Download my data
-          </Link>
-          <Link href={`/privacy/location?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
-            Location privacy
           </Link>
         </div>
       </div>
