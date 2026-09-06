@@ -38,6 +38,12 @@ body {
   font-size: 13px;
 }
 
+.chat-app__notify-button {
+  margin-bottom: 12px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
 .chat-app__messages {
   display: flex;
   flex-direction: column;
