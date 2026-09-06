@@ -2445,3 +2445,72 @@ test("GET /api/auth/duplicate-status flags two accounts that signed up from the 
     server.close();
   }
 });
+
+test("GET /api/discovery-visibility requires a valid access token", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/discovery-visibility`);
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/discovery-visibility defaults to visible-to-everyone", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110053");
+    const res = await fetch(`${baseUrl}/api/discovery-visibility`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      city: "",
+      workplace: "",
+      hideFromSameCity: false,
+      hideFromSameWorkplace: false,
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/discovery-visibility saves and round-trips city/workplace preferences", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110054");
+    const putRes = await fetch(`${baseUrl}/api/discovery-visibility`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ city: "Springfield", workplace: "Acme Corp", hideFromSameCity: true, hideFromSameWorkplace: true }),
+    });
+    assert.equal(putRes.status, 200);
+
+    const getRes = await fetch(`${baseUrl}/api/discovery-visibility`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.deepEqual(await getRes.json(), {
+      city: "Springfield",
+      workplace: "Acme Corp",
+      hideFromSameCity: true,
+      hideFromSameWorkplace: true,
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/discovery-visibility rejects an overlong city", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110055");
+    const res = await fetch(`${baseUrl}/api/discovery-visibility`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ city: "x".repeat(81) }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
