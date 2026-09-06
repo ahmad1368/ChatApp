@@ -3,6 +3,7 @@ import express, { Express } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
+import { buildChatMessage } from "./messages";
 import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
@@ -202,14 +203,7 @@ export function createChatServer() {
 
     socket.on("message:send", (payload: SendMessagePayload) => {
       const roomId = payload.roomId || DEFAULT_ROOM_ID;
-      const message: ChatMessage = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        roomId,
-        author: payload.author,
-        text: payload.text,
-        createdAt: new Date().toISOString(),
-        imageUrl: payload.imageUrl,
-      };
+      const message: ChatMessage = buildChatMessage(payload);
       const existing = messagesByRoom.get(roomId) ?? [];
       existing.push(message);
       messagesByRoom.set(roomId, existing);

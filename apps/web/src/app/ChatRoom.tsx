@@ -18,6 +18,113 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const PAGE_SIZE = 20;
+const SWIPE_TRIGGER_PX = 56;
+const SWIPE_MAX_PX = 84;
+
+interface ReplyTarget {
+  id: string;
+  author: string;
+  text: string;
+}
+
+// Pointer Events unify mouse/touch/pen; dragging only ever changes a CSS
+// transform (never layout), and updates are batched via requestAnimationFrame
+// so the swipe tracks the finger at 60fps instead of fighting reflow/paint.
+function useSwipeToReply(onTrigger: () => void) {
+  const [dragX, setDragX] = useState(0);
+  const startXRef = useRef<number | null>(null);
+  const frameRef = useRef<number | null>(null);
+
+  const queueDragX = (value: number) => {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(() => setDragX(value));
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    startXRef.current = e.clientX;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (startXRef.current === null) return;
+    const delta = e.clientX - startXRef.current;
+    queueDragX(Math.max(0, Math.min(delta, SWIPE_MAX_PX)));
+  };
+
+  const endSwipe = () => {
+    if (startXRef.current !== null && dragX >= SWIPE_TRIGGER_PX) onTrigger();
+    startXRef.current = null;
+    queueDragX(0);
+  };
+
+  return {
+    dragX,
+    handlers: {
+      onPointerDown,
+      onPointerMove,
+      onPointerUp: endSwipe,
+      onPointerCancel: endSwipe,
+      // Let the browser keep handling vertical scroll; only the horizontal
+      // swipe gesture is ours to intercept.
+      style: { touchAction: "pan-y" as const },
+    },
+  };
+}
+
+function MessageRow({
+  message,
+  highlighted,
+  registerRef,
+  onReply,
+  onCopyLink,
+}: {
+  message: ChatMessage;
+  highlighted: boolean;
+  registerRef: (el: HTMLDivElement | null) => void;
+  onReply: (target: ReplyTarget) => void;
+  onCopyLink: (messageId: string) => void;
+}) {
+  const { dragX, handlers } = useSwipeToReply(() =>
+    onReply({ id: message.id, author: message.author, text: message.text })
+  );
+
+  return (
+    <div className="chat-app__message-row">
+      <div
+        className="chat-app__reply-indicator"
+        style={{ opacity: Math.min(dragX / SWIPE_TRIGGER_PX, 1) }}
+        aria-hidden
+      >
+        ↩
+      </div>
+      <div
+        ref={registerRef}
+        {...handlers}
+        className={`chat-app__message${highlighted ? " chat-app__message--highlighted" : ""}`}
+        style={{ ...handlers.style, transform: `translateX(${dragX}px)` }}
+      >
+        {message.replyToId && (
+          <div className="chat-app__reply-quote">
+            {message.replyToAuthor}: {message.replyToText}
+          </div>
+        )}
+        <strong>{message.author}: </strong>
+        {message.imageUrl ? (
+          <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+        ) : (
+          <span>{message.text}</span>
+        )}
+        <button
+          className="chat-app__copy-link-button"
+          onClick={() => onCopyLink(message.id)}
+          title="Copy link to this message"
+        >
+          🔗
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // How long the tab can sit hidden before we drop the live connection to save
 // battery/data. Background delivery is still covered by Web Push (see #5);
@@ -69,6 +176,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
   const [text, setText] = useState("");
   const [syncStatus, setSyncStatus] = useState<"connecting" | "synced" | "offline">("connecting");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -290,7 +398,15 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
     setText("");
 
     if (socketRef.current?.connected) {
-      socketRef.current.emit("message:send", { roomId, author, text: trimmed });
+      socketRef.current.emit("message:send", {
+        roomId,
+        author,
+        text: trimmed,
+        replyToId: replyTarget?.id,
+        replyToAuthor: replyTarget?.author,
+        replyToText: replyTarget?.text,
+      });
+      setReplyTarget(null);
       return;
     }
 
@@ -300,6 +416,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
       ...prev,
       { clientId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, author, text: trimmed, queuedAt: new Date().toISOString() },
     ]);
+    setReplyTarget(null);
   };
 
   const copyMessageLink = (messageId: string) => {
@@ -402,28 +519,17 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
           </button>
         )}
         {messages.map((m) => (
-          <div
+          <MessageRow
             key={m.id}
-            ref={(el) => {
+            message={m}
+            highlighted={highlightedId === m.id}
+            registerRef={(el) => {
               if (el) messageRefs.current.set(m.id, el);
               else messageRefs.current.delete(m.id);
             }}
-            className={`chat-app__message${highlightedId === m.id ? " chat-app__message--highlighted" : ""}`}
-          >
-            <strong>{m.author}: </strong>
-            {m.imageUrl ? (
-              <img src={m.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
-            ) : (
-              <span>{m.text}</span>
-            )}
-            <button
-              className="chat-app__copy-link-button"
-              onClick={() => copyMessageLink(m.id)}
-              title="Copy link to this message"
-            >
-              🔗
-            </button>
-          </div>
+            onReply={setReplyTarget}
+            onCopyLink={copyMessageLink}
+          />
         ))}
         {queue.map((q) => (
           <div key={q.clientId} className="chat-app__message chat-app__message--queued">
@@ -434,6 +540,16 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
         ))}
         {isSendingImage && <p className="chat-app__status">Compressing and sending image…</p>}
       </div>
+      {replyTarget && (
+        <div className="chat-app__reply-banner">
+          <span>
+            Replying to <strong>{replyTarget.author}</strong>: {replyTarget.text}
+          </span>
+          <button className="chat-app__link-button" onClick={() => setReplyTarget(null)}>
+            ✕
+          </button>
+        </div>
+      )}
       <div className="chat-app__composer">
         <input
           className="chat-app__input"

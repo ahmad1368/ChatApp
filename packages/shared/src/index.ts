@@ -5,6 +5,9 @@ export interface ChatMessage {
   text: string;
   createdAt: string;
   imageUrl?: string;
+  replyToId?: string;
+  replyToAuthor?: string;
+  replyToText?: string;
 }
 
 export interface SendMessagePayload {
@@ -12,6 +15,9 @@ export interface SendMessagePayload {
   author: string;
   text: string;
   imageUrl?: string;
+  replyToId?: string;
+  replyToAuthor?: string;
+  replyToText?: string;
 }
 
 export const DEFAULT_ROOM_ID = "general";

@@ -97,14 +97,49 @@ body {
   padding: 12px;
   height: var(--chat-messages-height);
   overflow-y: auto;
+  overflow-x: hidden;
   margin-bottom: 12px;
+}
+
+.chat-app__message-row {
+  position: relative;
+}
+
+.chat-app__reply-indicator {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  font-size: 16px;
+}
+
+.chat-app__reply-quote {
+  font-size: 11px;
+  color: var(--color-muted);
+  border-left: 2px solid var(--color-border);
+  padding-left: 6px;
+  margin-bottom: 2px;
+}
+
+.chat-app__reply-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  background: var(--color-panel);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-bottom: 6px;
 }
 
 .chat-app__message {
   word-break: break-word;
   border-radius: 4px;
   padding: 4px;
+  background: var(--color-bg);
   transition: background 0.3s;
+  will-change: transform;
 }
 
 .chat-app__message--highlighted {
