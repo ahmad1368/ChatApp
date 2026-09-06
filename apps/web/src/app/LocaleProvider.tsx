@@ -65,7 +65,7 @@ export function LocaleToggle() {
     <select
       value={locale}
       onChange={(e) => setLocale(e.target.value as Locale)}
-      style={{ fontSize: 12, padding: "4px 8px" }}
+      className="chat-app__locale-toggle"
       aria-label="Language"
     >
       {SUPPORTED_LOCALES.map((code) => (
