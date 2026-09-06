@@ -24,4 +24,17 @@ describe("VerificationStore", () => {
     assert.equal(result.success, false);
     assert.equal(store.isVerified("user-1"), false);
   });
+
+  it("rejects empty image data", () => {
+    const store = new VerificationStore();
+    const result = store.saveSelfie("user-1", "image/png", "");
+    assert.equal(result.success, false);
+  });
+
+  it("tracks verification independently per user", () => {
+    const store = new VerificationStore();
+    store.saveSelfie("user-1", "image/png", TINY_PNG_BASE64);
+    assert.equal(store.isVerified("user-1"), true);
+    assert.equal(store.isVerified("user-2"), false);
+  });
 });

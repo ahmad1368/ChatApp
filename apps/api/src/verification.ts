@@ -26,10 +26,9 @@ export type SaveSelfieResult = { success: true } | { success: false; error: stri
  *
  * Privacy: the selfie itself is stored but never served back through any
  * endpoint in this codebase — only a boolean "verified" flag is ever
- * exposed to clients (via OnboardingProfile.isSelfieVerified and
- * GET /api/users/:userId/badge, see #37). A real deployment would still
- * need a moderation/review pipeline before treating "verified" as a trust
- * signal shown to other users.
+ * exposed to clients (via OnboardingProfile.isSelfieVerified). A real
+ * deployment would still need a moderation/review pipeline before treating
+ * "verified" as a trust signal shown to other users.
  */
 export class VerificationStore {
   private selfiesByUserId = new Map<string, StoredSelfie>();
