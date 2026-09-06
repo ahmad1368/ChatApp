@@ -1,6 +1,8 @@
 import {
   DATING_GOALS,
   DatingGoal,
+  GENDER_OPTIONS,
+  GenderOption,
   ONBOARDING_STEPS,
   OnboardingProfile,
   OnboardingState,
@@ -9,6 +11,7 @@ import {
 
 const MAX_DISPLAY_NAME_LENGTH = 40;
 const MAX_BIO_LENGTH = 280;
+const MAX_GENDER_CUSTOM_TEXT_LENGTH = 60;
 
 export type SubmitStepResult = { success: true; state: OnboardingState } | { success: false; error: string };
 
@@ -19,6 +22,10 @@ function nextStep(step: OnboardingStep): OnboardingStep | "complete" {
 
 function isDatingGoal(value: unknown): value is DatingGoal {
   return typeof value === "string" && (DATING_GOALS as readonly string[]).includes(value);
+}
+
+function isGenderOption(value: unknown): value is GenderOption {
+  return typeof value === "string" && (GENDER_OPTIONS as readonly string[]).includes(value);
 }
 
 function validateStepData(step: OnboardingStep, data: unknown): { value: Partial<OnboardingProfile> } | { error: string } {
@@ -41,6 +48,21 @@ function validateStepData(step: OnboardingStep, data: unknown): { value: Partial
   if (step === "datingGoal") {
     if (!isDatingGoal(data)) return { error: `datingGoal must be one of: ${DATING_GOALS.join(", ")}` };
     return { value: { datingGoal: data } };
+  }
+  if (step === "gender") {
+    const option = typeof data === "object" && data !== null ? (data as { option?: unknown }).option : undefined;
+    if (!isGenderOption(option)) return { error: `gender option must be one of: ${GENDER_OPTIONS.join(", ")}` };
+
+    if (option === "custom") {
+      const customText = typeof data === "object" && data !== null ? (data as { customText?: unknown }).customText : undefined;
+      const trimmed = typeof customText === "string" ? customText.trim() : "";
+      if (!trimmed) return { error: "Please describe your gender identity" };
+      if (trimmed.length > MAX_GENDER_CUSTOM_TEXT_LENGTH) {
+        return { error: `Description must be ${MAX_GENDER_CUSTOM_TEXT_LENGTH} characters or fewer` };
+      }
+      return { value: { gender: option, genderCustomText: trimmed } };
+    }
+    return { value: { gender: option, genderCustomText: undefined } };
   }
   return { error: "Unknown step" };
 }

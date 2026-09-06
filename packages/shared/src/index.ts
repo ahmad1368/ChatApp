@@ -49,7 +49,7 @@ export interface VerifyOtpPayload {
   code: string;
 }
 
-export const ONBOARDING_STEPS = ["displayName", "avatar", "bio", "datingGoal"] as const;
+export const ONBOARDING_STEPS = ["displayName", "avatar", "bio", "datingGoal", "gender"] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
 export const DATING_GOALS = ["marriage", "friendship", "casual"] as const;
@@ -61,11 +61,46 @@ export const DATING_GOAL_LABELS: Record<DatingGoal, string> = {
   casual: "Casual chat",
 };
 
+// Deliberately broader than a binary choice, following the diverse-options
+// pattern OkCupid is known for. "custom" pairs with genderCustomText for any
+// identity not covered by the fixed list; "preferNotToSay" is a first-class
+// option, not an afterthought.
+export const GENDER_OPTIONS = [
+  "woman",
+  "man",
+  "nonBinary",
+  "transgender",
+  "genderfluid",
+  "genderqueer",
+  "agender",
+  "twoSpirit",
+  "intersex",
+  "custom",
+  "preferNotToSay",
+] as const;
+export type GenderOption = (typeof GENDER_OPTIONS)[number];
+
+export const GENDER_OPTION_LABELS: Record<GenderOption, string> = {
+  woman: "Woman",
+  man: "Man",
+  nonBinary: "Non-binary",
+  transgender: "Transgender",
+  genderfluid: "Genderfluid",
+  genderqueer: "Genderqueer",
+  agender: "Agender",
+  twoSpirit: "Two-Spirit",
+  intersex: "Intersex",
+  custom: "Something else",
+  preferNotToSay: "Prefer not to say",
+};
+
 export interface OnboardingProfile {
   displayName?: string;
   avatarUrl?: string;
   bio?: string;
   datingGoal?: DatingGoal;
+  gender?: GenderOption;
+  genderCustomText?: string;
 }
 
 export interface OnboardingState {

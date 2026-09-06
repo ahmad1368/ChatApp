@@ -1171,13 +1171,13 @@ test("POST /api/onboarding/step progresses through to the dating goal step and p
       headers: authHeaders,
       body: JSON.stringify({ step: "datingGoal", data: "friendship" }),
     }).then((r) => r.json());
-    assert.equal(step4.currentStep, "complete");
+    assert.equal(step4.currentStep, "gender");
     assert.equal(step4.profile.datingGoal, "friendship");
 
     const resumed = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) =>
       r.json()
     );
-    assert.equal(resumed.currentStep, "complete");
+    assert.equal(resumed.currentStep, "gender");
   } finally {
     server.close();
   }
@@ -1208,6 +1208,100 @@ test("POST /api/onboarding/step rejects an invalid dating goal value", async () 
       method: "POST",
       headers: authHeaders,
       body: JSON.stringify({ step: "datingGoal", data: "nonsense" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+async function stepThroughToGender(baseUrl: string, authHeaders: Record<string, string>) {
+  for (const [step, data] of [
+    ["displayName", "Bob"],
+    ["avatar", ""],
+    ["bio", ""],
+    ["datingGoal", "friendship"],
+  ] as const) {
+    await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step, data }),
+    });
+  }
+}
+
+test("POST /api/onboarding/step completes the gender step and persists between requests", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110012");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToGender(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "gender", data: { option: "nonBinary" } }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.currentStep, "complete");
+    assert.equal(body.profile.gender, "nonBinary");
+
+    const resumed = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) =>
+      r.json()
+    );
+    assert.equal(resumed.currentStep, "complete");
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects a custom gender option missing its description", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110013");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToGender(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "gender", data: { option: "custom" } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step accepts a custom gender description", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110014");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToGender(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "gender", data: { option: "custom", customText: "Bigender" } }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.profile.genderCustomText, "Bigender");
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects submitting the gender step out of order", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110015");
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ step: "gender", data: { option: "woman" } }),
     });
     assert.equal(res.status, 400);
   } finally {

@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DATING_GOALS, DATING_GOAL_LABELS, DatingGoal, ONBOARDING_STEPS, OnboardingState } from "@chatapp/shared";
+import {
+  DATING_GOALS,
+  DATING_GOAL_LABELS,
+  DatingGoal,
+  GENDER_OPTIONS,
+  GENDER_OPTION_LABELS,
+  GenderOption,
+  ONBOARDING_STEPS,
+  OnboardingState,
+} from "@chatapp/shared";
 import { loadStoredAuth } from "../authClient";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -11,6 +20,54 @@ const TEXT_STEP_LABELS: Partial<Record<(typeof ONBOARDING_STEPS)[number], { titl
   avatar: { title: "Add a profile photo", placeholder: "Paste an image URL", optional: true },
   bio: { title: "Say a little about yourself", placeholder: "A short bio", optional: true },
 };
+
+function GenderStep({ onSubmit, error }: { onSubmit: (data: { option: GenderOption; customText?: string }) => void; error: string | null }) {
+  const [selected, setSelected] = useState<GenderOption | null>(null);
+  const [customText, setCustomText] = useState("");
+
+  return (
+    <div>
+      <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>How do you identify?</label>
+      <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 0, marginBottom: 12 }}>
+        This is just for you — you control what's shared later.
+      </p>
+      {error && <p style={{ color: "#c0392b", fontSize: 13 }}>{error}</p>}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        {GENDER_OPTIONS.map((option) => (
+          <button
+            key={option}
+            onClick={() => setSelected(option)}
+            style={{
+              padding: "8px 14px",
+              fontSize: 14,
+              border: selected === option ? "2px solid #2563eb" : "1px solid #e5e7eb",
+              borderRadius: 20,
+              background: selected === option ? "#eff6ff" : "#fff",
+              cursor: "pointer",
+            }}
+          >
+            {GENDER_OPTION_LABELS[option]}
+          </button>
+        ))}
+      </div>
+      {selected === "custom" && (
+        <input
+          value={customText}
+          onChange={(e) => setCustomText(e.target.value)}
+          placeholder="Describe your gender identity"
+          style={{ width: "100%", padding: 8, marginBottom: 12, boxSizing: "border-box" }}
+        />
+      )}
+      <button
+        onClick={() => selected && onSubmit({ option: selected, customText: customText || undefined })}
+        disabled={!selected}
+        style={{ width: "100%", padding: 10 }}
+      >
+        Continue
+      </button>
+    </div>
+  );
+}
 
 export default function OnboardingPage() {
   const auth = loadStoredAuth();
@@ -74,7 +131,9 @@ export default function OnboardingPage() {
         ))}
       </div>
 
-      {state.currentStep === "datingGoal" ? (
+      {state.currentStep === "gender" ? (
+        <GenderStep error={error} onSubmit={(data) => submitStep("gender", data)} />
+      ) : state.currentStep === "datingGoal" ? (
         <div>
           <label style={{ display: "block", fontSize: 14, marginBottom: 12 }}>What are you here for?</label>
           {error && <p style={{ color: "#c0392b", fontSize: 13 }}>{error}</p>}
