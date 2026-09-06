@@ -1,4 +1,5 @@
 import { AuthTokens, AuthUser } from "@chatapp/shared";
+import { getDeviceFingerprint } from "./deviceFingerprint";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const STORAGE_KEY = "chatapp:auth";
@@ -56,7 +57,7 @@ export async function verifyOtp(phoneNumber: string, code: string): Promise<Stor
   const res = await fetch(`${API_URL}/api/auth/signup/verify-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phoneNumber, code }),
+    body: JSON.stringify({ phoneNumber, code, deviceFingerprint: getDeviceFingerprint() }),
   });
   if (!res.ok) throw new Error(await parseErrorMessage(res));
   const auth: StoredAuth = await res.json();

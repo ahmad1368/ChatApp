@@ -30,6 +30,7 @@ import { PhotoStore } from "./photos";
 import { SharedDateStore } from "./sharedDates";
 import { SOSStore } from "./sos";
 import { applyWatermark } from "./watermarkImage";
+import { DuplicateAccountStore } from "./duplicateAccounts";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -64,6 +65,7 @@ export function createApp(deps?: {
   sharedDateStore: SharedDateStore;
   sosStore: SOSStore;
   webAuthnStore: WebAuthnStore;
+  duplicateAccountStore: DuplicateAccountStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -103,6 +105,7 @@ export function createApp(deps?: {
   // screen below, matching the rest of chat's un-unified author-keyed
   // safety stores (Report/Block/SOS).
   const webAuthnStore = new WebAuthnStore();
+  const duplicateAccountStore = new DuplicateAccountStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -641,6 +644,7 @@ export function createApp(deps?: {
     }
 
     const user = userStore.findOrCreateByGoogle(profile);
+    duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
     const tokens = tokenService.issueTokens(user.id);
     res.json({ user, tokens });
   });
@@ -667,6 +671,7 @@ export function createApp(deps?: {
     }
 
     const user = userStore.findOrCreateByApple(profile);
+    duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
     const tokens = tokenService.issueTokens(user.id);
     res.json({ user, tokens });
   });
@@ -693,6 +698,7 @@ export function createApp(deps?: {
     }
 
     const user = userStore.findOrCreateByFacebook(profile);
+    duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
     const tokens = tokenService.issueTokens(user.id);
     res.json({ user, tokens });
   });
@@ -912,8 +918,20 @@ export function createApp(deps?: {
     }
 
     const user = userStore.findOrCreate(phoneNumber);
+    duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
     const tokens = tokenService.issueTokens(user.id);
     res.status(200).json({ user, tokens });
+  });
+
+  // Duplicate/intrusive-account detection: flags accounts that share an IP
+  // or device fingerprint with another account (see duplicateAccounts.ts).
+  // Only the caller's own status is ever exposed — gated behind requireAuth
+  // rather than a client-supplied userId, since this can reveal something
+  // about other accounts (that a match exists).
+  app.get("/api/auth/duplicate-status", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    res.json(duplicateAccountStore.getStatus(userId));
   });
 
   app.post("/api/auth/refresh", (req, res) => {
@@ -949,6 +967,7 @@ export function createApp(deps?: {
     sharedDateStore,
     sosStore,
     webAuthnStore,
+    duplicateAccountStore,
   };
 }
 

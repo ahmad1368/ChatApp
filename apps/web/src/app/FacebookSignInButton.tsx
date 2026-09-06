@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getDeviceFingerprint } from "./deviceFingerprint";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const FACEBOOK_APP_ID = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID;
@@ -54,7 +55,7 @@ export default function FacebookSignInButton({ onSignedIn }: { onSignedIn: (auth
         const res = await fetch(`${API_URL}/api/auth/facebook`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ accessToken }),
+          body: JSON.stringify({ accessToken, deviceFingerprint: getDeviceFingerprint() }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
