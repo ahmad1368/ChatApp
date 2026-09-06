@@ -41,18 +41,7 @@ export default function ThemeToggle() {
   const label = preference === "system" ? "Theme: Auto" : preference === "light" ? "Theme: Light" : "Theme: Dark";
 
   return (
-    <button
-      onClick={cyclePreference}
-      style={{
-        fontSize: 12,
-        padding: "4px 10px",
-        borderRadius: 6,
-        border: "1px solid var(--color-border)",
-        background: "var(--color-panel)",
-        color: "var(--color-text)",
-        cursor: "pointer",
-      }}
-    >
+    <button className="chat-app__theme-toggle" onClick={cyclePreference}>
       {label}
     </button>
   );

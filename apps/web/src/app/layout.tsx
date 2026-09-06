@@ -1,9 +1,21 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import PwaRegister from "./PwaRegister";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ChatApp",
   description: "A minimal real-time chat app",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/icon-192.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#e11d48",
+  width: "device-width",
+  initialScale: 1,
 };
 
 // Applies a stored theme override before first paint so switching themes
@@ -25,7 +37,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <PwaRegister />
+      </body>
     </html>
   );
 }
