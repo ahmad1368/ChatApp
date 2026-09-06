@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
 import { normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
 import { TwoFactorService } from "./twoFactor";
+import { WebAuthnService } from "./webauthn";
 import { GoogleAuthService } from "./googleAuth";
 import { AppleAuthService } from "./appleAuth";
 import { FacebookAuthService } from "./facebookAuth";
@@ -37,6 +38,7 @@ export function createApp(deps?: {
   otpService: OtpService;
   recoveryCodeService: RecoveryCodeService;
   twoFactorService: TwoFactorService;
+  webAuthnService: WebAuthnService;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -57,6 +59,10 @@ export function createApp(deps?: {
   const userStore = new UserStore();
   const tokenService = new TokenService();
   const twoFactorService = new TwoFactorService();
+  const webAuthnService = new WebAuthnService({
+    rpId: process.env.WEBAUTHN_RP_ID ?? "localhost",
+    origin: process.env.WEBAUTHN_ORIGIN ?? "http://localhost:3000",
+  });
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -439,6 +445,73 @@ export function createApp(deps?: {
     res.json({ enabled: false });
   });
 
+  // WebAuthn (Face ID / fingerprint / Windows Hello) login. Registering a
+  // new credential is gated behind requireAuth for the same reason as
+  // #26's 2FA setup: only the signed-in owner of an account may enroll a
+  // biometric credential for it. Login itself runs pre-session (there's no
+  // access token yet to check), so it identifies the account by userId —
+  // the client remembers which account it last registered on this device,
+  // the same way a phone remembers whose Face ID unlocks a banking app.
+  app.post("/api/auth/webauthn/register/options", async (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const username = typeof req.body?.username === "string" ? req.body.username : userId;
+    const options = await webAuthnService.generateRegistrationOptions(userId, username);
+    res.json(options);
+  });
+
+  app.post("/api/auth/webauthn/register/verify", async (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const response = req.body?.response;
+    if (!response) {
+      res.status(400).json({ error: "response is required" });
+      return;
+    }
+    const verified = await webAuthnService.verifyRegistration(userId, response);
+    if (!verified) {
+      res.status(400).json({ error: "Could not verify the new credential" });
+      return;
+    }
+    res.json({ verified: true });
+  });
+
+  app.post("/api/auth/webauthn/login/options", async (req, res) => {
+    const userId = typeof req.body?.userId === "string" ? req.body.userId : undefined;
+    if (!userId) {
+      res.status(400).json({ error: "userId is required" });
+      return;
+    }
+    const options = await webAuthnService.generateAuthenticationOptions(userId);
+    if (!options) {
+      res.status(404).json({ error: "No biometric credential registered for this user" });
+      return;
+    }
+    res.json(options);
+  });
+
+  app.post("/api/auth/webauthn/login/verify", async (req, res) => {
+    const userId = typeof req.body?.userId === "string" ? req.body.userId : undefined;
+    const response = req.body?.response;
+    if (!userId || !response) {
+      res.status(400).json({ error: "userId and response are required" });
+      return;
+    }
+    const verified = await webAuthnService.verifyAuthentication(userId, response);
+    if (!verified) {
+      res.status(401).json({ error: "Biometric verification failed" });
+      return;
+    }
+    const tokens = tokenService.issueTokens(userId);
+    res.json({ tokens });
+  });
+
+  app.get("/api/auth/webauthn/status", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    res.json({ hasCredentials: webAuthnService.hasCredentials(userId) });
+  });
+
   // Phone + OTP signup. The chat itself still uses anonymous guest
   // identities — wiring this auth into ChatRoom is left for a follow-up
   // once more auth/profile issues land, so this stays additive.
@@ -496,7 +569,7 @@ export function createApp(deps?: {
     res.json({ tokens });
   });
 
-  return { app, messagesByRoom, pushService, errorReportStore, otpService, recoveryCodeService, twoFactorService };
+  return { app, messagesByRoom, pushService, errorReportStore, otpService, recoveryCodeService, twoFactorService, webAuthnService };
 }
 
 export async function createChatServer() {

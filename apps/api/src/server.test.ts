@@ -984,3 +984,86 @@ test("2FA: disables 2FA", async () => {
     server.close();
   }
 });
+
+// Full registration/authentication requires a real platform authenticator
+// (or a simulated one) to produce a validly-signed attestation/assertion —
+// that cryptographic verification is @simplewebauthn/server's own tested
+// responsibility (see webauthn.test.ts for WebAuthnService's own unit
+// tests). These integration tests cover this endpoint layer's own
+// responsibility: auth gating and fail-closed behavior.
+
+test("POST /api/auth/webauthn/register/options rejects a request with no access token", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/webauthn/register/options`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "alice" }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/webauthn/register/options returns real options for an authenticated user", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110004");
+    const res = await fetch(`${baseUrl}/api/auth/webauthn/register/options`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ username: "alice" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.challenge);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/auth/webauthn/status requires an access token and reports no credentials before registration", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const unauth = await fetch(`${baseUrl}/api/auth/webauthn/status`);
+    assert.equal(unauth.status, 401);
+
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110005");
+    const res = await fetch(`${baseUrl}/api/auth/webauthn/status`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { hasCredentials: false });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/webauthn/login/options returns 404 for a user with no registered credential", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/webauthn/login/options`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: "no-such-user" }),
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/webauthn/login/verify rejects a malformed assertion", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/webauthn/login/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: "no-such-user", response: { id: "not-real" } }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});

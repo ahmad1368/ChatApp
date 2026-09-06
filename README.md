@@ -47,8 +47,8 @@ npm run dev:web   # http://localhost:3000
 - #24 Sign in with Facebook — server-side access token verification via the Graph API's `debug_token`, JWT session issuance, gracefully-degrading button
 - #25 Account recovery via email — `/recover` two-step flow reinterpreting "password recovery" for this passwordless app (SMS recovery is already covered by #21's phone OTP)
 - #26 Two-factor authentication — TOTP (RFC 6238) setup with QR enrollment, confirm, verify, and disable, fully self-contained (no third-party 2FA provider needed); management endpoints gated behind a verified access token, demo UI at `/settings/security`
+- #27 Biometric login (Face ID / fingerprint) via WebAuthn — real platform-authenticator registration and sign-in (no biometric data ever reaches the server, by design of the standard); registration gated behind a verified access token, login identifies the account via a device-remembered userId, demo UI at `/settings/security`
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`
 - Full PWA support for the browser — web app manifest, installable icons, and an offline-capable service worker with an offline fallback page
->>>>>>> origin/staging
