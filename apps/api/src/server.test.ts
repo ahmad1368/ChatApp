@@ -2078,32 +2078,34 @@ test("GET /api/photos/:id 404s for an unknown id", async () => {
   }
 });
 
-test("POST /api/safety/plans creates a plan with a share code", async () => {
+const VALID_SHARED_DATE_PAYLOAD = {
+  meetingWith: "Jordan",
+  location: "Blue Bottle Coffee",
+  scheduledAt: "2026-09-10T18:00:00.000Z",
+  contactNames: ["Sam", "Priya"],
+};
+
+test("POST /api/shared-dates creates a plan with per-contact share codes", async () => {
   const { server, baseUrl } = listen();
   try {
-    const res = await fetch(`${baseUrl}/api/safety/plans`, {
+    const res = await fetch(`${baseUrl}/api/shared-dates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        author: "alice",
-        meetingWith: "Jordan",
-        location: "Blue Bottle Coffee",
-        scheduledAt: "2026-09-10T18:00:00.000Z",
-      }),
+      body: JSON.stringify({ author: "alice", ...VALID_SHARED_DATE_PAYLOAD }),
     });
     assert.equal(res.status, 201);
     const body = await res.json();
-    assert.equal(body.author, "alice");
-    assert.ok(body.shareCode);
+    assert.equal(body.contacts.length, 2);
+    assert.equal(body.status, "planned");
   } finally {
     server.close();
   }
 });
 
-test("POST /api/safety/plans rejects an invalid payload", async () => {
+test("POST /api/shared-dates rejects an invalid payload", async () => {
   const { server, baseUrl } = listen();
   try {
-    const res = await fetch(`${baseUrl}/api/safety/plans`, {
+    const res = await fetch(`${baseUrl}/api/shared-dates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ author: "alice" }),
@@ -2114,34 +2116,87 @@ test("POST /api/safety/plans rejects an invalid payload", async () => {
   }
 });
 
-test("GET /api/safety/plans/shared/:shareCode returns the plan for a trusted contact", async () => {
+test("PATCH /api/shared-dates/:id/status updates status only for the sharer", async () => {
   const { server, baseUrl } = listen();
   try {
-    const created = await fetch(`${baseUrl}/api/safety/plans`, {
+    const created = await fetch(`${baseUrl}/api/shared-dates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        author: "alice",
-        meetingWith: "Jordan",
-        location: "Blue Bottle Coffee",
-        scheduledAt: "2026-09-10T18:00:00.000Z",
-      }),
+      body: JSON.stringify({ author: "alice", ...VALID_SHARED_DATE_PAYLOAD }),
     }).then((r) => r.json());
 
-    const res = await fetch(`${baseUrl}/api/safety/plans/shared/${created.shareCode}`);
+    const forbidden = await fetch(`${baseUrl}/api/shared-dates/${created.id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "mallory", status: "safe" }),
+    });
+    assert.equal(forbidden.status, 400);
+
+    const ok = await fetch(`${baseUrl}/api/shared-dates/${created.id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", status: "arrived" }),
+    });
+    assert.equal(ok.status, 200);
+    const body = await ok.json();
+    assert.equal(body.status, "arrived");
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/shared-dates/shared/:shareCode reflects live status for a trusted contact", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const created = await fetch(`${baseUrl}/api/shared-dates`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", ...VALID_SHARED_DATE_PAYLOAD }),
+    }).then((r) => r.json());
+
+    await fetch(`${baseUrl}/api/shared-dates/${created.id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", status: "on_the_way" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/shared-dates/shared/${created.contacts[0].shareCode}`);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.meetingWith, "Jordan");
+    assert.equal(body.status, "on_the_way");
     assert.equal(body.author, "alice");
   } finally {
     server.close();
   }
 });
 
-test("GET /api/safety/plans/shared/:shareCode 404s for an unknown code", async () => {
+test("POST /api/shared-dates/:id/revoke invalidates all share codes", async () => {
   const { server, baseUrl } = listen();
   try {
-    const res = await fetch(`${baseUrl}/api/safety/plans/shared/does-not-exist`);
+    const created = await fetch(`${baseUrl}/api/shared-dates`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", ...VALID_SHARED_DATE_PAYLOAD }),
+    }).then((r) => r.json());
+
+    const revokeRes = await fetch(`${baseUrl}/api/shared-dates/${created.id}/revoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(revokeRes.status, 204);
+
+    const viewRes = await fetch(`${baseUrl}/api/shared-dates/shared/${created.contacts[0].shareCode}`);
+    assert.equal(viewRes.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/shared-dates/shared/:shareCode 404s for an unknown code", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/shared-dates/shared/does-not-exist`);
     assert.equal(res.status, 404);
   } finally {
     server.close();

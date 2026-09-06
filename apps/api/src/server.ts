@@ -27,7 +27,7 @@ import { BlockStore } from "./blocks";
 import { ContactBlockStore } from "./contactBlocks";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore } from "./photos";
-import { SafetyPlanStore } from "./safetyPlans";
+import { SharedDateStore } from "./sharedDates";
 import { applyWatermark } from "./watermarkImage";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
@@ -60,7 +60,7 @@ export function createApp(deps?: {
   contactBlockStore: ContactBlockStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
-  safetyPlanStore: SafetyPlanStore;
+  sharedDateStore: SharedDateStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -92,7 +92,7 @@ export function createApp(deps?: {
   const contactBlockStore = new ContactBlockStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
-  const safetyPlanStore = new SafetyPlanStore();
+  const sharedDateStore = new SharedDateStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -239,22 +239,44 @@ export function createApp(deps?: {
     }
   });
 
-  // "Share your date": its own high-priority, dependency-free safety path,
-  // same as Report/Block. A share code alone grants read access, matching
-  // the Bumble/Tinder "share my date" pattern (no trusted-contact auth exists).
-  app.post("/api/safety/plans", (req, res) => {
-    const result = safetyPlanStore.create(req.body?.author, req.body);
+  // "Share My Date": its own high-priority, dependency-free safety path,
+  // same as Report/Block. Each trusted contact gets a distinct share code,
+  // and the sharer can push a live status update or revoke access. This is
+  // the canonical implementation for #46/#47 (near-duplicates in the
+  // backlog — see CLAUDE.md); #46's original single-link SafetyPlanStore
+  // has been retired in favor of this richer version.
+  app.post("/api/shared-dates", (req, res) => {
+    const result = sharedDateStore.create(req.body?.author, req.body);
     if (!result.success) {
       res.status(400).json({ error: result.error });
       return;
     }
-    res.status(201).json(result.plan);
+    res.status(201).json(result.date);
   });
 
-  app.get("/api/safety/plans/shared/:shareCode", (req, res) => {
-    const view = safetyPlanStore.getByShareCode(req.params.shareCode);
+  app.patch("/api/shared-dates/:id/status", (req, res) => {
+    const result = sharedDateStore.updateStatus(req.body?.author, req.params.id, req.body?.status);
+    if (!result.success) {
+      const status = result.error === "Shared date not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json(result.date);
+  });
+
+  app.post("/api/shared-dates/:id/revoke", (req, res) => {
+    const revoked = sharedDateStore.revoke(req.body?.author, req.params.id);
+    if (!revoked) {
+      res.status(404).json({ error: "Shared date not found" });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  app.get("/api/shared-dates/shared/:shareCode", (req, res) => {
+    const view = sharedDateStore.viewByShareCode(req.params.shareCode);
     if (!view) {
-      res.status(404).json({ error: "Plan not found" });
+      res.status(404).json({ error: "Shared date not found" });
       return;
     }
     res.json(view);
@@ -818,7 +840,7 @@ export function createApp(deps?: {
     contactBlockStore,
     watermarkStore,
     photoStore,
-    safetyPlanStore,
+    sharedDateStore,
   };
 }
 

@@ -28,27 +28,56 @@ export interface SendMessagePayload {
 
 export const DEFAULT_ROOM_ID = "general";
 
-export interface MeetupPlanPayload {
-  author: string;
-  meetingWith: string;
-  location: string;
-  scheduledAt: string;
-}
+export const DATE_STATUSES = ["planned", "on_the_way", "arrived", "safe", "need_help"] as const;
+export type DateStatus = (typeof DATE_STATUSES)[number];
 
-export interface MeetupPlan extends MeetupPlanPayload {
-  id: string;
+export const DATE_STATUS_LABELS: Record<DateStatus, string> = {
+  planned: "Planned",
+  on_the_way: "On the way",
+  arrived: "Arrived",
+  safe: "Safe",
+  need_help: "Needs help",
+};
+
+export interface TrustedContactInfo {
+  name: string;
   shareCode: string;
-  createdAt: string;
 }
 
-export interface SharedMeetupPlanView {
+export interface SharedDatePayload {
   author: string;
   meetingWith: string;
   location: string;
   scheduledAt: string;
+  contactNames: string[];
+}
+
+export interface SharedDate {
+  id: string;
+  author: string;
+  meetingWith: string;
+  location: string;
+  scheduledAt: string;
+  status: DateStatus;
+  revoked: boolean;
+  createdAt: string;
+  contacts: TrustedContactInfo[];
+}
+
+export interface SharedDateView {
+  author: string;
+  meetingWith: string;
+  location: string;
+  scheduledAt: string;
+  status: DateStatus;
   createdAt: string;
 }
 
+// #46's SafetyPlanStore/MeetupPlan (single static link) has been retired in
+// favor of SharedDateStore/SharedDate above (multiple named trusted
+// contacts, live status, revocation) — see CLAUDE.md's #46/#47
+// reconciliation note. SafetyCenter.tsx now points at /share-my-date
+// instead of its own form.
 export const SAFETY_TIPS: string[] = [
   "Meet in a public place for the first few dates.",
   "Tell a friend or family member where you're going, who you're meeting, and when you expect to be back.",

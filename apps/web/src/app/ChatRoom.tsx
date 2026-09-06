@@ -696,6 +696,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           <Link href={`/privacy/export?author=${encodeURIComponent(author)}`}>Download my data</Link>
           <Link href={`/privacy/location?author=${encodeURIComponent(author)}`}>Location privacy</Link>
           <Link href="/safety">🛡️ Safety Center</Link>
+          <Link href="/share-my-date">📍 Share My Date</Link>
           <ThemeToggle />
           <LocaleToggle />
           <button className="chat-app__theme-toggle" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)">
