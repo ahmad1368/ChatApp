@@ -25,6 +25,7 @@ import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
 import { BlockStore } from "./blocks";
 import { ContactBlockStore } from "./contactBlocks";
+import { WatermarkStore } from "./watermark";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -54,6 +55,7 @@ export function createApp(deps?: {
   reportStore: ReportStore;
   blockStore: BlockStore;
   contactBlockStore: ContactBlockStore;
+  watermarkStore: WatermarkStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -83,6 +85,7 @@ export function createApp(deps?: {
   const reportStore = new ReportStore();
   const blockStore = new BlockStore();
   const contactBlockStore = new ContactBlockStore();
+  const watermarkStore = new WatermarkStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -182,6 +185,20 @@ export function createApp(deps?: {
     const matches = contactBlockStore.findMatchingAuthors(author, req.body?.phoneNumbers);
     const blockedAuthors = matches.filter((matched) => blockStore.block(author, matched).success);
     res.status(200).json({ blockedAuthors });
+  });
+
+  // DRM/screenshot policy: browsers have no API to block or detect an
+  // OS-level screenshot, so this is a high-priority, dependency-free
+  // deterrence path — issue a per-viewing-session trace code the client
+  // stamps into an on-screen watermark, so a leaked screenshot can be
+  // traced back to who viewed it.
+  app.post("/api/watermark/session", (req, res) => {
+    const session = watermarkStore.issueTraceCode(req.body?.author, req.body?.roomId);
+    if (!session) {
+      res.status(400).json({ error: "author and roomId are required" });
+      return;
+    }
+    res.status(201).json(session);
   });
 
   // No GET endpoint for verification selfies, deliberately — see the
@@ -740,6 +757,7 @@ export function createApp(deps?: {
     reportStore,
     blockStore,
     contactBlockStore,
+    watermarkStore,
   };
 }
 

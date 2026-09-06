@@ -28,6 +28,13 @@ export interface SendMessagePayload {
 
 export const DEFAULT_ROOM_ID = "general";
 
+export interface WatermarkSession {
+  traceCode: string;
+  author: string;
+  roomId: string;
+  issuedAt: string;
+}
+
 export interface BlockPayload {
   blockerAuthor: string;
   blockedAuthor: string;

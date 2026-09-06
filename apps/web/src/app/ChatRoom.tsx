@@ -200,6 +200,8 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [reportTarget, setReportTarget] = useState<{ author: string; messageId: string } | null>(null);
   const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
+  const [watermarkLabel, setWatermarkLabel] = useState<string | null>(null);
+  const [obscured, setObscured] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [contactNumbers, setContactNumbers] = useState("");
   const [contactBlockStatus, setContactBlockStatus] = useState<string | null>(null);
@@ -325,6 +327,36 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     setContactPickerSupported(Boolean(getContactsManager()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    // No browser API can block or detect an OS-level screenshot, so we deter +
+    // trace instead: stamp a per-session code (author + trace code) into a
+    // faint on-screen watermark, so a leaked screenshot is traceable.
+    fetch(`${API_URL}/api/watermark/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author, roomId }),
+    })
+      .then((res) => res.json())
+      .then((session) => setWatermarkLabel(`${session.author} · ${session.traceCode}`))
+      .catch(() => setWatermarkLabel(null));
+
+    // Defense-in-depth for screen-sharing/shoulder-surfing: blur chat
+    // content whenever the tab isn't the visible, focused one.
+    const handleVisibility = () => setObscured(document.hidden);
+    const handleBlur = () => setObscured(true);
+    const handleFocus = () => setObscured(false);
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("blur", handleBlur);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("focus", handleFocus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
 
   const blockUser = async (blockedAuthor: string) => {
     if (!confirm(`Block ${blockedAuthor}? You won't see each other's messages anymore.`)) return;
@@ -690,7 +722,32 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             : "Enable message notifications"}
         </button>
       )}
-      <div className="chat-app__messages">
+      <div
+        className="chat-app__messages"
+        style={{ position: "relative", filter: obscured ? "blur(12px)" : "none", transition: "filter 120ms ease" }}
+      >
+        {watermarkLabel && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              display: "flex",
+              flexWrap: "wrap",
+              alignContent: "space-around",
+              justifyContent: "space-around",
+              opacity: 0.12,
+              fontSize: 12,
+              transform: "rotate(-20deg)",
+              userSelect: "none",
+            }}
+          >
+            {Array.from({ length: 9 }).map((_, i) => (
+              <span key={i}>{watermarkLabel}</span>
+            ))}
+          </div>
+        )}
         {hasMore && (
           <button className="chat-app__load-more-button" onClick={loadOlderMessages} disabled={loadingMore}>
             {loadingMore ? "Loading…" : "Load older messages"}
