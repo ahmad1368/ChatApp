@@ -17,6 +17,9 @@ export default function SecuritySettingsPage() {
       <p>
         <Link href="/settings/discovery-visibility">Discovery visibility settings &rarr;</Link>
       </p>
+      <p>
+        <Link href="/settings/sessions">Active sessions &rarr;</Link>
+      </p>
     </main>
   );
 }
