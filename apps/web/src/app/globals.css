@@ -1,0 +1,106 @@
+:root {
+  --chat-max-width: 480px;
+  --chat-padding: 16px;
+  --chat-gap: 8px;
+  --chat-messages-height: 240px;
+  --chat-font-size: 1rem;
+  --chat-border: #ccc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.chat-app {
+  max-width: var(--chat-max-width);
+  margin: 0 auto;
+  padding: var(--chat-padding);
+  font-size: var(--chat-font-size);
+}
+
+.chat-app__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-app__header-links {
+  display: flex;
+  gap: 12px;
+}
+
+.chat-app__header-links a {
+  font-size: 13px;
+}
+
+.chat-app__notify-button {
+  margin-bottom: 12px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.chat-app__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--chat-border);
+  border-radius: 8px;
+  padding: 12px;
+  height: var(--chat-messages-height);
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.chat-app__message {
+  word-break: break-word;
+}
+
+.chat-app__composer {
+  display: flex;
+  gap: var(--chat-gap);
+}
+
+.chat-app__input {
+  flex: 1;
+  padding: 8px;
+  font-size: inherit;
+}
+
+.chat-app__send {
+  padding: 8px 16px;
+  font-size: inherit;
+}
+
+.chat-app__status {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0 0 8px;
+}
+
+.chat-app__status--offline {
+  color: #c0392b;
+}
+
+/* Tablet */
+@media (min-width: 640px) {
+  :root {
+    --chat-max-width: 640px;
+    --chat-padding: 24px;
+    --chat-messages-height: 360px;
+  }
+}
+
+/* Desktop */
+@media (min-width: 1024px) {
+  :root {
+    --chat-max-width: 840px;
+    --chat-padding: 32px;
+    --chat-messages-height: 520px;
+    --chat-font-size: 1.05rem;
+  }
+}

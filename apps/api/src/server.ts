@@ -1,28 +1,99 @@
 import cors from "cors";
-import express from "express";
+import express, { Express } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
+import { exportDataForAuthor } from "./dataExport";
+import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
+import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 
-export function createApp(pushService: PushService) {
+export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMessage[]>; pushService: PushService } {
   const app = express();
   app.use(cors());
   app.use(express.json());
 
   const messagesByRoom = new Map<string, ChatMessage[]>();
+  const locations = new LocationStore();
+  const pushService = new PushService();
+
+  const accountDeletion = new AccountDeletionCoordinator();
+  accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
   });
 
+  // `since` (ISO timestamp) lets a reconnecting client fetch only the
+  // messages it missed instead of the full room history.
   app.get("/api/rooms/:roomId/messages", (req, res) => {
     const { roomId } = req.params;
-    res.json(messagesByRoom.get(roomId) ?? []);
+    const since = typeof req.query.since === "string" ? req.query.since : undefined;
+    const all = messagesByRoom.get(roomId) ?? [];
+    res.json(since ? all.filter((m) => m.createdAt > since) : all);
   });
 
+  // GDPR data portability: its own high-priority, dependency-free path,
+  // same as Report/Block/SOS. Streams the requester's own data back as a
+  // downloadable JSON backup rather than requiring a separate export job.
+  app.get("/api/account/:author/export", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    const dataExport = exportDataForAuthor(messagesByRoom, author);
+    res.setHeader("Content-Disposition", `attachment; filename="chatapp-data-${encodeURIComponent(author)}.json"`);
+    res.json(dataExport);
+  });
+
+  // GDPR erasure: its own high-priority, dependency-free safety path, same
+  // as Report/Block/SOS. See AccountDeletionCoordinator for why this is a
+  // registry rather than a single hardcoded purge.
+  app.delete("/api/account/:author", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    res.json(accountDeletion.deleteAllDataFor(author));
+  });
+
+  // Location privacy: a user's exact coordinates never leave this process —
+  // every read returns a coordinate snapped to a ~5km grid cell instead.
+  app.put("/api/users/:author/location", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    if (!isValidCoordinates(req.body)) {
+      res.status(400).json({ error: "lat/lng must be numbers within valid ranges" });
+      return;
+    }
+    locations.setLocation(author, req.body);
+    res.json({ approximate: locations.getApproximateLocation(author) });
+  });
+
+  app.get("/api/users/:author/location", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    const approximate = locations.getApproximateLocation(author);
+    if (!approximate) {
+      res.status(404).json({ error: "no location on file for this user" });
+      return;
+    }
+    res.json({ approximate });
+  });
+
+  // Web Push: delivers new-message alerts even when the tab is fully closed
+  // (see the Notification-API path in ChatRoom.tsx for the backgrounded-tab
+  // equivalent, which doesn't need a push subscription).
   app.get("/api/push/public-key", (_req, res) => {
     res.json({ publicKey: pushService.publicKey });
   });
@@ -47,11 +118,11 @@ export function createApp(pushService: PushService) {
     res.json({ status: "unsubscribed" });
   });
 
-  return { app, messagesByRoom };
+  return { app, messagesByRoom, pushService };
 }
 
-export function createChatServer(pushService: PushService) {
-  const { app, messagesByRoom } = createApp(pushService);
+export function createChatServer() {
+  const { app, messagesByRoom, pushService } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
@@ -85,8 +156,7 @@ export function createChatServer(pushService: PushService) {
 }
 
 if (require.main === module) {
-  const pushService = new PushService();
-  const httpServer = createChatServer(pushService);
+  const httpServer = createChatServer();
   httpServer.listen(PORT, () => {
     console.log(`ChatApp API listening on port ${PORT}`);
   });
