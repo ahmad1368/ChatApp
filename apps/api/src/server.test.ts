@@ -2077,3 +2077,73 @@ test("GET /api/photos/:id 404s for an unknown id", async () => {
     server.close();
   }
 });
+
+test("POST /api/safety/plans creates a plan with a share code", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/safety/plans`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        author: "alice",
+        meetingWith: "Jordan",
+        location: "Blue Bottle Coffee",
+        scheduledAt: "2026-09-10T18:00:00.000Z",
+      }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.author, "alice");
+    assert.ok(body.shareCode);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/safety/plans rejects an invalid payload", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/safety/plans`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/safety/plans/shared/:shareCode returns the plan for a trusted contact", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const created = await fetch(`${baseUrl}/api/safety/plans`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        author: "alice",
+        meetingWith: "Jordan",
+        location: "Blue Bottle Coffee",
+        scheduledAt: "2026-09-10T18:00:00.000Z",
+      }),
+    }).then((r) => r.json());
+
+    const res = await fetch(`${baseUrl}/api/safety/plans/shared/${created.shareCode}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.meetingWith, "Jordan");
+    assert.equal(body.author, "alice");
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/safety/plans/shared/:shareCode 404s for an unknown code", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/safety/plans/shared/does-not-exist`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
