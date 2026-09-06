@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5MB, post-compression this is generous
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 interface StoredUpload {
