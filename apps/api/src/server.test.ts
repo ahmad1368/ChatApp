@@ -15,10 +15,10 @@ function makePaginationMessage(id: string, index: number): ChatMessage {
 }
 
 function listen() {
-  const { app, messagesByRoom } = createApp();
+  const { app, messagesByRoom, errorReportStore } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
-  return { server, baseUrl: `http://127.0.0.1:${port}`, messagesByRoom };
+  return { server, baseUrl: `http://127.0.0.1:${port}`, messagesByRoom, errorReportStore };
 }
 
 test("GET /health reports healthy", async () => {
@@ -380,6 +380,42 @@ test("GET /api/uploads/:id returns 404 for an unknown upload id", async () => {
   try {
     const res = await fetch(`${baseUrl}/api/uploads/does-not-exist`);
     assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/error-reports rejects a report missing a message", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/error-reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stack: "at foo()" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/error-reports accepts a valid report and stores it", async () => {
+  const { server, baseUrl, errorReportStore } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/error-reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "TypeError: x is not a function",
+        stack: "at ChatRoom (ChatRoom.tsx:10)",
+        url: "/room/general",
+        userAgent: "test-agent",
+      }),
+    });
+    assert.equal(res.status, 202);
+    const body = await res.json();
+    assert.ok(body.id);
+    assert.equal(errorReportStore.count(), 1);
   } finally {
     server.close();
   }

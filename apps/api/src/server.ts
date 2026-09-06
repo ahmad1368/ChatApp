@@ -3,6 +3,7 @@ import express, { Express } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
+import { ErrorReportStore } from "./errorReports";
 import { buildChatMessage } from "./messages";
 import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
@@ -18,6 +19,7 @@ export function createApp(): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
   pushService: PushService;
+  errorReportStore: ErrorReportStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -32,6 +34,7 @@ export function createApp(): {
   const locations = new LocationStore();
   const pushService = new PushService();
   const uploadStore = new UploadStore();
+  const errorReportStore = new ErrorReportStore();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -186,7 +189,28 @@ export function createApp(): {
     res.send(upload.data);
   });
 
-  return { app, messagesByRoom, pushService };
+  // Collects unhandled client-side errors (uncaught exceptions, rejected
+  // promises, React render errors) — the web equivalent of automatic
+  // crash reporting. No read endpoint is exposed: reports may contain
+  // stack traces/URLs from a user's session, so they're logged
+  // server-side only rather than served back over an open API.
+  app.post("/api/error-reports", (req, res) => {
+    const { message, stack, url, userAgent } = req.body ?? {};
+    if (typeof message !== "string" || !message.trim()) {
+      res.status(400).json({ error: "message is required" });
+      return;
+    }
+    const report = errorReportStore.record({
+      message,
+      stack: typeof stack === "string" ? stack : undefined,
+      url: typeof url === "string" ? url : undefined,
+      userAgent: typeof userAgent === "string" ? userAgent : undefined,
+    });
+    console.error(`[client error] ${report.message}`, report.url ?? "");
+    res.status(202).json({ id: report.id });
+  });
+
+  return { app, messagesByRoom, pushService, errorReportStore };
 }
 
 export function createChatServer() {

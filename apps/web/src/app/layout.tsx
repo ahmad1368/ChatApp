@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import ErrorBoundary from "./ErrorBoundary";
+import GlobalErrorReporter from "./GlobalErrorReporter";
 import { LocaleProvider } from "./LocaleProvider";
 import PwaRegister from "./PwaRegister";
 import "./globals.css";
@@ -45,7 +47,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: prePaintInitScript }} />
       </head>
       <body>
-        <LocaleProvider>{children}</LocaleProvider>
+        <GlobalErrorReporter />
+        <ErrorBoundary>
+          <LocaleProvider>{children}</LocaleProvider>
+        </ErrorBoundary>
         <PwaRegister />
       </body>
     </html>
