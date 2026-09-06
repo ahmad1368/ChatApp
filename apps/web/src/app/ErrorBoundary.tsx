@@ -21,12 +21,12 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
   render() {
     if (this.state.hasError) {
       return (
-        <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
+        <main className="chat-app">
           <h1>Something went wrong</h1>
-          <p style={{ color: "#6b7280", fontSize: 14 }}>
-            The error has been reported automatically. Try reloading the page.
-          </p>
-          <button onClick={() => window.location.reload()}>Reload</button>
+          <p className="chat-app__status">The error has been reported automatically. Try reloading the page.</p>
+          <button className="chat-app__send" onClick={() => window.location.reload()}>
+            Reload
+          </button>
         </main>
       );
     }
