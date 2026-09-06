@@ -3,6 +3,8 @@ import express, { Express } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
+import { RateLimiter } from "./rateLimiter";
+import { createRedisAdapterIfConfigured } from "./redisAdapter";
 import { ErrorReportStore } from "./errorReports";
 import { buildChatMessage } from "./messages";
 import { exportDataForAuthor } from "./dataExport";
@@ -14,6 +16,8 @@ import { UploadStore } from "./uploads";
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
+const MESSAGE_RATE_LIMIT = 20;
+const MESSAGE_RATE_WINDOW_MS = 10_000;
 
 export function createApp(): {
   app: Express;
@@ -213,12 +217,17 @@ export function createApp(): {
   return { app, messagesByRoom, pushService, errorReportStore };
 }
 
-export function createChatServer() {
+export async function createChatServer() {
   const { app, messagesByRoom, pushService } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
   });
+
+  const redisAdapter = await createRedisAdapterIfConfigured();
+  if (redisAdapter) io.adapter(redisAdapter);
+
+  const messageRateLimiter = new RateLimiter(MESSAGE_RATE_LIMIT, MESSAGE_RATE_WINDOW_MS);
 
   io.on("connection", (socket) => {
     socket.on("join", (roomId: string = DEFAULT_ROOM_ID) => {
@@ -226,6 +235,11 @@ export function createChatServer() {
     });
 
     socket.on("message:send", (payload: SendMessagePayload) => {
+      if (!messageRateLimiter.isAllowed(socket.id)) {
+        socket.emit("message:rejected", { reason: "rate_limited" });
+        return;
+      }
+
       const roomId = payload.roomId || DEFAULT_ROOM_ID;
       const message: ChatMessage = buildChatMessage(payload);
       const existing = messagesByRoom.get(roomId) ?? [];
@@ -236,14 +250,30 @@ export function createChatServer() {
         console.error("Failed to deliver push notifications:", err);
       });
     });
+
+    socket.on("disconnect", () => {
+      messageRateLimiter.clear(socket.id);
+    });
   });
 
   return httpServer;
 }
 
 if (require.main === module) {
-  const httpServer = createChatServer();
-  httpServer.listen(PORT, () => {
-    console.log(`ChatApp API listening on port ${PORT}`);
+  createChatServer().then((httpServer) => {
+    httpServer.listen(PORT, () => {
+      console.log(`ChatApp API listening on port ${PORT}`);
+    });
+
+    // Under a load balancer/orchestrator, instances are routinely stopped
+    // (rolling deploys, autoscaling down) — exiting without draining
+    // connections would drop in-flight requests for other users.
+    const shutdown = (signal: string) => {
+      console.log(`${signal} received, shutting down gracefully`);
+      httpServer.close(() => process.exit(0));
+      setTimeout(() => process.exit(1), 10_000).unref();
+    };
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
   });
 }
