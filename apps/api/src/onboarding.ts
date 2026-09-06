@@ -16,6 +16,7 @@ import {
   OrientationOption,
 } from "@chatapp/shared";
 import { VerificationStore } from "./verification";
+import { scanForContactInfo } from "./contactInfoDetector";
 
 const MAX_DISPLAY_NAME_LENGTH = 40;
 const MAX_BIO_LENGTH = 280;
@@ -45,6 +46,18 @@ function isOrientationOption(value: unknown): value is OrientationOption {
   return typeof value === "string" && (ORIENTATION_OPTIONS as readonly string[]).includes(value);
 }
 
+// Blocks saving a free-text profile field that looks like it contains a
+// phone number or address (see contactInfoDetector.ts), the same real
+// Bumble safety rule this app's other Report/Block/SOS features follow.
+function describeContactInfo(text: string): string | undefined {
+  if (!text) return undefined;
+  const scan = scanForContactInfo(text);
+  if (scan.containsPhoneNumber && scan.containsAddress) return "can't contain a phone number or address";
+  if (scan.containsPhoneNumber) return "can't contain a phone number";
+  if (scan.containsAddress) return "can't contain an address";
+  return undefined;
+}
+
 function roundCoordinate(value: number): number {
   const factor = 10 ** LOCATION_PRECISION_DECIMALS;
   return Math.round(value * factor) / factor;
@@ -65,6 +78,8 @@ function validateStepData(
     const displayName = typeof data === "string" ? data.trim() : "";
     if (!displayName) return { error: "displayName is required" };
     if (displayName.length > MAX_DISPLAY_NAME_LENGTH) return { error: `displayName must be ${MAX_DISPLAY_NAME_LENGTH} characters or fewer` };
+    const contactInfoError = describeContactInfo(displayName);
+    if (contactInfoError) return { error: `displayName ${contactInfoError}` };
     return { value: { displayName } };
   }
   if (step === "avatar") {
@@ -74,6 +89,8 @@ function validateStepData(
   if (step === "bio") {
     const bio = typeof data === "string" ? data.trim() : "";
     if (bio.length > MAX_BIO_LENGTH) return { error: `bio must be ${MAX_BIO_LENGTH} characters or fewer` };
+    const contactInfoError = describeContactInfo(bio);
+    if (contactInfoError) return { error: `bio ${contactInfoError}` };
     return { value: bio ? { bio } : {} };
   }
   if (step === "datingGoal") {
