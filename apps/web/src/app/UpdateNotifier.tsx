@@ -55,27 +55,11 @@ export default function UpdateNotifier() {
   if (!waitingWorker) return null;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 12,
-        left: "50%",
-        transform: "translateX(-50%)",
-        background: "#111827",
-        color: "#fff",
-        padding: "8px 12px",
-        borderRadius: 8,
-        fontSize: 13,
-        display: "flex",
-        gap: 10,
-        alignItems: "center",
-        zIndex: 100,
-      }}
-    >
+    <div className="chat-app__update-toast">
       <span>A new version of ChatApp is available.</span>
       <button
+        className="chat-app__update-toast-button"
         onClick={() => waitingWorker.postMessage({ type: "SKIP_WAITING" })}
-        style={{ background: "#fff", color: "#111827", border: "none", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
       >
         Update now
       </button>
