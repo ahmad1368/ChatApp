@@ -533,6 +533,15 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         new Notification(message.author, { body: message.text, tag: roomId });
       }
     });
+    socket.on("message:rejected", (payload: { reason?: string }) => {
+      if (payload?.reason === "scam_content") {
+        setImageError("That message looks like it violates ChatApp's policy against financial and crypto scams, so it wasn't sent.");
+      } else if (payload?.reason === "rate_limited") {
+        setImageError("You're sending messages too quickly. Please wait a moment and try again.");
+      } else if (payload?.reason === "guest_mode") {
+        setImageError("Guests can't send messages — sign up to chat.");
+      }
+    });
 
     const clearHiddenTimer = () => {
       if (hiddenTimerRef.current) {

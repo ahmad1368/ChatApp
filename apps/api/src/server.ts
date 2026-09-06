@@ -32,6 +32,7 @@ import { SOSStore } from "./sos";
 import { applyWatermark } from "./watermarkImage";
 import { DuplicateAccountStore } from "./duplicateAccounts";
 import { DiscoveryVisibilityStore } from "./discoveryVisibility";
+import { scanForScamContent } from "./scamDetector";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -1025,6 +1026,13 @@ export async function createChatServer() {
       // disabled UI and emits directly.
       if (!isGuestSendAllowed(payload)) {
         socket.emit("message:rejected", { reason: "guest_mode" });
+        return;
+      }
+
+      // Strict policy against financial/crypto scams: its own dependency-
+      // free check, same as the guest-mode check above.
+      if (scanForScamContent(payload.text ?? "").flagged) {
+        socket.emit("message:rejected", { reason: "scam_content" });
         return;
       }
 
