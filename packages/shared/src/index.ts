@@ -4,6 +4,7 @@ export interface ChatMessage {
   author: string;
   text: string;
   createdAt: string;
+  imageUrl?: string;
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
@@ -13,6 +14,7 @@ export interface SendMessagePayload {
   roomId: string;
   author: string;
   text: string;
+  imageUrl?: string;
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;

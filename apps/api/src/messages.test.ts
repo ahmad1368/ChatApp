@@ -12,22 +12,25 @@ describe("buildChatMessage", () => {
     assert.ok(!Number.isNaN(Date.parse(message.createdAt)));
   });
 
-  it("carries reply-to metadata through when provided", () => {
+  it("carries image and reply-to metadata through when provided", () => {
     const message = buildChatMessage({
       roomId: "room-a",
       author: "bob",
       text: "sure thing",
+      imageUrl: "/api/uploads/abc123",
       replyToId: "m1",
       replyToAuthor: "alice",
       replyToText: "can you send that file?",
     });
+    assert.equal(message.imageUrl, "/api/uploads/abc123");
     assert.equal(message.replyToId, "m1");
     assert.equal(message.replyToAuthor, "alice");
     assert.equal(message.replyToText, "can you send that file?");
   });
 
-  it("leaves reply-to fields undefined when not replying", () => {
+  it("leaves image and reply-to fields undefined when not provided", () => {
     const message = buildChatMessage({ roomId: "room-a", author: "bob", text: "hello" });
+    assert.equal(message.imageUrl, undefined);
     assert.equal(message.replyToId, undefined);
     assert.equal(message.replyToAuthor, undefined);
     assert.equal(message.replyToText, undefined);

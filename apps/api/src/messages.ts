@@ -7,6 +7,7 @@ export function buildChatMessage(payload: SendMessagePayload): ChatMessage {
     author: payload.author,
     text: payload.text,
     createdAt: new Date().toISOString(),
+    imageUrl: payload.imageUrl,
     replyToId: payload.replyToId,
     replyToAuthor: payload.replyToAuthor,
     replyToText: payload.replyToText,
