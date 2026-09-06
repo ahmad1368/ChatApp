@@ -34,6 +34,7 @@ import { DuplicateAccountStore } from "./duplicateAccounts";
 import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
 import { RecaptchaService } from "./recaptcha";
+import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetector";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -1010,7 +1011,7 @@ export function createApp(deps?: {
 }
 
 export async function createChatServer() {
-  const { app, messagesByRoom, pushService } = createApp();
+  const { app, messagesByRoom, pushService, reportStore } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
@@ -1049,6 +1050,21 @@ export async function createChatServer() {
 
       const roomId = payload.roomId || DEFAULT_ROOM_ID;
       const message: ChatMessage = buildChatMessage(payload);
+
+      // Report spam/promotional content to the monitoring system (#58):
+      // unlike the scam check above, this doesn't block the send — Tinder's
+      // real behavior is to route it to moderation, not break the
+      // conversation over a promotional link.
+      const spamScan = scanForSpamContent(message.text);
+      if (spamScan.flagged) {
+        reportStore.submit(SPAM_DETECTOR_REPORTER_AUTHOR, {
+          reportedAuthor: message.author,
+          messageId: message.id,
+          reason: "spam",
+          details: `Auto-flagged by spam detector (${spamScan.reason})`,
+        });
+      }
+
       const existing = messagesByRoom.get(roomId) ?? [];
       existing.push(message);
       messagesByRoom.set(roomId, existing);
