@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import { compressImage } from "./imageCompression";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
 import {
@@ -68,6 +69,9 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
   const [text, setText] = useState("");
   const [syncStatus, setSyncStatus] = useState<"connecting" | "synced" | "offline">("connecting");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
+  const [isSendingImage, setIsSendingImage] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   // On a metered/slow connection, don't auto-open the live socket — let the
   // user opt in instead of spending their data budget on a connection they
@@ -305,6 +309,40 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
     });
   };
 
+  const sendImage = async (file: File) => {
+    setImageError(null);
+    setIsSendingImage(true);
+    try {
+      const { mimeType, base64 } = await compressImage(file);
+      const uploadRes = await fetch(`${API_URL}/api/uploads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mimeType, data: base64 }),
+      });
+      if (!uploadRes.ok) {
+        const body = await uploadRes.json().catch(() => ({}));
+        throw new Error(body.error ?? "Upload failed");
+      }
+      const { url } = await uploadRes.json();
+      socketRef.current?.emit("message:send", {
+        roomId,
+        author,
+        text: "",
+        imageUrl: `${API_URL}${url}`,
+      });
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : "Failed to send image");
+    } finally {
+      setIsSendingImage(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) sendImage(file);
+  };
+
   return (
     <main className="chat-app">
       <div className="chat-app__header">
@@ -317,6 +355,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
           <LocaleToggle />
         </div>
       </div>
+      {imageError && <p className="chat-app__status chat-app__status--offline">{imageError}</p>}
       {liveUpdatesEnabled ? (
         <p
           role="status"
@@ -372,7 +411,11 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
             className={`chat-app__message${highlightedId === m.id ? " chat-app__message--highlighted" : ""}`}
           >
             <strong>{m.author}: </strong>
-            <span>{m.text}</span>
+            {m.imageUrl ? (
+              <img src={m.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+            ) : (
+              <span>{m.text}</span>
+            )}
             <button
               className="chat-app__copy-link-button"
               onClick={() => copyMessageLink(m.id)}
@@ -389,6 +432,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
             <em className="chat-app__queued-tag">(queued)</em>
           </div>
         ))}
+        {isSendingImage && <p className="chat-app__status">Compressing and sending image…</p>}
       </div>
       <div className="chat-app__composer">
         <input
@@ -399,6 +443,21 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
           placeholder={t("placeholder")}
           disabled={!liveUpdatesEnabled}
         />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          className="chat-app__file-input"
+        />
+        <button
+          className="chat-app__image-button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isSendingImage || !liveUpdatesEnabled}
+          title="Send an image"
+        >
+          📷
+        </button>
         <button className="chat-app__send" onClick={sendMessage} disabled={!liveUpdatesEnabled}>
           {t("send")}
         </button>

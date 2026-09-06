@@ -32,6 +32,7 @@ npm run dev:web   # http://localhost:3000
 - #9 Multilingual (i18n) and RTL/LTR support — English/Persian translations with a language switcher that flips `lang`/`dir` on `<html>` (RTL for Persian)
 - #10 Deep linking — `/room/[roomId]` routing plus `?m=<messageId>` links that scroll to and highlight a specific message, with a per-message "copy link" action
 - #11 Optimized REST API — backward-compatible cursor pagination (`limit`/`before`) on the messages endpoint, with a "Load older messages" client flow, instead of always shipping full room history
+- #12 Image sharing with automatic compression — client-side canvas downscale/re-encode before upload, in-memory upload store, images rendered inline in the chat
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`

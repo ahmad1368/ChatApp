@@ -129,9 +129,30 @@ body {
   margin-left: 6px;
 }
 
+.chat-app__shared-image {
+  max-width: 100%;
+  border-radius: 6px;
+  display: block;
+  margin-top: 4px;
+}
+
 .chat-app__composer {
   display: flex;
   gap: var(--chat-gap);
+}
+
+.chat-app__file-input {
+  display: none;
+}
+
+.chat-app__image-button {
+  padding: 8px 12px;
+  font-size: inherit;
+  background: var(--color-panel);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .chat-app__input {

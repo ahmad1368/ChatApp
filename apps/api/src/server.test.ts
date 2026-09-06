@@ -319,3 +319,67 @@ test("GET /api/rooms/:roomId/messages?limit= caps limit at the configured maximu
     server.close();
   }
 });
+
+// A 1x1 red PNG, small enough to keep the test fast.
+const TINY_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+test("POST /api/uploads rejects an unsupported mime type", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/uploads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mimeType: "image/gif", data: TINY_PNG_BASE64 }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/uploads rejects a request missing data", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/uploads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mimeType: "image/png" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/uploads then GET /api/uploads/:id stores a valid image and serves it back", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const uploadRes = await fetch(`${baseUrl}/api/uploads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    assert.equal(uploadRes.status, 201);
+    const { url } = await uploadRes.json();
+    assert.match(url, /^\/api\/uploads\/[\w-]+$/);
+
+    const getRes = await fetch(`${baseUrl}${url}`);
+    assert.equal(getRes.status, 200);
+    assert.equal(getRes.headers.get("content-type"), "image/png");
+    const bytes = new Uint8Array(await getRes.arrayBuffer());
+    assert.equal(bytes.length, Buffer.from(TINY_PNG_BASE64, "base64").byteLength);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/uploads/:id returns 404 for an unknown upload id", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/uploads/does-not-exist`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});

@@ -7,21 +7,30 @@ import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
+import { UploadStore } from "./uploads";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMessage[]>; pushService: PushService } {
+export function createApp(): {
+  app: Express;
+  messagesByRoom: Map<string, ChatMessage[]>;
+  pushService: PushService;
+} {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
   // must be explicitly exposed via CORS for the client to read X-Has-More.
   app.use(cors({ exposedHeaders: ["X-Has-More"] }));
-  app.use(express.json());
+  // Base64-encoded images are ~33% larger than their binary size, so allow
+  // a generous body limit even though individual images are capped in
+  // UploadStore after decoding.
+  app.use(express.json({ limit: "10mb" }));
 
   const messagesByRoom = new Map<string, ChatMessage[]>();
   const locations = new LocationStore();
   const pushService = new PushService();
+  const uploadStore = new UploadStore();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -147,6 +156,32 @@ export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMes
     res.json({ status: "unsubscribed" });
   });
 
+  // Image sharing: the client compresses/downscales before uploading (see
+  // imageCompression.ts), so this just validates mime type and size.
+  app.post("/api/uploads", (req, res) => {
+    const { mimeType, data } = req.body ?? {};
+    if (typeof mimeType !== "string" || typeof data !== "string") {
+      res.status(400).json({ error: "mimeType and data are required" });
+      return;
+    }
+    const result = uploadStore.save(mimeType, data);
+    if (result.error) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ url: `/api/uploads/${result.id}` });
+  });
+
+  app.get("/api/uploads/:id", (req, res) => {
+    const upload = uploadStore.get(req.params.id);
+    if (!upload) {
+      res.status(404).end();
+      return;
+    }
+    res.set("Content-Type", upload.mimeType);
+    res.send(upload.data);
+  });
+
   return { app, messagesByRoom, pushService };
 }
 
@@ -170,6 +205,7 @@ export function createChatServer() {
         author: payload.author,
         text: payload.text,
         createdAt: new Date().toISOString(),
+        imageUrl: payload.imageUrl,
       };
       const existing = messagesByRoom.get(roomId) ?? [];
       existing.push(message);
