@@ -1,9 +1,14 @@
 export const ALBUM_ACCESS_LEVELS = ["public", "private", "requestAccess"] as const;
 export type AlbumAccessLevel = (typeof ALBUM_ACCESS_LEVELS)[number];
 
+// Hinge's real cap on a profile's photo album.
+export const MAX_ALBUM_PHOTOS = 9;
+
 export type SetAccessLevelResult = { success: true; accessLevel: AlbumAccessLevel } | { success: false; error: string };
 export type RequestAccessResult = { success: true } | { success: false; error: string };
 export type RespondToRequestResult = { success: true } | { success: false; error: string };
+export type AddPhotoResult = { success: true; photoIds: string[] } | { success: false; error: string };
+export type RemovePhotoResult = { success: true; photoIds: string[] } | { success: false; error: string };
 
 function isAccessLevel(value: unknown): value is AlbumAccessLevel {
   return typeof value === "string" && (ALBUM_ACCESS_LEVELS as readonly string[]).includes(value);
@@ -20,6 +25,39 @@ export class PhotoAlbumStore {
   private accessLevelByOwner = new Map<string, AlbumAccessLevel>();
   private pendingRequestsByOwner = new Map<string, Set<string>>();
   private approvedViewersByOwner = new Map<string, Set<string>>();
+  private photoIdsByOwner = new Map<string, string[]>();
+
+  /** Ordered list of this owner's album photo ids (at most MAX_ALBUM_PHOTOS). */
+  listPhotos(owner: string): string[] {
+    return this.photoIdsByOwner.get(owner) ?? [];
+  }
+
+  addPhoto(owner: unknown, photoId: unknown): AddPhotoResult {
+    const ownerName = typeof owner === "string" ? owner.trim() : "";
+    const id = typeof photoId === "string" ? photoId.trim() : "";
+    if (!ownerName) return { success: false, error: "owner is required" };
+    if (!id) return { success: false, error: "photoId is required" };
+
+    const existing = this.photoIdsByOwner.get(ownerName) ?? [];
+    if (existing.includes(id)) return { success: false, error: "That photo is already in the album" };
+    if (existing.length >= MAX_ALBUM_PHOTOS) {
+      return { success: false, error: `An album can have at most ${MAX_ALBUM_PHOTOS} photos` };
+    }
+
+    const updated = [...existing, id];
+    this.photoIdsByOwner.set(ownerName, updated);
+    return { success: true, photoIds: updated };
+  }
+
+  removePhoto(owner: unknown, photoId: unknown): RemovePhotoResult {
+    const ownerName = typeof owner === "string" ? owner.trim() : "";
+    if (!ownerName) return { success: false, error: "owner is required" };
+
+    const existing = this.photoIdsByOwner.get(ownerName) ?? [];
+    const updated = existing.filter((existingId) => existingId !== photoId);
+    this.photoIdsByOwner.set(ownerName, updated);
+    return { success: true, photoIds: updated };
+  }
 
   getAccessLevel(owner: string): AlbumAccessLevel {
     return this.accessLevelByOwner.get(owner) ?? "public";

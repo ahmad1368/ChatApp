@@ -205,7 +205,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
   const [watermarkLabel, setWatermarkLabel] = useState<string | null>(null);
   const [obscured, setObscured] = useState(false);
-  const [photoId, setPhotoId] = useState<string | null>(null);
+  const [albumPhotoIds, setAlbumPhotoIds] = useState<string[]>([]);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [albumAccessLevel, setAlbumAccessLevel] = useState<"public" | "private" | "requestAccess">("public");
   const [pendingAlbumRequests, setPendingAlbumRequests] = useState<string[]>([]);
@@ -367,6 +367,10 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         if (body.accessLevel === "requestAccess") refreshPendingAlbumRequests();
       })
       .catch(() => undefined);
+    fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/photos`)
+      .then((res) => res.json())
+      .then((body) => setAlbumPhotoIds(body.photoIds ?? []))
+      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -477,18 +481,40 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     });
     const base64 = dataUrl.split(",")[1] ?? "";
 
-    const res = await fetch(`${API_URL}/api/photos`, {
+    const uploadRes = await fetch(`${API_URL}/api/photos`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ author, mimeType: file.type, data: base64 }),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
+    if (!uploadRes.ok) {
+      const body = await uploadRes.json().catch(() => ({}));
       setPhotoError(body.error ?? "Failed to upload photo");
       return;
     }
-    const body = await res.json();
-    setPhotoId(body.id);
+    const { id } = await uploadRes.json();
+
+    const addRes = await fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId: id }),
+    });
+    if (!addRes.ok) {
+      const body = await addRes.json().catch(() => ({}));
+      setPhotoError(body.error ?? "Failed to add photo to album");
+      return;
+    }
+    const { photoIds } = await addRes.json();
+    setAlbumPhotoIds(photoIds);
+  };
+
+  const removeAlbumPhoto = async (photoId: string) => {
+    const res = await fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/photos/${photoId}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      const { photoIds } = await res.json();
+      setAlbumPhotoIds(photoIds);
+    }
   };
 
   // The server also filters blocked authors out of the initial/paginated
@@ -953,7 +979,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         {contactBlockStatus && <p style={{ color: "var(--color-muted)" }}>{contactBlockStatus}</p>}
       </section>
       <section style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, marginTop: 12, fontSize: 13 }}>
-        <h2 style={{ fontSize: 14 }}>Profile photo</h2>
+        <h2 style={{ fontSize: 14 }}>Photo album ({albumPhotoIds.length}/9)</h2>
         <p style={{ color: "var(--color-muted)" }}>
           Uploaded photos are watermarked with your name every time they&apos;re served, to deter
           photo theft — the watermark is burned into the image itself, not just shown on top of it.
@@ -961,16 +987,33 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         <input
           type="file"
           accept="image/png,image/jpeg,image/webp"
+          disabled={albumPhotoIds.length >= 9}
           onChange={(e) => e.target.files?.[0] && uploadPhoto(e.target.files[0])}
         />
+        {albumPhotoIds.length >= 9 && (
+          <p style={{ color: "var(--color-muted)" }}>Your album is full — remove a photo to add another.</p>
+        )}
         {photoError && <p style={{ color: "var(--color-danger)" }}>{photoError}</p>}
-        {photoId && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={`${API_URL}/api/photos/${photoId}?viewer=${encodeURIComponent(author)}`}
-            alt="Watermarked upload preview"
-            style={{ marginTop: 8, maxWidth: "100%", borderRadius: 8 }}
-          />
+        {albumPhotoIds.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 8 }}>
+            {albumPhotoIds.map((id) => (
+              <div key={id} style={{ position: "relative" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`${API_URL}/api/photos/${id}?viewer=${encodeURIComponent(author)}`}
+                  alt="Watermarked upload"
+                  style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8 }}
+                />
+                <button
+                  onClick={() => removeAlbumPhoto(id)}
+                  title="Remove photo"
+                  style={{ position: "absolute", top: 4, right: 4, padding: "2px 6px" }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
         )}
 
         <div style={{ marginTop: 12 }}>
