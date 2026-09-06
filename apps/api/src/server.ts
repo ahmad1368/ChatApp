@@ -14,6 +14,7 @@ export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMes
   app.use(express.json());
 
   const messagesByRoom = new Map<string, ChatMessage[]>();
+  const locations = new LocationStore();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
