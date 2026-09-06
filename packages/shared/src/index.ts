@@ -24,9 +24,12 @@ export const DEFAULT_ROOM_ID = "general";
 
 export interface AuthUser {
   id: string;
-  phoneNumber: string;
   displayName: string;
   createdAt: string;
+  phoneNumber?: string;
+  email?: string;
+  avatarUrl?: string;
+  googleId?: string;
 }
 
 export interface AuthTokens {

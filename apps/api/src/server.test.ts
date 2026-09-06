@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { AddressInfo } from "net";
 import { ChatMessage } from "@chatapp/shared";
 import { createApp } from "./server";
+import { GoogleAuthService } from "./googleAuth";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -19,6 +20,13 @@ function listen() {
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}`, messagesByRoom, errorReportStore, otpService };
+}
+
+function listenWithGoogleAuth(googleAuthService: GoogleAuthService) {
+  const { app } = createApp({ googleAuthService });
+  const server = app.listen(0);
+  const { port } = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${port}` };
 }
 
 test("GET /health reports healthy", async () => {
@@ -509,6 +517,89 @@ test("POST /api/auth/refresh rejects an unknown token", async () => {
       body: JSON.stringify({ refreshToken: "not-a-real-token" }),
     });
     assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/google responds 503 when GOOGLE_CLIENT_ID isn't set", async () => {
+  const { server, baseUrl } = listenWithGoogleAuth(new GoogleAuthService(undefined, async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "anything" }),
+    });
+    assert.equal(res.status, 503);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/google requires an idToken", async () => {
+  const { server, baseUrl } = listenWithGoogleAuth(new GoogleAuthService("client-id", async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/google rejects an invalid token", async () => {
+  const { server, baseUrl } = listenWithGoogleAuth(new GoogleAuthService("client-id", async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "garbage" }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/google signs a user in and issues tokens for a valid token", async () => {
+  const fakeVerifier = async (idToken: string) =>
+    idToken === "valid-token" ? { googleId: "g-1", email: "a@b.com", name: "Alice" } : undefined;
+  const { server, baseUrl } = listenWithGoogleAuth(new GoogleAuthService("client-id", fakeVerifier));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "valid-token" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.user.email, "a@b.com");
+    assert.equal(body.user.displayName, "Alice");
+    assert.ok(body.tokens.accessToken);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/google returns the same user id on repeat sign-in", async () => {
+  const fakeVerifier = async (idToken: string) =>
+    idToken === "valid-token" ? { googleId: "g-1", email: "a@b.com", name: "Alice" } : undefined;
+  const { server, baseUrl } = listenWithGoogleAuth(new GoogleAuthService("client-id", fakeVerifier));
+  try {
+    const first = await fetch(`${baseUrl}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "valid-token" }),
+    }).then((r) => r.json());
+    const second = await fetch(`${baseUrl}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "valid-token" }),
+    }).then((r) => r.json());
+    assert.equal(first.user.id, second.user.id);
   } finally {
     server.close();
   }

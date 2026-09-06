@@ -3,7 +3,7 @@ import { AuthTokens, AuthUser } from "@chatapp/shared";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const STORAGE_KEY = "chatapp:auth";
 
-interface StoredAuth {
+export interface StoredAuth {
   user: AuthUser;
   tokens: AuthTokens;
 }

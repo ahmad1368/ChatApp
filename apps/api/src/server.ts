@@ -4,6 +4,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
 import { normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
+import { GoogleAuthService } from "./googleAuth";
 import { RateLimiter } from "./rateLimiter";
 import { createRedisAdapterIfConfigured } from "./redisAdapter";
 import { ErrorReportStore } from "./errorReports";
@@ -20,7 +21,7 @@ const MAX_PAGE_SIZE = 100;
 const MESSAGE_RATE_LIMIT = 20;
 const MESSAGE_RATE_WINDOW_MS = 10_000;
 
-export function createApp(): {
+export function createApp(deps?: { googleAuthService?: GoogleAuthService }): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
   pushService: PushService;
@@ -44,6 +45,9 @@ export function createApp(): {
   const otpService = new OtpService();
   const userStore = new UserStore();
   const tokenService = new TokenService();
+  // Injectable so tests can exercise real branching logic (configured vs.
+  // not, valid vs. invalid token) without a real Google Cloud project.
+  const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -217,6 +221,33 @@ export function createApp(): {
     });
     console.error(`[client error] ${report.message}`, report.url ?? "");
     res.status(202).json({ id: report.id });
+  });
+
+  // Google Sign-In: fully real verification (validates the ID token's
+  // signature against Google's public keys and checks audience), gated
+  // behind GOOGLE_CLIENT_ID since there's no "just log it" stand-in for
+  // an actual OAuth client id.
+  app.post("/api/auth/google", async (req, res) => {
+    if (!googleAuthService.isConfigured()) {
+      res.status(503).json({ error: "Google Sign-In is not configured on this server" });
+      return;
+    }
+
+    const idToken = typeof req.body?.idToken === "string" ? req.body.idToken : undefined;
+    if (!idToken) {
+      res.status(400).json({ error: "idToken is required" });
+      return;
+    }
+
+    const profile = await googleAuthService.verify(idToken);
+    if (!profile) {
+      res.status(401).json({ error: "Invalid Google ID token" });
+      return;
+    }
+
+    const user = userStore.findOrCreateByGoogle(profile);
+    const tokens = tokenService.issueTokens(user.id);
+    res.json({ user, tokens });
   });
 
   // Phone + OTP signup. The chat itself still uses anonymous guest

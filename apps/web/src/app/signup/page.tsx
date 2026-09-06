@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { requestOtp, verifyOtp } from "../authClient";
+import GoogleSignInButton from "../GoogleSignInButton";
+import { requestOtp, saveStoredAuth, verifyOtp } from "../authClient";
 
 type Step = "phone" | "otp";
 
@@ -93,6 +94,19 @@ export default function SignupPage() {
           </button>
         </form>
       )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0" }}>
+        <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+        <span style={{ fontSize: 12, color: "#6b7280" }}>or</span>
+        <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+      </div>
+
+      <GoogleSignInButton
+        onSignedIn={(auth) => {
+          saveStoredAuth(auth as Parameters<typeof saveStoredAuth>[0]);
+          router.push("/");
+        }}
+      />
     </main>
   );
 }

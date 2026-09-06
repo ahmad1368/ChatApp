@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { AuthTokens, AuthUser } from "@chatapp/shared";
+import { GoogleProfile } from "./googleAuth";
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 30 * 1000;
@@ -76,8 +77,12 @@ export class OtpService {
   }
 }
 
+// One store shared by both sign-in methods: a user found-or-created by phone
+// keeps the same AuthUser shape as one found-or-created by Google, and both
+// live in the same in-memory map (keyed by whichever identifier applies).
 export class UserStore {
   private usersByPhone = new Map<string, AuthUser>();
+  private usersByGoogleId = new Map<string, AuthUser>();
 
   findOrCreate(phoneNumber: string): AuthUser {
     const existing = this.usersByPhone.get(phoneNumber);
@@ -90,6 +95,22 @@ export class UserStore {
       createdAt: new Date().toISOString(),
     };
     this.usersByPhone.set(phoneNumber, user);
+    return user;
+  }
+
+  findOrCreateByGoogle(profile: GoogleProfile): AuthUser {
+    const existing = this.usersByGoogleId.get(profile.googleId);
+    if (existing) return existing;
+
+    const user: AuthUser = {
+      id: crypto.randomUUID(),
+      googleId: profile.googleId,
+      email: profile.email,
+      avatarUrl: profile.avatarUrl,
+      displayName: profile.name ?? profile.email ?? "Google user",
+      createdAt: new Date().toISOString(),
+    };
+    this.usersByGoogleId.set(profile.googleId, user);
     return user;
   }
 }
