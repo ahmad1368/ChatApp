@@ -8,7 +8,7 @@ describe("OnboardingStore", () => {
     assert.deepEqual(store.getState("user-1"), { currentStep: "displayName", profile: {} });
   });
 
-  it("advances through the full flow to completion", () => {
+  it("advances through the full flow, including dating goal, to completion", () => {
     const store = new OnboardingStore();
 
     const step1 = store.submitStep("user-1", "displayName", "Alice");
@@ -22,11 +22,16 @@ describe("OnboardingStore", () => {
 
     const step3 = store.submitStep("user-1", "bio", "Hello there");
     assert.ok(step3.success);
-    assert.equal(step3.state.currentStep, "complete");
-    assert.deepEqual(step3.state.profile, {
+    assert.equal(step3.state.currentStep, "datingGoal");
+
+    const step4 = store.submitStep("user-1", "datingGoal", "marriage");
+    assert.ok(step4.success);
+    assert.equal(step4.state.currentStep, "complete");
+    assert.deepEqual(step4.state.profile, {
       displayName: "Alice",
       avatarUrl: "https://example.com/a.png",
       bio: "Hello there",
+      datingGoal: "marriage",
     });
   });
 
@@ -39,6 +44,27 @@ describe("OnboardingStore", () => {
     assert.equal(result.state.currentStep, "bio");
   });
 
+  it("rejects an invalid dating goal", () => {
+    const store = new OnboardingStore();
+    store.submitStep("user-1", "displayName", "Alice");
+    store.submitStep("user-1", "avatar", "");
+    store.submitStep("user-1", "bio", "");
+    const result = store.submitStep("user-1", "datingGoal", "world-domination");
+    assert.equal(result.success, false);
+  });
+
+  it("accepts each valid dating goal option", () => {
+    for (const goal of ["marriage", "friendship", "casual"] as const) {
+      const store = new OnboardingStore();
+      store.submitStep("user-1", "displayName", "Alice");
+      store.submitStep("user-1", "avatar", "");
+      store.submitStep("user-1", "bio", "");
+      const result = store.submitStep("user-1", "datingGoal", goal);
+      assert.ok(result.success);
+      assert.equal(result.state.profile.datingGoal, goal);
+    }
+  });
+
   it("rejects an empty display name", () => {
     const store = new OnboardingStore();
     const result = store.submitStep("user-1", "displayName", "   ");
@@ -47,9 +73,9 @@ describe("OnboardingStore", () => {
 
   it("rejects submitting a step out of order", () => {
     const store = new OnboardingStore();
-    // Still on "displayName" — trying to submit "bio" should fail rather
-    // than silently accept out-of-order data.
-    const result = store.submitStep("user-1", "bio", "Hello");
+    // Still on "displayName" — trying to submit "datingGoal" should fail
+    // rather than silently accept out-of-order data.
+    const result = store.submitStep("user-1", "datingGoal", "marriage");
     assert.equal(result.success, false);
   });
 

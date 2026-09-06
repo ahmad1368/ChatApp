@@ -1142,3 +1142,75 @@ test("POST /api/onboarding/step rejects submitting a step out of order", async (
     server.close();
   }
 });
+
+test("POST /api/onboarding/step progresses through to the dating goal step and persists between requests", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110010");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+
+    await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "displayName", data: "Bob" }),
+    });
+    await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "avatar", data: "" }),
+    });
+    const step3 = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "bio", data: "" }),
+    }).then((r) => r.json());
+    assert.equal(step3.currentStep, "datingGoal");
+
+    const step4 = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "datingGoal", data: "friendship" }),
+    }).then((r) => r.json());
+    assert.equal(step4.currentStep, "complete");
+    assert.equal(step4.profile.datingGoal, "friendship");
+
+    const resumed = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) =>
+      r.json()
+    );
+    assert.equal(resumed.currentStep, "complete");
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects an invalid dating goal value", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110011");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+
+    await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "displayName", data: "Carol" }),
+    });
+    await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "avatar", data: "" }),
+    });
+    await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "bio", data: "" }),
+    });
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "datingGoal", data: "nonsense" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});

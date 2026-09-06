@@ -1,4 +1,11 @@
-import { ONBOARDING_STEPS, OnboardingProfile, OnboardingState, OnboardingStep } from "@chatapp/shared";
+import {
+  DATING_GOALS,
+  DatingGoal,
+  ONBOARDING_STEPS,
+  OnboardingProfile,
+  OnboardingState,
+  OnboardingStep,
+} from "@chatapp/shared";
 
 const MAX_DISPLAY_NAME_LENGTH = 40;
 const MAX_BIO_LENGTH = 280;
@@ -8,6 +15,10 @@ export type SubmitStepResult = { success: true; state: OnboardingState } | { suc
 function nextStep(step: OnboardingStep): OnboardingStep | "complete" {
   const index = ONBOARDING_STEPS.indexOf(step);
   return index === ONBOARDING_STEPS.length - 1 ? "complete" : ONBOARDING_STEPS[index + 1];
+}
+
+function isDatingGoal(value: unknown): value is DatingGoal {
+  return typeof value === "string" && (DATING_GOALS as readonly string[]).includes(value);
 }
 
 function validateStepData(step: OnboardingStep, data: unknown): { value: Partial<OnboardingProfile> } | { error: string } {
@@ -26,6 +37,10 @@ function validateStepData(step: OnboardingStep, data: unknown): { value: Partial
     const bio = typeof data === "string" ? data.trim() : "";
     if (bio.length > MAX_BIO_LENGTH) return { error: `bio must be ${MAX_BIO_LENGTH} characters or fewer` };
     return { value: bio ? { bio } : {} };
+  }
+  if (step === "datingGoal") {
+    if (!isDatingGoal(data)) return { error: `datingGoal must be one of: ${DATING_GOALS.join(", ")}` };
+    return { value: { datingGoal: data } };
   }
   return { error: "Unknown step" };
 }
