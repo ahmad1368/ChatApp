@@ -96,6 +96,22 @@ body {
 
 .chat-app__message {
   word-break: break-word;
+  border-radius: 4px;
+  padding: 4px;
+  transition: background 0.3s;
+}
+
+.chat-app__message--highlighted {
+  background: #fff3cd;
+}
+
+.chat-app__copy-link-button {
+  margin-left: 6px;
+  font-size: 11px;
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  cursor: pointer;
 }
 
 .chat-app__message--queued {

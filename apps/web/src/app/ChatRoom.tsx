@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
@@ -54,16 +55,17 @@ function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessag
   return additions.length ? [...prev, ...additions] : prev;
 }
 
-export default function ChatRoom() {
+export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string }) {
   const { t } = useLocale();
   // Hydrate synchronously from the local cache so there's something on
   // screen immediately, even before the network fetch (or if it never
   // succeeds because we're offline).
-  const [messages, setMessages] = useState<ChatMessage[]>(() => loadCachedMessages(DEFAULT_ROOM_ID));
-  const [queue, setQueue] = useState<QueuedMessage[]>(() => loadQueuedMessages(DEFAULT_ROOM_ID));
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadCachedMessages(roomId));
+  const [queue, setQueue] = useState<QueuedMessage[]>(() => loadQueuedMessages(roomId));
   const [text, setText] = useState("");
   const [syncStatus, setSyncStatus] = useState<"connecting" | "synced" | "offline">("connecting");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   // On a metered/slow connection, don't auto-open the live socket — let the
   // user opt in instead of spending their data budget on a connection they
   // didn't ask for.
@@ -74,6 +76,7 @@ export default function ChatRoom() {
   );
   const socketRef = useRef<Socket | null>(null);
   const hiddenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const messageRefs = useRef(new Map<string, HTMLDivElement>());
   const queueRef = useRef(queue);
   queueRef.current = queue;
   const authorRef = useRef(author);
@@ -82,9 +85,11 @@ export default function ChatRoom() {
   // reconnect (dropped wifi, backgrounded tab, another device catching up)
   // we only fetch what we missed instead of the whole history again.
   const lastSyncedAtRef = useRef<string | undefined>(undefined);
+  const searchParams = useSearchParams();
+  const deepLinkedMessageId = searchParams.get("m");
 
   const syncSince = (since?: string) =>
-    fetch(`${API_URL}/api/rooms/${DEFAULT_ROOM_ID}/messages${since ? `?since=${encodeURIComponent(since)}` : ""}`)
+    fetch(`${API_URL}/api/rooms/${roomId}/messages${since ? `?since=${encodeURIComponent(since)}` : ""}`)
       .then((res) => res.json())
       .then((incoming: ChatMessage[]) => {
         if (incoming.length) {
@@ -96,12 +101,12 @@ export default function ChatRoom() {
       .catch(() => setSyncStatus("offline"));
 
   useEffect(() => {
-    saveCachedMessages(DEFAULT_ROOM_ID, messages);
-  }, [messages]);
+    saveCachedMessages(roomId, messages);
+  }, [roomId, messages]);
 
   useEffect(() => {
-    saveQueuedMessages(DEFAULT_ROOM_ID, queue);
-  }, [queue]);
+    saveQueuedMessages(roomId, queue);
+  }, [roomId, queue]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window) {
@@ -146,11 +151,12 @@ export default function ChatRoom() {
     }
   };
 
-  // Always load the room's history on mount, even if live updates are
-  // paused for Data Saver below — pausing only skips the live socket.
+  // Always load the room's history on mount (and whenever roomId changes),
+  // even if live updates are paused for Data Saver below — pausing only
+  // skips the live socket.
   useEffect(() => {
     syncSince();
-  }, []);
+  }, [roomId]);
 
   useEffect(() => {
     if (!liveUpdatesEnabled) return;
@@ -167,19 +173,20 @@ export default function ChatRoom() {
 
     const flushQueue = () => {
       for (const queued of queueRef.current) {
-        socket.emit("message:send", { roomId: DEFAULT_ROOM_ID, author: queued.author, text: queued.text });
+        socket.emit("message:send", { roomId, author: queued.author, text: queued.text });
       }
       setQueue([]);
     };
 
     socket.on("connect", () => {
-      socket.emit("join", DEFAULT_ROOM_ID);
+      socket.emit("join", roomId);
       // Reconnect sync: catch up on anything sent while we were disconnected.
       syncSince(lastSyncedAtRef.current);
       flushQueue();
     });
     socket.on("disconnect", () => setSyncStatus("offline"));
     socket.on("message:new", (message: ChatMessage) => {
+      if (message.roomId !== roomId) return;
       lastSyncedAtRef.current = message.createdAt;
       setMessages((prev) => mergeMessages(prev, [message]));
       // The queued entry is now confirmed by the server's own broadcast.
@@ -191,7 +198,7 @@ export default function ChatRoom() {
       const isOwnMessage = message.author === authorRef.current;
       const canNotify = "Notification" in window && Notification.permission === "granted";
       if (!isOwnMessage && document.hidden && canNotify) {
-        new Notification(message.author, { body: message.text, tag: DEFAULT_ROOM_ID });
+        new Notification(message.author, { body: message.text, tag: roomId });
       }
     });
 
@@ -227,7 +234,19 @@ export default function ChatRoom() {
       window.removeEventListener("online", handleOnline);
       socket.disconnect();
     };
-  }, [liveUpdatesEnabled]);
+  }, [liveUpdatesEnabled, roomId]);
+
+  // Deep link support: jump to and briefly highlight a specific message
+  // (e.g. from a shared /room/<id>?m=<messageId> link) once it's rendered.
+  useEffect(() => {
+    if (!deepLinkedMessageId) return;
+    const el = messageRefs.current.get(deepLinkedMessageId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedId(deepLinkedMessageId);
+    const timeout = setTimeout(() => setHighlightedId(null), 2500);
+    return () => clearTimeout(timeout);
+  }, [deepLinkedMessageId, messages]);
 
   const requestNotificationPermission = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) return;
@@ -241,7 +260,7 @@ export default function ChatRoom() {
     setText("");
 
     if (socketRef.current?.connected) {
-      socketRef.current.emit("message:send", { roomId: DEFAULT_ROOM_ID, author, text: trimmed });
+      socketRef.current.emit("message:send", { roomId, author, text: trimmed });
       return;
     }
 
@@ -251,6 +270,13 @@ export default function ChatRoom() {
       ...prev,
       { clientId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, author, text: trimmed, queuedAt: new Date().toISOString() },
     ]);
+  };
+
+  const copyMessageLink = (messageId: string) => {
+    const url = `${window.location.origin}/room/${roomId}?m=${messageId}`;
+    navigator.clipboard?.writeText(url).catch(() => {
+      // Clipboard API unavailable/denied — link is still shareable manually via the URL bar.
+    });
   };
 
   return (
@@ -306,9 +332,23 @@ export default function ChatRoom() {
       )}
       <div className="chat-app__messages">
         {messages.map((m) => (
-          <div key={m.id} className="chat-app__message">
+          <div
+            key={m.id}
+            ref={(el) => {
+              if (el) messageRefs.current.set(m.id, el);
+              else messageRefs.current.delete(m.id);
+            }}
+            className={`chat-app__message${highlightedId === m.id ? " chat-app__message--highlighted" : ""}`}
+          >
             <strong>{m.author}: </strong>
             <span>{m.text}</span>
+            <button
+              className="chat-app__copy-link-button"
+              onClick={() => copyMessageLink(m.id)}
+              title="Copy link to this message"
+            >
+              🔗
+            </button>
           </div>
         ))}
         {queue.map((q) => (
