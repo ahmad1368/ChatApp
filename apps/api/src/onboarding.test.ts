@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { VerificationStore } from "./verification";
 import { GENDER_OPTIONS, ORIENTATION_OPTIONS } from "@chatapp/shared";
 import { OnboardingStore } from "./onboarding";
 
@@ -25,14 +26,22 @@ function completeUpToSearchRadius(store: OnboardingStore, userId: string) {
   store.submitStep(userId, "ageRange", { min: 25, max: 35 });
 }
 
+const TINY_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+function completeUpToSelfieStep(store: OnboardingStore, userId: string) {
+  completeUpToSearchRadius(store, userId);
+  store.submitStep(userId, "searchRadius", { radiusKm: 25 });
+}
+
 describe("OnboardingStore", () => {
   it("starts a new user at the first step with an empty profile", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     assert.deepEqual(store.getState("user-1"), { currentStep: "displayName", profile: {} });
   });
 
   it("advances through the full flow, including dating goal, ending on the gender step", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
 
     const step1 = store.submitStep("user-1", "displayName", "Alice");
     assert.ok(step1.success);
@@ -59,7 +68,7 @@ describe("OnboardingStore", () => {
   });
 
   it("allows skipping the optional avatar step with an empty value", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     store.submitStep("user-1", "displayName", "Alice");
     const result = store.submitStep("user-1", "avatar", "");
     assert.ok(result.success);
@@ -68,7 +77,7 @@ describe("OnboardingStore", () => {
   });
 
   it("accepts an uploaded avatar URL for the avatar step", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     store.submitStep("user-1", "displayName", "Alice");
     const result = store.submitStep("user-1", "avatar", "/api/uploads/abc-123");
     assert.ok(result.success);
@@ -76,7 +85,7 @@ describe("OnboardingStore", () => {
   });
 
   it("rejects an invalid dating goal", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     store.submitStep("user-1", "displayName", "Alice");
     store.submitStep("user-1", "avatar", "");
     store.submitStep("user-1", "bio", "");
@@ -86,7 +95,7 @@ describe("OnboardingStore", () => {
 
   it("accepts each valid dating goal option", () => {
     for (const goal of ["marriage", "friendship", "casual"] as const) {
-      const store = new OnboardingStore();
+      const store = new OnboardingStore(new VerificationStore());
       store.submitStep("user-1", "displayName", "Alice");
       store.submitStep("user-1", "avatar", "");
       store.submitStep("user-1", "bio", "");
@@ -97,14 +106,14 @@ describe("OnboardingStore", () => {
   });
 
   it("completes the full flow ending on the gender step", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToGender(store, "user-1");
     assert.equal(store.getState("user-1").currentStep, "gender");
   });
 
   it("accepts every non-custom gender option, advancing to the orientation step", () => {
     for (const option of GENDER_OPTIONS.filter((o) => o !== "custom")) {
-      const store = new OnboardingStore();
+      const store = new OnboardingStore(new VerificationStore());
       completeUpToGender(store, "user-1");
       const result = store.submitStep("user-1", "gender", { option });
       assert.ok(result.success);
@@ -114,14 +123,14 @@ describe("OnboardingStore", () => {
   });
 
   it("requires custom text when 'custom' gender is chosen", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToGender(store, "user-1");
     const result = store.submitStep("user-1", "gender", { option: "custom" });
     assert.equal(result.success, false);
   });
 
   it("accepts a custom gender description", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToGender(store, "user-1");
     const result = store.submitStep("user-1", "gender", { option: "custom", customText: "Demiboy" });
     assert.ok(result.success);
@@ -130,27 +139,27 @@ describe("OnboardingStore", () => {
   });
 
   it("rejects an unrecognized gender option", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToGender(store, "user-1");
     const result = store.submitStep("user-1", "gender", { option: "not-a-real-option" });
     assert.equal(result.success, false);
   });
 
   it("rejects submitting the gender step out of order", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     const result = store.submitStep("user-1", "gender", { option: "woman" });
     assert.equal(result.success, false);
   });
 
   it("completes the full flow ending on the orientation step", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToOrientation(store, "user-1");
     assert.equal(store.getState("user-1").currentStep, "orientation");
   });
 
   it("accepts every non-custom orientation option with a valid interestedIn list", () => {
     for (const option of ORIENTATION_OPTIONS.filter((o) => o !== "custom")) {
-      const store = new OnboardingStore();
+      const store = new OnboardingStore(new VerificationStore());
       completeUpToOrientation(store, "user-1");
       const result = store.submitStep("user-1", "orientation", { option, interestedIn: ["man", "woman"] });
       assert.ok(result.success);
@@ -161,28 +170,28 @@ describe("OnboardingStore", () => {
   });
 
   it("requires at least one interestedIn selection", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToOrientation(store, "user-1");
     const result = store.submitStep("user-1", "orientation", { option: "straight", interestedIn: [] });
     assert.equal(result.success, false);
   });
 
   it("rejects an invalid entry in interestedIn", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToOrientation(store, "user-1");
     const result = store.submitStep("user-1", "orientation", { option: "straight", interestedIn: ["not-a-gender"] });
     assert.equal(result.success, false);
   });
 
   it("requires custom text when 'custom' orientation is chosen", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToOrientation(store, "user-1");
     const result = store.submitStep("user-1", "orientation", { option: "custom", interestedIn: ["woman"] });
     assert.equal(result.success, false);
   });
 
   it("accepts a custom orientation description", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToOrientation(store, "user-1");
     const result = store.submitStep("user-1", "orientation", {
       option: "custom",
@@ -194,19 +203,19 @@ describe("OnboardingStore", () => {
   });
 
   it("rejects submitting the orientation step out of order", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     const result = store.submitStep("user-1", "orientation", { option: "straight", interestedIn: ["woman"] });
     assert.equal(result.success, false);
   });
 
   it("rejects an empty display name", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     const result = store.submitStep("user-1", "displayName", "   ");
     assert.equal(result.success, false);
   });
 
   it("rejects submitting a step out of order", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     // Still on "displayName" — trying to submit "datingGoal" should fail
     // rather than silently accept out-of-order data.
     const result = store.submitStep("user-1", "datingGoal", "marriage");
@@ -214,7 +223,7 @@ describe("OnboardingStore", () => {
   });
 
   it("resumes exactly where a user left off", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     store.submitStep("user-1", "displayName", "Alice");
     // Simulate the user closing the app and coming back later.
     const resumed = store.getState("user-1");
@@ -223,13 +232,13 @@ describe("OnboardingStore", () => {
   });
 
   it("completes the full flow ending on the age range step", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToAgeRange(store, "user-1");
     assert.equal(store.getState("user-1").currentStep, "ageRange");
   });
 
   it("accepts a valid age range, advancing to the search radius step", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToAgeRange(store, "user-1");
     const result = store.submitStep("user-1", "ageRange", { min: 25, max: 35 });
     assert.ok(result.success);
@@ -238,64 +247,64 @@ describe("OnboardingStore", () => {
   });
 
   it("rejects a min below the legal minimum", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToAgeRange(store, "user-1");
     const result = store.submitStep("user-1", "ageRange", { min: 16, max: 30 });
     assert.equal(result.success, false);
   });
 
   it("rejects a max above the allowed maximum", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToAgeRange(store, "user-1");
     const result = store.submitStep("user-1", "ageRange", { min: 20, max: 150 });
     assert.equal(result.success, false);
   });
 
   it("rejects min greater than max", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToAgeRange(store, "user-1");
     const result = store.submitStep("user-1", "ageRange", { min: 40, max: 30 });
     assert.equal(result.success, false);
   });
 
   it("rejects non-integer values", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToAgeRange(store, "user-1");
     const result = store.submitStep("user-1", "ageRange", { min: 25.5, max: 30 });
     assert.equal(result.success, false);
   });
 
   it("accepts equal min and max (a single-age preference)", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToAgeRange(store, "user-1");
     const result = store.submitStep("user-1", "ageRange", { min: 30, max: 30 });
     assert.ok(result.success);
   });
 
   it("rejects submitting the age range step out of order", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     const result = store.submitStep("user-1", "ageRange", { min: 25, max: 35 });
     assert.equal(result.success, false);
   });
 
   it("completes the full flow ending on the search radius step", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToSearchRadius(store, "user-1");
     assert.equal(store.getState("user-1").currentStep, "searchRadius");
   });
 
-  it("accepts a radius with a location and completes onboarding", () => {
-    const store = new OnboardingStore();
+  it("accepts a radius with a location, advancing to the selfie verification step", () => {
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToSearchRadius(store, "user-1");
     const result = store.submitStep("user-1", "searchRadius", { radiusKm: 25, location: { lat: 40.7128, lng: -74.006 } });
     assert.ok(result.success);
-    assert.equal(result.state.currentStep, "complete");
+    assert.equal(result.state.currentStep, "selfieVerification");
     assert.equal(result.state.profile.searchRadiusKm, 25);
     assert.deepEqual(result.state.profile.location, { lat: 40.71, lng: -74.01 });
   });
 
   it("rounds coordinates to 2 decimal places regardless of input precision", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToSearchRadius(store, "user-1");
     const result = store.submitStep("user-1", "searchRadius", {
       radiusKm: 25,
@@ -306,7 +315,7 @@ describe("OnboardingStore", () => {
   });
 
   it("accepts a radius with no location (permission denied)", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToSearchRadius(store, "user-1");
     const result = store.submitStep("user-1", "searchRadius", { radiusKm: 50 });
     assert.ok(result.success);
@@ -315,7 +324,7 @@ describe("OnboardingStore", () => {
   });
 
   it("rejects a radius outside the allowed bounds", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToSearchRadius(store, "user-1");
     const tooSmall = store.submitStep("user-1", "searchRadius", { radiusKm: 0 });
     assert.equal(tooSmall.success, false);
@@ -324,15 +333,54 @@ describe("OnboardingStore", () => {
   });
 
   it("rejects an invalid latitude/longitude", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     completeUpToSearchRadius(store, "user-1");
     const result = store.submitStep("user-1", "searchRadius", { radiusKm: 25, location: { lat: 200, lng: 0 } });
     assert.equal(result.success, false);
   });
 
   it("rejects submitting the search radius step out of order", () => {
-    const store = new OnboardingStore();
+    const store = new OnboardingStore(new VerificationStore());
     const result = store.submitStep("user-1", "searchRadius", { radiusKm: 25 });
+    assert.equal(result.success, false);
+  });
+
+  it("completes the full flow ending on the selfie verification step", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    completeUpToSelfieStep(store, "user-1");
+    assert.equal(store.getState("user-1").currentStep, "selfieVerification");
+  });
+
+  it("marks isSelfieVerified true when a selfie was already accepted", () => {
+    const verificationStore = new VerificationStore();
+    verificationStore.saveSelfie("user-1", "image/png", TINY_PNG_BASE64);
+    const store = new OnboardingStore(verificationStore);
+    completeUpToSelfieStep(store, "user-1");
+    const result = store.submitStep("user-1", "selfieVerification", {});
+    assert.ok(result.success);
+    assert.equal(result.state.currentStep, "complete");
+    assert.equal(result.state.profile.isSelfieVerified, true);
+  });
+
+  it("marks isSelfieVerified false when the user skips", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    completeUpToSelfieStep(store, "user-1");
+    const result = store.submitStep("user-1", "selfieVerification", { skipped: true });
+    assert.ok(result.success);
+    assert.equal(result.state.profile.isSelfieVerified, false);
+  });
+
+  it("marks isSelfieVerified false when no selfie was submitted and not explicitly skipped", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    completeUpToSelfieStep(store, "user-1");
+    const result = store.submitStep("user-1", "selfieVerification", {});
+    assert.ok(result.success);
+    assert.equal(result.state.profile.isSelfieVerified, false);
+  });
+
+  it("rejects submitting the selfie verification step out of order", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    const result = store.submitStep("user-1", "selfieVerification", {});
     assert.equal(result.success, false);
   });
 });

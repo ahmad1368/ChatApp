@@ -20,10 +20,18 @@ function makePaginationMessage(id: string, index: number): ChatMessage {
 }
 
 function listen() {
-  const { app, messagesByRoom, errorReportStore, otpService, recoveryCodeService } = createApp();
+  const { app, messagesByRoom, errorReportStore, otpService, recoveryCodeService, verificationStore } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
-  return { server, baseUrl: `http://127.0.0.1:${port}`, messagesByRoom, errorReportStore, otpService, recoveryCodeService };
+  return {
+    server,
+    baseUrl: `http://127.0.0.1:${port}`,
+    messagesByRoom,
+    errorReportStore,
+    otpService,
+    recoveryCodeService,
+    verificationStore,
+  };
 }
 
 function listenWithGoogleAuth(googleAuthService: GoogleAuthService) {
@@ -1491,7 +1499,7 @@ async function stepThroughToSearchRadius(baseUrl: string, authHeaders: Record<st
   });
 }
 
-test("POST /api/onboarding/step completes the search radius step with a rounded location and persists", async () => {
+test("POST /api/onboarding/step completes the search radius step with a rounded location, advancing to selfie verification, and persists", async () => {
   const { server, baseUrl, otpService } = listen();
   try {
     const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110024");
@@ -1505,14 +1513,14 @@ test("POST /api/onboarding/step completes the search radius step with a rounded 
     });
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.currentStep, "complete");
+    assert.equal(body.currentStep, "selfieVerification");
     assert.equal(body.profile.searchRadiusKm, 30);
     assert.deepEqual(body.profile.location, { lat: 51.51, lng: -0.13 });
 
     const resumed = await fetch(`${baseUrl}/api/onboarding`, { headers: { Authorization: `Bearer ${accessToken}` } }).then((r) =>
       r.json()
     );
-    assert.equal(resumed.currentStep, "complete");
+    assert.equal(resumed.currentStep, "selfieVerification");
   } finally {
     server.close();
   }
@@ -1565,6 +1573,110 @@ test("POST /api/onboarding/step rejects submitting the search radius step out of
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ step: "searchRadius", data: { radiusKm: 25 } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+async function stepThroughToSelfieVerification(baseUrl: string, authHeaders: Record<string, string>) {
+  await stepThroughToSearchRadius(baseUrl, authHeaders);
+  await fetch(`${baseUrl}/api/onboarding/step`, {
+    method: "POST",
+    headers: authHeaders,
+    body: JSON.stringify({ step: "searchRadius", data: { radiusKm: 25 } }),
+  });
+}
+
+test("POST /api/verification/selfie rejects a request with no access token", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/verification/selfie`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/verification/selfie accepts a valid selfie and never exposes it via a GET endpoint", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110028");
+    const res = await fetch(`${baseUrl}/api/verification/selfie`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(await res.json(), { verified: true });
+
+    // There is deliberately no GET /api/verification/... route at all.
+    const noRoute = await fetch(`${baseUrl}/api/verification/selfie`);
+    assert.equal(noRoute.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step wires a submitted selfie into the selfieVerification step", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110029");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToSelfieVerification(baseUrl, authHeaders);
+
+    await fetch(`${baseUrl}/api/verification/selfie`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "selfieVerification", data: {} }),
+    });
+    const body = await res.json();
+    assert.equal(body.currentStep, "complete");
+    assert.equal(body.profile.isSelfieVerified, true);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step marks isSelfieVerified false when the user skips", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110030");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToSelfieVerification(baseUrl, authHeaders);
+
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "selfieVerification", data: { skipped: true } }),
+    });
+    const body = await res.json();
+    assert.equal(body.currentStep, "complete");
+    assert.equal(body.profile.isSelfieVerified, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/onboarding/step rejects submitting the selfie verification step out of order", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110031");
+    const res = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ step: "selfieVerification", data: {} }),
     });
     assert.equal(res.status, 400);
   } finally {

@@ -58,6 +58,7 @@ export const ONBOARDING_STEPS = [
   "orientation",
   "ageRange",
   "searchRadius",
+  "selfieVerification",
 ] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
@@ -170,6 +171,10 @@ export interface OnboardingProfile {
   preferredAgeRange?: AgeRange;
   searchRadiusKm?: number;
   location?: CoarseLocation;
+  // Deliberately just a boolean — the verification selfie itself is never
+  // exposed through the onboarding state or any public profile field. See
+  // apps/api/src/verification.ts.
+  isSelfieVerified?: boolean;
 }
 
 export interface OnboardingState {

@@ -20,6 +20,7 @@ import {
 } from "@chatapp/shared";
 import { loadStoredAuth } from "../authClient";
 import AvatarCropper from "../AvatarCropper";
+import LiveSelfieCapture from "../LiveSelfieCapture";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -373,6 +374,7 @@ export default function OnboardingPage() {
         <p style={{ color: "#6b7280" }}>
           Welcome, {state.profile.displayName}. Looking for{" "}
           {state.profile.datingGoal && DATING_GOAL_LABELS[state.profile.datingGoal].toLowerCase()}.
+          {state.profile.isSelfieVerified ? " Your identity is verified." : ""}
         </p>
       </main>
     );
@@ -389,7 +391,9 @@ export default function OnboardingPage() {
         ))}
       </div>
 
-      {state.currentStep === "avatar" ? (
+      {state.currentStep === "selfieVerification" ? (
+        <LiveSelfieCapture onDone={(verified) => submitStep("selfieVerification", verified ? {} : { skipped: true })} />
+      ) : state.currentStep === "avatar" ? (
         <AvatarStep error={error} onSubmit={(avatarUrl) => submitStep("avatar", avatarUrl)} />
       ) : state.currentStep === "searchRadius" ? (
         <SearchRadiusStep error={error} onSubmit={(data) => submitStep("searchRadius", data)} />

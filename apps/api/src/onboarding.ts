@@ -14,6 +14,7 @@ import {
   OnboardingStep,
   OrientationOption,
 } from "@chatapp/shared";
+import { VerificationStore } from "./verification";
 
 const MAX_DISPLAY_NAME_LENGTH = 40;
 const MAX_BIO_LENGTH = 280;
@@ -48,7 +49,12 @@ function roundCoordinate(value: number): number {
   return Math.round(value * factor) / factor;
 }
 
-function validateStepData(step: OnboardingStep, data: unknown): { value: Partial<OnboardingProfile> } | { error: string } {
+function validateStepData(
+  step: OnboardingStep,
+  data: unknown,
+  userId: string,
+  verificationStore: VerificationStore
+): { value: Partial<OnboardingProfile> } | { error: string } {
   if (step === "displayName") {
     const displayName = typeof data === "string" ? data.trim() : "";
     if (!displayName) return { error: "displayName is required" };
@@ -134,6 +140,14 @@ function validateStepData(step: OnboardingStep, data: unknown): { value: Partial
     }
     return { value: { searchRadiusKm: radiusKm, location: { lat: roundCoordinate(lat), lng: roundCoordinate(lng) } } };
   }
+  if (step === "selfieVerification") {
+    // Skippable — camera access may be unavailable/denied. The actual
+    // selfie upload happens via POST /api/verification/selfie beforehand;
+    // this step just records the outcome the client already achieved.
+    const skipped = typeof data === "object" && data !== null && (data as { skipped?: unknown }).skipped === true;
+    if (skipped) return { value: { isSelfieVerified: false } };
+    return { value: { isSelfieVerified: verificationStore.isVerified(userId) } };
+  }
   return { error: "Unknown step" };
 }
 
@@ -145,6 +159,8 @@ function validateStepData(step: OnboardingStep, data: unknown): { value: Partial
 export class OnboardingStore {
   private statesByUserId = new Map<string, OnboardingState>();
 
+  constructor(private readonly verificationStore: VerificationStore) {}
+
   getState(userId: string): OnboardingState {
     return this.statesByUserId.get(userId) ?? { currentStep: ONBOARDING_STEPS[0], profile: {} };
   }
@@ -155,7 +171,7 @@ export class OnboardingStore {
       return { success: false, error: `Expected step "${state.currentStep}", got "${step}"` };
     }
 
-    const validated = validateStepData(step, data);
+    const validated = validateStepData(step, data, userId, this.verificationStore);
     if ("error" in validated) return { success: false, error: validated.error };
 
     const updated: OnboardingState = {

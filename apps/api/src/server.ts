@@ -20,6 +20,7 @@ import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDe
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
 import { UploadStore } from "./uploads";
+import { VerificationStore } from "./verification";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -45,6 +46,7 @@ export function createApp(deps?: {
   twoFactorService: TwoFactorService;
   webAuthnService: WebAuthnService;
   onboardingStore: OnboardingStore;
+  verificationStore: VerificationStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -69,7 +71,8 @@ export function createApp(deps?: {
     rpId: process.env.WEBAUTHN_RP_ID ?? "localhost",
     origin: process.env.WEBAUTHN_ORIGIN ?? "http://localhost:3000",
   });
-  const onboardingStore = new OnboardingStore();
+  const verificationStore = new VerificationStore();
+  const onboardingStore = new OnboardingStore(verificationStore);
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -95,6 +98,26 @@ export function createApp(deps?: {
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // No GET endpoint for verification selfies, deliberately — see the
+  // privacy note in verification.ts. Only a boolean outcome is ever
+  // returned. Gated behind requireAuth (same reasoning as onboarding
+  // below) rather than a client-supplied userId in the body.
+  app.post("/api/verification/selfie", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const { mimeType, data } = req.body ?? {};
+    if (typeof mimeType !== "string" || typeof data !== "string") {
+      res.status(400).json({ error: "mimeType and data are required" });
+      return;
+    }
+    const result = verificationStore.saveSelfie(userId, mimeType, data);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ verified: true });
   });
 
   // Server-persisted onboarding state machine: gated behind requireAuth
@@ -602,7 +625,18 @@ export function createApp(deps?: {
     res.json({ tokens });
   });
 
-  return { app, messagesByRoom, pushService, errorReportStore, otpService, recoveryCodeService, twoFactorService, webAuthnService, onboardingStore };
+  return {
+    app,
+    messagesByRoom,
+    pushService,
+    errorReportStore,
+    otpService,
+    recoveryCodeService,
+    twoFactorService,
+    webAuthnService,
+    onboardingStore,
+    verificationStore,
+  };
 }
 
 export async function createChatServer() {
