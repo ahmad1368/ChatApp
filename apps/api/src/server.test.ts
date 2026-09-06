@@ -2401,3 +2401,47 @@ test("POST /api/webauthn/authentication/options rejects an author with no regist
     server.close();
   }
 });
+
+test("GET /api/auth/duplicate-status requires a valid access token", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/duplicate-status`);
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/auth/duplicate-status is unflagged for a lone signup", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110050");
+    const res = await fetch(`${baseUrl}/api/auth/duplicate-status`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { flagged: false, matchedUserIds: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/auth/duplicate-status flags two accounts that signed up from the same network address", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    // Both requests come from this test process, so they share an IP —
+    // enough on its own to flag, even with the deviceFingerprint field
+    // omitted from one of them.
+    const accessTokenA = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110051");
+    const accessTokenB = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110052");
+
+    const [resA, resB] = await Promise.all([
+      fetch(`${baseUrl}/api/auth/duplicate-status`, { headers: { Authorization: `Bearer ${accessTokenA}` } }),
+      fetch(`${baseUrl}/api/auth/duplicate-status`, { headers: { Authorization: `Bearer ${accessTokenB}` } }),
+    ]);
+    assert.equal((await resA.json()).flagged, true);
+    assert.equal((await resB.json()).flagged, true);
+  } finally {
+    server.close();
+  }
+});

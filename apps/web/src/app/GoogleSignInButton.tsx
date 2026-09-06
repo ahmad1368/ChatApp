@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { getDeviceFingerprint } from "./deviceFingerprint";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -35,7 +36,7 @@ export default function GoogleSignInButton({ onSignedIn }: { onSignedIn: (auth: 
         const res = await fetch(`${API_URL}/api/auth/google`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idToken: response.credential }),
+          body: JSON.stringify({ idToken: response.credential, deviceFingerprint: getDeviceFingerprint() }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));

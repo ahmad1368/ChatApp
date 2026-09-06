@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getDeviceFingerprint } from "./deviceFingerprint";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const APPLE_SERVICES_ID = process.env.NEXT_PUBLIC_APPLE_SERVICES_ID;
@@ -54,7 +55,7 @@ export default function AppleSignInButton({ onSignedIn }: { onSignedIn: (auth: u
       const res = await fetch(`${API_URL}/api/auth/apple`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken: result.authorization.id_token }),
+        body: JSON.stringify({ idToken: result.authorization.id_token, deviceFingerprint: getDeviceFingerprint() }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
