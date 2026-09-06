@@ -9,6 +9,7 @@ export type RequestAccessResult = { success: true } | { success: false; error: s
 export type RespondToRequestResult = { success: true } | { success: false; error: string };
 export type AddPhotoResult = { success: true; photoIds: string[] } | { success: false; error: string };
 export type RemovePhotoResult = { success: true; photoIds: string[] } | { success: false; error: string };
+export type ReorderResult = { success: true; photoIds: string[] } | { success: false; error: string };
 
 function isAccessLevel(value: unknown): value is AlbumAccessLevel {
   return typeof value === "string" && (ALBUM_ACCESS_LEVELS as readonly string[]).includes(value);
@@ -57,6 +58,30 @@ export class PhotoAlbumStore {
     const updated = existing.filter((existingId) => existingId !== photoId);
     this.photoIdsByOwner.set(ownerName, updated);
     return { success: true, photoIds: updated };
+  }
+
+  /**
+   * Drag-and-drop reordering (#62): newOrder must be exactly the same set
+   * of photo ids already in the album, just rearranged — this endpoint
+   * only reorders, it can't be used to sneak in or drop a photo (that's
+   * addPhoto()/removePhoto()'s job, which also enforce the 9-photo cap).
+   */
+  reorderPhotos(owner: unknown, newOrder: unknown): ReorderResult {
+    const ownerName = typeof owner === "string" ? owner.trim() : "";
+    if (!ownerName) return { success: false, error: "owner is required" };
+    if (!Array.isArray(newOrder) || !newOrder.every((id) => typeof id === "string")) {
+      return { success: false, error: "photoIds must be an array of strings" };
+    }
+
+    const existing = this.photoIdsByOwner.get(ownerName) ?? [];
+    const isSamePhotoSet =
+      newOrder.length === existing.length && existing.every((id) => newOrder.includes(id));
+    if (!isSamePhotoSet) {
+      return { success: false, error: "photoIds must be exactly the photos already in the album, reordered" };
+    }
+
+    this.photoIdsByOwner.set(ownerName, newOrder);
+    return { success: true, photoIds: newOrder };
   }
 
   getAccessLevel(owner: string): AlbumAccessLevel {

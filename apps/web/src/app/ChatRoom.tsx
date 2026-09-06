@@ -517,6 +517,33 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     }
   };
 
+  // Drag-and-drop reordering: reorder optimistically so the grid feels
+  // instant, then persist — on failure (e.g. a concurrent edit elsewhere)
+  // refetch the server's order rather than leaving the UI out of sync.
+  const reorderAlbumPhoto = async (draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
+    const current = albumPhotoIds;
+    const withoutDragged = current.filter((id) => id !== draggedId);
+    const targetIndex = withoutDragged.indexOf(targetId);
+    const reordered = [
+      ...withoutDragged.slice(0, targetIndex),
+      draggedId,
+      ...withoutDragged.slice(targetIndex),
+    ];
+    setAlbumPhotoIds(reordered);
+
+    const res = await fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/photos/order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoIds: reordered }),
+    });
+    if (!res.ok) {
+      const listRes = await fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/photos`);
+      const body = await listRes.json().catch(() => undefined);
+      setAlbumPhotoIds(body?.photoIds ?? current);
+    }
+  };
+
   // The server also filters blocked authors out of the initial/paginated
   // REST fetch (see `viewer=` above), but a live message:new delivered over
   // the socket bypasses that — this app broadcasts to the whole room rather
@@ -995,25 +1022,39 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         )}
         {photoError && <p style={{ color: "var(--color-danger)" }}>{photoError}</p>}
         {albumPhotoIds.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 8 }}>
-            {albumPhotoIds.map((id) => (
-              <div key={id} style={{ position: "relative" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`${API_URL}/api/photos/${id}?viewer=${encodeURIComponent(author)}`}
-                  alt="Watermarked upload"
-                  style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8 }}
-                />
-                <button
-                  onClick={() => removeAlbumPhoto(id)}
-                  title="Remove photo"
-                  style={{ position: "absolute", top: 4, right: 4, padding: "2px 6px" }}
+          <>
+            <p style={{ color: "var(--color-muted)" }}>Drag a photo to reorder your album.</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 8 }}>
+              {albumPhotoIds.map((id) => (
+                <div
+                  key={id}
+                  draggable
+                  onDragStart={(e) => e.dataTransfer.setData("text/plain", id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const draggedId = e.dataTransfer.getData("text/plain");
+                    if (draggedId) reorderAlbumPhoto(draggedId, id);
+                  }}
+                  style={{ position: "relative", cursor: "grab" }}
                 >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`${API_URL}/api/photos/${id}?viewer=${encodeURIComponent(author)}`}
+                    alt="Watermarked upload"
+                    style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8 }}
+                  />
+                  <button
+                    onClick={() => removeAlbumPhoto(id)}
+                    title="Remove photo"
+                    style={{ position: "absolute", top: 4, right: 4, padding: "2px 6px" }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
         )}
 
         <div style={{ marginTop: 12 }}>

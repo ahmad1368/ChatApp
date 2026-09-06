@@ -357,6 +357,17 @@ export function createApp(deps?: {
     res.json({ photoIds: result.photoIds });
   });
 
+  // Drag-and-drop reordering (#62): the client sends the full desired
+  // order, which must be exactly the photos already in the album.
+  app.put("/api/photo-albums/:owner/photos/order", (req, res) => {
+    const result = photoAlbumStore.reorderPhotos(req.params.owner, req.body?.photoIds);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ photoIds: result.photoIds });
+  });
+
   // "Share My Date": its own high-priority, dependency-free safety path,
   // same as Report/Block. Each trusted contact gets a distinct share code,
   // and the sharer can push a live status update or revoke access. This is
