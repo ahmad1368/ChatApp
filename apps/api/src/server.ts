@@ -33,6 +33,7 @@ import { applyWatermark } from "./watermarkImage";
 import { DuplicateAccountStore } from "./duplicateAccounts";
 import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
+import { RecaptchaService } from "./recaptcha";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -48,6 +49,7 @@ export function createApp(deps?: {
   googleAuthService?: GoogleAuthService;
   appleAuthService?: AppleAuthService;
   facebookAuthService?: FacebookAuthService;
+  recaptchaService?: RecaptchaService;
 }): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
@@ -115,6 +117,7 @@ export function createApp(deps?: {
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
   const appleAuthService = deps?.appleAuthService ?? new AppleAuthService();
   const facebookAuthService = deps?.facebookAuthService ?? new FacebookAuthService();
+  const recaptchaService = deps?.recaptchaService ?? new RecaptchaService();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -886,10 +889,18 @@ export function createApp(deps?: {
   // Phone + OTP signup. The chat itself still uses anonymous guest
   // identities — wiring this auth into ChatRoom is left for a follow-up
   // once more auth/profile issues land, so this stays additive.
-  app.post("/api/auth/signup/request-otp", (req, res) => {
+  app.post("/api/auth/signup/request-otp", async (req, res) => {
     const phoneNumber = normalizePhoneNumber(req.body?.phoneNumber);
     if (!phoneNumber) {
       res.status(400).json({ error: "A valid phone number (E.164-ish, e.g. +15551234567) is required" });
+      return;
+    }
+
+    // Bot detection: gates the one step that costs real money to abuse
+    // (triggering an SMS send). Gracefully degrades when unconfigured —
+    // see RecaptchaService.
+    if (!(await recaptchaService.verify(req.body?.recaptchaToken))) {
+      res.status(403).json({ error: "Bot verification failed" });
       return;
     }
 

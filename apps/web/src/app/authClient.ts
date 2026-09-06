@@ -1,5 +1,6 @@
 import { AuthTokens, AuthUser } from "@chatapp/shared";
 import { getDeviceFingerprint } from "./deviceFingerprint";
+import { getRecaptchaToken } from "./recaptcha";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const STORAGE_KEY = "chatapp:auth";
@@ -45,10 +46,11 @@ async function parseErrorMessage(res: Response): Promise<string> {
 }
 
 export async function requestOtp(phoneNumber: string): Promise<void> {
+  const recaptchaToken = await getRecaptchaToken("signup");
   const res = await fetch(`${API_URL}/api/auth/signup/request-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phoneNumber }),
+    body: JSON.stringify({ phoneNumber, recaptchaToken }),
   });
   if (!res.ok) throw new Error(await parseErrorMessage(res));
 }
