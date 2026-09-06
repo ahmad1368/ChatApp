@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   DATING_GOALS,
   DATING_GOAL_LABELS,
@@ -19,6 +18,7 @@ import {
   OrientationOption,
   OnboardingState,
 } from "@chatapp/shared";
+import { loadStoredAuth } from "../authClient";
 import AvatarCropper from "../AvatarCropper";
 import LiveSelfieCapture from "../LiveSelfieCapture";
 
@@ -328,28 +328,32 @@ function SearchRadiusStep({
   );
 }
 
-// Demo entry point: real usage should derive the user id from an
-// authenticated session (once #21-#25's auth lands) — see the note in
-// apps/api/src/server.ts.
-function OnboardingContent() {
-  const searchParams = useSearchParams();
-  const userId = searchParams.get("userId") ?? "demo-user";
-
+export default function OnboardingPage() {
+  const auth = loadStoredAuth();
   const [state, setState] = useState<OnboardingState | null>(null);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/onboarding/${userId}`)
+    if (!auth) return;
+    fetch(`${API_URL}/api/onboarding`, { headers: { Authorization: `Bearer ${auth.tokens.accessToken}` } })
       .then((res) => res.json())
       .then(setState);
-  }, [userId]);
+  }, [auth?.tokens.accessToken]);
+
+  if (!auth) {
+    return (
+      <main style={{ maxWidth: 360, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
+        <p style={{ color: "#6b7280" }}>Sign in to set up your profile.</p>
+      </main>
+    );
+  }
 
   const submitStep = async (step: string, stepValue: unknown) => {
     setError(null);
-    const res = await fetch(`${API_URL}/api/onboarding/${userId}/step`, {
+    const res = await fetch(`${API_URL}/api/onboarding/step`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.tokens.accessToken}` },
       body: JSON.stringify({ step, data: stepValue }),
     });
     if (!res.ok) {
@@ -388,7 +392,7 @@ function OnboardingContent() {
       </div>
 
       {state.currentStep === "selfieVerification" ? (
-        <LiveSelfieCapture userId={userId} onDone={(verified) => submitStep("selfieVerification", verified ? {} : { skipped: true })} />
+        <LiveSelfieCapture onDone={(verified) => submitStep("selfieVerification", verified ? {} : { skipped: true })} />
       ) : state.currentStep === "avatar" ? (
         <AvatarStep error={error} onSubmit={(avatarUrl) => submitStep("avatar", avatarUrl)} />
       ) : state.currentStep === "searchRadius" ? (
@@ -457,13 +461,5 @@ function OnboardingContent() {
         })()
       )}
     </main>
-  );
-}
-
-export default function OnboardingPage() {
-  return (
-    <Suspense fallback={null}>
-      <OnboardingContent />
-    </Suspense>
   );
 }

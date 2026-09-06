@@ -133,6 +133,17 @@ export default function AvatarCropper({ file, onCancel, onCropped }: Props) {
         />
       </div>
 
+      <label style={{ display: "block", fontSize: 12, color: "#6b7280", textAlign: "center" }}>Zoom</label>
+      <input
+        type="range"
+        min={MIN_ZOOM}
+        max={MAX_ZOOM}
+        step={0.05}
+        value={zoom}
+        onChange={(e) => setZoom(Number(e.target.value))}
+        style={{ width: "100%", marginBottom: 16 }}
+      />
+
       {faceCheck === "not-found" && (
         <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
           <p style={{ margin: "0 0 6px" }}>
@@ -144,17 +155,6 @@ export default function AvatarCropper({ file, onCancel, onCropped }: Props) {
           </label>
         </div>
       )}
-
-      <label style={{ display: "block", fontSize: 12, color: "#6b7280", textAlign: "center" }}>Zoom</label>
-      <input
-        type="range"
-        min={MIN_ZOOM}
-        max={MAX_ZOOM}
-        step={0.05}
-        value={zoom}
-        onChange={(e) => setZoom(Number(e.target.value))}
-        style={{ width: "100%", marginBottom: 16 }}
-      />
 
       <div style={{ display: "flex", gap: 8 }}>
         <button type="button" onClick={onCancel} style={{ flex: 1, padding: 10 }}>
