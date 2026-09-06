@@ -307,6 +307,26 @@ body {
   cursor: pointer;
 }
 
+.chat-app__data-saver-toggle {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-app__data-saver-banner {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.chat-app__data-saver-banner > div {
+  margin-top: 8px;
+}
+
 .chat-app__link-button {
   border: none;
   background: none;

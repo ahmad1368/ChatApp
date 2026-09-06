@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import { loadDataSaverPreference, saveDataSaverPreference } from "./dataSaverStore";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { compressImage } from "./imageCompression";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
@@ -132,21 +133,6 @@ function MessageRow({
 // this just avoids an idle socket burning power while nobody is looking.
 const DISCONNECT_AFTER_HIDDEN_MS = 2 * 60 * 1000;
 
-interface NetworkInformationLike {
-  saveData?: boolean;
-  effectiveType?: "slow-2g" | "2g" | "3g" | "4g";
-}
-
-function getNetworkInfo(): NetworkInformationLike | undefined {
-  if (typeof navigator === "undefined") return undefined;
-  return (navigator as Navigator & { connection?: NetworkInformationLike }).connection;
-}
-
-function prefersReducedData(): boolean {
-  const connection = getNetworkInfo();
-  return Boolean(connection?.saveData || connection?.effectiveType === "slow-2g" || connection?.effectiveType === "2g");
-}
-
 // PushManager.subscribe needs the VAPID public key as a Uint8Array, but the
 // server hands it over base64url-encoded.
 function urlBase64ToUint8Array(base64Url: string): Uint8Array {
@@ -184,10 +170,15 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
-  // On a metered/slow connection, don't auto-open the live socket — let the
-  // user opt in instead of spending their data budget on a connection they
-  // didn't ask for.
-  const [liveUpdatesEnabled, setLiveUpdatesEnabled] = useState(() => !prefersReducedData());
+  // Explicit user preference (persisted), defaulting to the OS/browser's
+  // Data Saver signal on a metered/slow connection — either way, don't
+  // auto-open the live socket; let the user opt in instead of spending
+  // their data budget on a connection they didn't ask for.
+  const [dataSaverEnabled, setDataSaverEnabled] = useState(() => loadDataSaverPreference());
+  // In Data Saver Mode, chat data only loads once the user explicitly asks
+  // for it — this flag tracks that manual opt-in for the current session.
+  const [manuallyStarted, setManuallyStarted] = useState(false);
+  const liveUpdatesEnabled = !dataSaverEnabled || manuallyStarted;
   const [webPushStatus, setWebPushStatus] = useState<WebPushStatus>("unsupported");
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState>(
     "unsupported"
@@ -257,6 +248,17 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
       }
     });
   }, []);
+
+  const toggleDataSaver = () => {
+    const next = !dataSaverEnabled;
+    setDataSaverEnabled(next);
+    saveDataSaverPreference(next);
+    if (next) {
+      // Re-enabling Data Saver mid-session should stop the live connection
+      // again rather than only affecting the next page load.
+      setManuallyStarted(false);
+    }
+  };
 
   const loadOlderMessages = () => {
     const oldest = messages[0];
@@ -508,6 +510,10 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
           <button className="chat-app__theme-toggle" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)">
             ⌨ Shortcuts
           </button>
+          <label className="chat-app__data-saver-toggle">
+            <input type="checkbox" checked={dataSaverEnabled} onChange={toggleDataSaver} />
+            Data Saver Mode
+          </label>
         </div>
       </div>
       {imageError && <p className="chat-app__status chat-app__status--offline">{imageError}</p>}
@@ -521,12 +527,14 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
           {syncStatus === "offline" && "Offline — reconnecting…"}
         </p>
       ) : (
-        <p role="status" className="chat-app__status">
-          Data Saver detected — live updates are paused.{" "}
-          <button className="chat-app__link-button" onClick={() => setLiveUpdatesEnabled(true)}>
-            Enable live chat
-          </button>
-        </p>
+        <div className="chat-app__data-saver-banner">
+          Data Saver Mode is on — the chat won&apos;t load messages or open a live connection until you ask it to.
+          <div>
+            <button className="chat-app__send" onClick={() => setManuallyStarted(true)}>
+              Load chat
+            </button>
+          </div>
+        </div>
       )}
       {(webPushStatus === "default" || webPushStatus === "subscribing" || webPushStatus === "denied") && (
         <button
