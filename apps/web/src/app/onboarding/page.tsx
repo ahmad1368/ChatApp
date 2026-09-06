@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { ONBOARDING_STEPS, OnboardingState } from "@chatapp/shared";
+import { loadStoredAuth } from "../authClient";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -12,30 +12,34 @@ const STEP_LABELS: Record<(typeof ONBOARDING_STEPS)[number], { title: string; pl
   bio: { title: "Say a little about yourself", placeholder: "A short bio", optional: true },
 };
 
-// Demo entry point: real usage should derive the user id from an
-// authenticated session (once #21-#25's auth lands) — see the note in
-// apps/api/src/server.ts.
-function OnboardingContent() {
-  const searchParams = useSearchParams();
-  const userId = searchParams.get("userId") ?? "demo-user";
-
+export default function OnboardingPage() {
+  const auth = loadStoredAuth();
   const [state, setState] = useState<OnboardingState | null>(null);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/onboarding/${userId}`)
+    if (!auth) return;
+    fetch(`${API_URL}/api/onboarding`, { headers: { Authorization: `Bearer ${auth.tokens.accessToken}` } })
       .then((res) => res.json())
       .then(setState);
-  }, [userId]);
+  }, [auth?.tokens.accessToken]);
+
+  if (!auth) {
+    return (
+      <main style={{ maxWidth: 360, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
+        <p style={{ color: "#6b7280" }}>Sign in to set up your profile.</p>
+      </main>
+    );
+  }
 
   const submitStep = async (stepValue: string) => {
     if (!state || state.currentStep === "complete") return;
     setError(null);
 
-    const res = await fetch(`${API_URL}/api/onboarding/${userId}/step`, {
+    const res = await fetch(`${API_URL}/api/onboarding/step`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.tokens.accessToken}` },
       body: JSON.stringify({ step: state.currentStep, data: stepValue }),
     });
     if (!res.ok) {
@@ -96,13 +100,5 @@ function OnboardingContent() {
         </div>
       </form>
     </main>
-  );
-}
-
-export default function OnboardingPage() {
-  return (
-    <Suspense fallback={null}>
-      <OnboardingContent />
-    </Suspense>
   );
 }
