@@ -2872,3 +2872,67 @@ test("PUT /api/photo-albums/:owner/photos/order rejects a reorder that drops a p
     server.close();
   }
 });
+
+test("GET /api/intro-video/:author 404s when none is uploaded", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/intro-video/alice`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/intro-video uploads a video, then GET serves it back with the right content type", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const data = Buffer.from("fake mp4 bytes").toString("base64");
+    const uploadRes = await fetch(`${baseUrl}/api/intro-video`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "video/mp4", data }),
+    });
+    assert.equal(uploadRes.status, 201);
+
+    const getRes = await fetch(`${baseUrl}/api/intro-video/alice`);
+    assert.equal(getRes.status, 200);
+    assert.equal(getRes.headers.get("content-type"), "video/mp4");
+    const served = Buffer.from(await getRes.arrayBuffer());
+    assert.deepEqual(served, Buffer.from(data, "base64"));
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/intro-video rejects an unsupported mime type", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/intro-video`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "video/avi", data: "abc" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/intro-video/:author removes the video", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const data = Buffer.from("fake mp4 bytes").toString("base64");
+    await fetch(`${baseUrl}/api/intro-video`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "video/mp4", data }),
+    });
+    const deleteRes = await fetch(`${baseUrl}/api/intro-video/alice`, { method: "DELETE" });
+    assert.equal(deleteRes.status, 204);
+
+    const getRes = await fetch(`${baseUrl}/api/intro-video/alice`);
+    assert.equal(getRes.status, 404);
+  } finally {
+    server.close();
+  }
+});

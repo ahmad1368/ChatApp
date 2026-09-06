@@ -36,6 +36,7 @@ import { scanForScamContent } from "./scamDetector";
 import { RecaptchaService } from "./recaptcha";
 import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetector";
 import { PhotoAlbumStore } from "./photoAlbums";
+import { IntroVideoStore } from "./introVideo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -74,15 +75,17 @@ export function createApp(deps?: {
   duplicateAccountStore: DuplicateAccountStore;
   discoveryVisibilityStore: DiscoveryVisibilityStore;
   photoAlbumStore: PhotoAlbumStore;
+  introVideoStore: IntroVideoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
   // must be explicitly exposed via CORS for the client to read X-Has-More.
   app.use(cors({ exposedHeaders: ["X-Has-More"] }));
-  // Base64-encoded images are ~33% larger than their binary size, so allow
-  // a generous body limit even though individual images are capped in
-  // UploadStore after decoding.
-  app.use(express.json({ limit: "10mb" }));
+  // Base64-encoded media is ~33% larger than its binary size, so allow a
+  // generous body limit even though individual uploads are capped in their
+  // own stores after decoding. Raised from 10mb to fit #63's 20MB video cap
+  // (~27MB base64) on top of the existing 5MB image/upload caps.
+  app.use(express.json({ limit: "30mb" }));
 
   const messagesByRoom = new Map<string, ChatMessage[]>();
   const locations = new LocationStore();
@@ -116,6 +119,7 @@ export function createApp(deps?: {
   const duplicateAccountStore = new DuplicateAccountStore();
   const discoveryVisibilityStore = new DiscoveryVisibilityStore();
   const photoAlbumStore = new PhotoAlbumStore();
+  const introVideoStore = new IntroVideoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -366,6 +370,33 @@ export function createApp(deps?: {
       return;
     }
     res.json({ photoIds: result.photoIds });
+  });
+
+  // Short looping intro video (#63): one per profile, deliberately simpler
+  // than the photo album — see introVideo.ts for why (no watermarking, no
+  // multi-clip/access-level model).
+  app.post("/api/intro-video", (req, res) => {
+    const result = introVideoStore.upload(req.body?.author, req.body?.mimeType, req.body?.data);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ success: true });
+  });
+
+  app.get("/api/intro-video/:author", (req, res) => {
+    const video = introVideoStore.get(req.params.author);
+    if (!video) {
+      res.status(404).json({ error: "No intro video for this author" });
+      return;
+    }
+    res.setHeader("Content-Type", video.mimeType);
+    res.status(200).send(video.data);
+  });
+
+  app.delete("/api/intro-video/:author", (req, res) => {
+    introVideoStore.remove(req.params.author);
+    res.status(204).send();
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1152,6 +1183,7 @@ export function createApp(deps?: {
     duplicateAccountStore,
     discoveryVisibilityStore,
     photoAlbumStore,
+    introVideoStore,
   };
 }
 
