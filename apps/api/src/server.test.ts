@@ -4,6 +4,16 @@ import { AddressInfo } from "net";
 import { ChatMessage } from "@chatapp/shared";
 import { createApp } from "./server";
 
+function makePaginationMessage(id: string, index: number): ChatMessage {
+  return {
+    id,
+    roomId: "room-a",
+    author: "alice",
+    text: `message ${index}`,
+    createdAt: new Date(2026, 0, 1, 0, index).toISOString(),
+  };
+}
+
 function listen() {
   const { app, messagesByRoom } = createApp();
   const server = app.listen(0);
@@ -259,6 +269,52 @@ test("POST /api/push/unsubscribe rejects a request missing an endpoint", async (
       body: JSON.stringify({}),
     });
     assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages?limit= returns the most recent page with no cursor", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  const seeded = Array.from({ length: 5 }, (_, i) => makePaginationMessage(`m${i}`, i));
+  messagesByRoom.set("room-a", seeded);
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/room-a/messages?limit=2`);
+    const body: ChatMessage[] = await res.json();
+    assert.deepEqual(body.map((m) => m.id), ["m3", "m4"]);
+    assert.equal(res.headers.get("x-has-more"), "true");
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages?limit=&before= pages backward and reports no more once exhausted", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  const seeded = Array.from({ length: 5 }, (_, i) => makePaginationMessage(`m${i}`, i));
+  messagesByRoom.set("room-a", seeded);
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/room-a/messages?limit=2&before=m3`);
+    const body: ChatMessage[] = await res.json();
+    assert.deepEqual(body.map((m) => m.id), ["m1", "m2"]);
+    assert.equal(res.headers.get("x-has-more"), "true");
+
+    const res2 = await fetch(`${baseUrl}/api/rooms/room-a/messages?limit=2&before=m1`);
+    const body2: ChatMessage[] = await res2.json();
+    assert.deepEqual(body2.map((m) => m.id), ["m0"]);
+    assert.equal(res2.headers.get("x-has-more"), "false");
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages?limit= caps limit at the configured maximum", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  const seeded = Array.from({ length: 5 }, (_, i) => makePaginationMessage(`m${i}`, i));
+  messagesByRoom.set("room-a", seeded);
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/room-a/messages?limit=999`);
+    const body: ChatMessage[] = await res.json();
+    assert.equal(body.length, 5);
   } finally {
     server.close();
   }

@@ -16,6 +16,7 @@ import {
 } from "./offlineStore";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const PAGE_SIZE = 20;
 
 // How long the tab can sit hidden before we drop the live connection to save
 // battery/data. Background delivery is still covered by Web Push (see #5);
@@ -62,6 +63,8 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
   // succeeds because we're offline).
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadCachedMessages(roomId));
   const [queue, setQueue] = useState<QueuedMessage[]>(() => loadQueuedMessages(roomId));
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [text, setText] = useState("");
   const [syncStatus, setSyncStatus] = useState<"connecting" | "synced" | "offline">("connecting");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
@@ -88,9 +91,19 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
   const searchParams = useSearchParams();
   const deepLinkedMessageId = searchParams.get("m");
 
+  // With `since`, fetches only what was missed while disconnected (reconnect
+  // catch-up). Without it, fetches just the most recent page — the client
+  // shouldn't pay to download the entire room history (and its data cost)
+  // just to render the last screenful of messages; loadOlderMessages()
+  // below pages further back on demand.
   const syncSince = (since?: string) =>
-    fetch(`${API_URL}/api/rooms/${roomId}/messages${since ? `?since=${encodeURIComponent(since)}` : ""}`)
-      .then((res) => res.json())
+    fetch(
+      `${API_URL}/api/rooms/${roomId}/messages${since ? `?since=${encodeURIComponent(since)}` : `?limit=${PAGE_SIZE}`}`
+    )
+      .then((res) => {
+        if (!since) setHasMore(res.headers.get("x-has-more") === "true");
+        return res.json();
+      })
       .then((incoming: ChatMessage[]) => {
         if (incoming.length) {
           lastSyncedAtRef.current = incoming[incoming.length - 1].createdAt;
@@ -129,6 +142,19 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
       }
     });
   }, []);
+
+  const loadOlderMessages = () => {
+    const oldest = messages[0];
+    if (!oldest || loadingMore) return;
+    setLoadingMore(true);
+    fetch(`${API_URL}/api/rooms/${roomId}/messages?limit=${PAGE_SIZE}&before=${oldest.id}`)
+      .then((res) => {
+        setHasMore(res.headers.get("x-has-more") === "true");
+        return res.json();
+      })
+      .then((older: ChatMessage[]) => setMessages((prev) => [...older, ...prev]))
+      .finally(() => setLoadingMore(false));
+  };
 
   const enableWebPush = async () => {
     setWebPushStatus("subscribing");
@@ -331,6 +357,11 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID }: { roomId?: string
         </button>
       )}
       <div className="chat-app__messages">
+        {hasMore && (
+          <button className="chat-app__load-more-button" onClick={loadOlderMessages} disabled={loadingMore}>
+            {loadingMore ? "Loading…" : "Load older messages"}
+          </button>
+        )}
         {messages.map((m) => (
           <div
             key={m.id}

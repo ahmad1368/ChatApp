@@ -9,10 +9,14 @@ import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
 
 export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMessage[]>; pushService: PushService } {
   const app = express();
-  app.use(cors());
+  // Custom response headers aren't visible to browser fetch() by default —
+  // must be explicitly exposed via CORS for the client to read X-Has-More.
+  app.use(cors({ exposedHeaders: ["X-Has-More"] }));
   app.use(express.json());
 
   const messagesByRoom = new Map<string, ChatMessage[]>();
@@ -26,13 +30,38 @@ export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMes
     res.json({ status: "ok" });
   });
 
+  // Two orthogonal, backward-compatible filters on top of the full history:
   // `since` (ISO timestamp) lets a reconnecting client fetch only the
-  // messages it missed instead of the full room history.
+  // messages it missed. `limit` opts into cursor pagination instead — the
+  // page of `limit` messages immediately before `before` (or the most
+  // recent page if omitted) — so a client only pays for what it actually
+  // renders, which matters most on mobile-grade connections. `X-Has-More`
+  // is a header, not a body-shape change, so existing callers expecting a
+  // bare array keep working unmodified. With neither param, behaves exactly
+  // as before (full history, plain array).
   app.get("/api/rooms/:roomId/messages", (req, res) => {
     const { roomId } = req.params;
-    const since = typeof req.query.since === "string" ? req.query.since : undefined;
     const all = messagesByRoom.get(roomId) ?? [];
-    res.json(since ? all.filter((m) => m.createdAt > since) : all);
+
+    const since = typeof req.query.since === "string" ? req.query.since : undefined;
+    if (since !== undefined) {
+      res.json(all.filter((m) => m.createdAt > since));
+      return;
+    }
+
+    if (req.query.limit === undefined) {
+      res.json(all);
+      return;
+    }
+
+    const limit = Math.min(Math.max(Number(req.query.limit) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+    const beforeId = typeof req.query.before === "string" ? req.query.before : undefined;
+    const beforeIndex = beforeId ? all.findIndex((m) => m.id === beforeId) : all.length;
+    const endIndex = beforeIndex === -1 ? all.length : beforeIndex;
+    const startIndex = Math.max(0, endIndex - limit);
+
+    res.set("X-Has-More", String(startIndex > 0));
+    res.json(all.slice(startIndex, endIndex));
   });
 
   // GDPR data portability: its own high-priority, dependency-free path,
