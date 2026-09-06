@@ -4,15 +4,56 @@ export interface ChatMessage {
   author: string;
   text: string;
   createdAt: string;
+  imageUrl?: string;
+  replyToId?: string;
+  replyToAuthor?: string;
+  replyToText?: string;
 }
 
 export interface SendMessagePayload {
   roomId: string;
   author: string;
   text: string;
+  imageUrl?: string;
+  replyToId?: string;
+  replyToAuthor?: string;
+  replyToText?: string;
+  // Self-reported by the client — see the trust-boundary note in
+  // apps/api/src/server.ts (same limitation as #26-#37's :userId trust:
+  // there's no merged auth session yet to verify this against). The
+  // client already hides the send UI for guests; this is defense in
+  // depth for a request that bypasses the UI.
+  asGuest?: boolean;
 }
 
 export const DEFAULT_ROOM_ID = "general";
+
+export interface AuthUser {
+  id: string;
+  displayName: string;
+  createdAt: string;
+  phoneNumber?: string;
+  email?: string;
+  avatarUrl?: string;
+  googleId?: string;
+  appleId?: string;
+  facebookId?: string;
+}
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresInSeconds: number;
+}
+
+export interface RequestOtpPayload {
+  phoneNumber: string;
+}
+
+export interface VerifyOtpPayload {
+  phoneNumber: string;
+  code: string;
+}
 
 // communityGuidelines comes first, matching Tinder's actual flow: consent
 // is collected up front, before any profile information, not tacked on at
@@ -140,10 +181,15 @@ export interface OnboardingProfile {
   genderCustomText?: string;
   orientation?: OrientationOption;
   orientationCustomText?: string;
+  // Who they'd like to be matched with — reuses GENDER_OPTIONS so "everyone"
+  // is just "select all" rather than a separate special case.
   interestedIn?: GenderOption[];
   preferredAgeRange?: AgeRange;
   searchRadiusKm?: number;
   location?: CoarseLocation;
+  // Deliberately just a boolean — the verification selfie itself is never
+  // exposed through the onboarding state or any public profile field. See
+  // apps/api/src/verification.ts.
   isSelfieVerified?: boolean;
 }
 

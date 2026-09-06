@@ -1,5 +1,8 @@
 "use client";
 
+/** Tinder's iconic blue checkmark. A small, reusable component so any
+ * future profile card / match list / chat header can show it consistently
+ * next to a display name. */
 export default function VerifiedBadge({ label = "Verified" }: { label?: string }) {
   return (
     <span

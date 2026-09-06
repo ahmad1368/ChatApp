@@ -20,6 +20,10 @@ import { VerificationStore } from "./verification";
 const MAX_DISPLAY_NAME_LENGTH = 40;
 const MAX_BIO_LENGTH = 280;
 const MAX_CUSTOM_TEXT_LENGTH = 60;
+// Rounding to 2 decimal degrees is ~1.1km of imprecision at the equator —
+// enough to compute "nearby" without ever storing/exposing an exact
+// coordinate. This is a hard server-side rule, not a client option: the
+// server rounds whatever it receives regardless of what the client sent.
 const LOCATION_PRECISION_DECIMALS = 2;
 
 export type SubmitStepResult = { success: true; state: OnboardingState } | { success: false; error: string };
@@ -129,6 +133,10 @@ function validateStepData(
       return { error: `radiusKm must be between ${MIN_SEARCH_RADIUS_KM} and ${MAX_SEARCH_RADIUS_KM}` };
     }
 
+    // Location is optional — geolocation permission may be denied, and the
+    // radius preference is still meaningful without it (applied once a
+    // location is available some other way, e.g. a manually entered city
+    // in a future issue).
     if (location === undefined || location === null) {
       return { value: { searchRadiusKm: radiusKm, location: undefined } };
     }
@@ -139,6 +147,9 @@ function validateStepData(
     return { value: { searchRadiusKm: radiusKm, location: { lat: roundCoordinate(lat), lng: roundCoordinate(lng) } } };
   }
   if (step === "selfieVerification") {
+    // Skippable — camera access may be unavailable/denied. The actual
+    // selfie upload happens via POST /api/verification/selfie beforehand;
+    // this step just records the outcome the client already achieved.
     const skipped = typeof data === "object" && data !== null && (data as { skipped?: unknown }).skipped === true;
     if (skipped) return { value: { isSelfieVerified: false } };
     return { value: { isSelfieVerified: verificationStore.isVerified(userId) } };
@@ -148,8 +159,8 @@ function validateStepData(
 
 /**
  * Server-persisted onboarding state machine: a user can close the app
- * mid-onboarding and resume exactly where they left off (see #39 for the
- * client-side draft-id half of that).
+ * mid-onboarding (lost connection, switched devices) and resume exactly
+ * where they left off instead of restarting from scratch.
  */
 export class OnboardingStore {
   private statesByUserId = new Map<string, OnboardingState>();

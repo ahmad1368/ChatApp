@@ -2,16 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 import { detectFace } from "./faceDetection";
+import { loadStoredAuth } from "./authClient";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const CAPTURE_SIZE = 320;
 
 interface Props {
-  userId: string;
   onDone: (verified: boolean) => void;
 }
 
-export default function LiveSelfieCapture({ userId, onDone }: Props) {
+/**
+ * Captures a frame from a live camera feed (never a picked file — the only
+ * anti-spoofing measure implemented here is "you must present a live
+ * camera", not full liveness/anti-replay detection, which would need a
+ * dedicated ID-verification vendor. See verification.ts for the full note.
+ */
+export default function LiveSelfieCapture({ onDone }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [status, setStatus] = useState<"requesting" | "ready" | "unavailable">("requesting");
@@ -41,7 +47,8 @@ export default function LiveSelfieCapture({ userId, onDone }: Props) {
 
   const capture = async () => {
     const video = videoRef.current;
-    if (!video) return;
+    const auth = loadStoredAuth();
+    if (!video || !auth) return;
     setError(null);
     setIsSubmitting(true);
 
@@ -75,8 +82,8 @@ export default function LiveSelfieCapture({ userId, onDone }: Props) {
     try {
       const res = await fetch(`${API_URL}/api/verification/selfie`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, mimeType: "image/jpeg", data: base64 }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.tokens.accessToken}` },
+        body: JSON.stringify({ mimeType: "image/jpeg", data: base64 }),
       });
       if (!res.ok) throw new Error("Verification failed");
       streamRef.current?.getTracks().forEach((t) => t.stop());

@@ -1,7 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   DATING_GOALS,
   DATING_GOAL_LABELS,
@@ -19,10 +18,10 @@ import {
   OrientationOption,
   OnboardingState,
 } from "@chatapp/shared";
+import { fetchWithAuth, loadStoredAuth } from "../authClient";
 import AvatarCropper from "../AvatarCropper";
 import LiveSelfieCapture from "../LiveSelfieCapture";
 import VerifiedBadge from "../VerifiedBadge";
-import { getOrCreateDraftId } from "../draftId";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -365,29 +364,34 @@ function SearchRadiusStep({
   );
 }
 
-function OnboardingContent() {
-  const searchParams = useSearchParams();
-  const [userId, setUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    setUserId(searchParams.get("userId") || getOrCreateDraftId());
-  }, [searchParams]);
-
+export default function OnboardingPage() {
+  const auth = loadStoredAuth();
   const [state, setState] = useState<OnboardingState | null>(null);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
-    fetch(`${API_URL}/api/onboarding/${userId}`)
+    if (!auth) return;
+    // A closed-tab-overnight "sudden exit" (#39) finds a stale 15-minute
+    // access token on return — fetchWithAuth retries once with a refreshed
+    // one rather than failing, so the server's already-persisted per-step
+    // progress (#28) actually gets resumed instead of erroring out.
+    fetchWithAuth(`${API_URL}/api/onboarding`)
       .then((res) => res.json())
       .then(setState);
-  }, [userId]);
+  }, [auth?.tokens.accessToken]);
+
+  if (!auth) {
+    return (
+      <main style={{ maxWidth: 360, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
+        <p style={{ color: "#6b7280" }}>Sign in to set up your profile.</p>
+      </main>
+    );
+  }
 
   const submitStep = async (step: string, stepValue: unknown) => {
-    if (!userId) return;
     setError(null);
-    const res = await fetch(`${API_URL}/api/onboarding/${userId}/step`, {
+    const res = await fetchWithAuth(`${API_URL}/api/onboarding/step`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ step, data: stepValue }),
@@ -421,9 +425,6 @@ function OnboardingContent() {
   return (
     <main style={{ maxWidth: 360, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
       <h1>Set up your profile</h1>
-      <p style={{ fontSize: 11, color: "#9ca3af" }}>
-        Your progress is saved automatically — closing this tab and coming back will pick up right here.
-      </p>
       <div style={{ display: "flex", gap: 6, margin: "16px 0" }}>
         {ONBOARDING_STEPS.map((step, i) => (
           <div key={step} style={{ height: 4, flex: 1, borderRadius: 2, background: i <= stepIndex ? "#2563eb" : "#e5e7eb" }} />
@@ -433,7 +434,7 @@ function OnboardingContent() {
       {state.currentStep === "communityGuidelines" ? (
         <CommunityGuidelinesStep error={error} onSubmit={(accepted) => submitStep("communityGuidelines", { accepted })} />
       ) : state.currentStep === "selfieVerification" ? (
-        <LiveSelfieCapture userId={userId!} onDone={(verified) => submitStep("selfieVerification", verified ? {} : { skipped: true })} />
+        <LiveSelfieCapture onDone={(verified) => submitStep("selfieVerification", verified ? {} : { skipped: true })} />
       ) : state.currentStep === "avatar" ? (
         <AvatarStep error={error} onSubmit={(avatarUrl) => submitStep("avatar", avatarUrl)} />
       ) : state.currentStep === "searchRadius" ? (
@@ -502,13 +503,5 @@ function OnboardingContent() {
         })()
       )}
     </main>
-  );
-}
-
-export default function OnboardingPage() {
-  return (
-    <Suspense fallback={null}>
-      <OnboardingContent />
-    </Suspense>
   );
 }

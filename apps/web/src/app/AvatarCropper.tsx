@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { detectFace } from "./faceDetection";
 
-const VIEWPORT_SIZE = 260;
-const OUTPUT_SIZE = 400;
+const VIEWPORT_SIZE = 260; // on-screen crop circle, in px
+const OUTPUT_SIZE = 400; // exported image dimensions
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
 const JPEG_QUALITY = 0.85;
@@ -15,6 +15,9 @@ interface Props {
   onCropped: (result: { mimeType: string; base64: string }) => void;
 }
 
+/** Minimal drag-to-pan + zoom cropper: no library, just pointer events and a
+ * canvas render at confirm time. Good enough for a circular profile photo
+ * crop without pulling in a full cropping dependency. */
 export default function AvatarCropper({ file, onCancel, onCropped }: Props) {
   const [imageUrl] = useState(() => URL.createObjectURL(file));
   const [zoom, setZoom] = useState(MIN_ZOOM);
@@ -64,6 +67,7 @@ export default function AvatarCropper({ file, onCancel, onCropped }: Props) {
     canvas.height = OUTPUT_SIZE;
     const ctx = canvas.getContext("2d")!;
 
+    // Circular clip so the exported image matches the round on-screen preview.
     ctx.beginPath();
     ctx.arc(OUTPUT_SIZE / 2, OUTPUT_SIZE / 2, OUTPUT_SIZE / 2, 0, Math.PI * 2);
     ctx.clip();
@@ -129,6 +133,17 @@ export default function AvatarCropper({ file, onCancel, onCropped }: Props) {
         />
       </div>
 
+      <label style={{ display: "block", fontSize: 12, color: "#6b7280", textAlign: "center" }}>Zoom</label>
+      <input
+        type="range"
+        min={MIN_ZOOM}
+        max={MAX_ZOOM}
+        step={0.05}
+        value={zoom}
+        onChange={(e) => setZoom(Number(e.target.value))}
+        style={{ width: "100%", marginBottom: 16 }}
+      />
+
       {faceCheck === "not-found" && (
         <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
           <p style={{ margin: "0 0 6px" }}>
@@ -140,17 +155,6 @@ export default function AvatarCropper({ file, onCancel, onCropped }: Props) {
           </label>
         </div>
       )}
-
-      <label style={{ display: "block", fontSize: 12, color: "#6b7280", textAlign: "center" }}>Zoom</label>
-      <input
-        type="range"
-        min={MIN_ZOOM}
-        max={MAX_ZOOM}
-        step={0.05}
-        value={zoom}
-        onChange={(e) => setZoom(Number(e.target.value))}
-        style={{ width: "100%", marginBottom: 16 }}
-      />
 
       <div style={{ display: "flex", gap: 8 }}>
         <button type="button" onClick={onCancel} style={{ flex: 1, padding: 10 }}>
