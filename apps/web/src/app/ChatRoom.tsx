@@ -4,6 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import {
+  loadCachedMessages,
+  loadQueuedMessages,
+  QueuedMessage,
+  saveCachedMessages,
+  saveQueuedMessages,
+} from "./offlineStore";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -26,7 +33,11 @@ function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessag
 }
 
 export default function ChatRoom() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Hydrate synchronously from the local cache so there's something on
+  // screen immediately, even before the network fetch (or if it never
+  // succeeds because we're offline).
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadCachedMessages(DEFAULT_ROOM_ID));
+  const [queue, setQueue] = useState<QueuedMessage[]>(() => loadQueuedMessages(DEFAULT_ROOM_ID));
   const [text, setText] = useState("");
   const [syncStatus, setSyncStatus] = useState<"connecting" | "synced" | "offline">("connecting");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
@@ -35,12 +46,22 @@ export default function ChatRoom() {
     "unsupported"
   );
   const socketRef = useRef<Socket | null>(null);
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
   const authorRef = useRef(author);
   authorRef.current = author;
   // Tracks the newest message timestamp we've seen locally so that on
   // reconnect (dropped wifi, backgrounded tab, another device catching up)
   // we only fetch what we missed instead of the whole history again.
   const lastSyncedAtRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    saveCachedMessages(DEFAULT_ROOM_ID, messages);
+  }, [messages]);
+
+  useEffect(() => {
+    saveQueuedMessages(DEFAULT_ROOM_ID, queue);
+  }, [queue]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window) {
@@ -105,15 +126,25 @@ export default function ChatRoom() {
     const socket = io(API_URL);
     socketRef.current = socket;
 
+    const flushQueue = () => {
+      for (const queued of queueRef.current) {
+        socket.emit("message:send", { roomId: DEFAULT_ROOM_ID, author: queued.author, text: queued.text });
+      }
+      setQueue([]);
+    };
+
     socket.on("connect", () => {
       socket.emit("join", DEFAULT_ROOM_ID);
       // Reconnect sync: catch up on anything sent while we were disconnected.
       syncSince(lastSyncedAtRef.current);
+      flushQueue();
     });
     socket.on("disconnect", () => setSyncStatus("offline"));
     socket.on("message:new", (message: ChatMessage) => {
       lastSyncedAtRef.current = message.createdAt;
       setMessages((prev) => mergeMessages(prev, [message]));
+      // The queued entry is now confirmed by the server's own broadcast.
+      setQueue((prev) => prev.filter((q) => !(q.author === message.author && q.text === message.text)));
 
       // Mirrors mobile push notifications for the web: alert the user about
       // new messages while the tab is backgrounded, without needing a push
@@ -125,7 +156,16 @@ export default function ChatRoom() {
       }
     });
 
+    // The browser's connectivity events fire faster than socket.io's own
+    // reconnect backoff in some cases (e.g. coming back from airplane
+    // mode) — nudge it to retry immediately instead of waiting.
+    const handleOnline = () => {
+      if (!socket.connected) socket.connect();
+    };
+    window.addEventListener("online", handleOnline);
+
     return () => {
+      window.removeEventListener("online", handleOnline);
       socket.disconnect();
     };
   }, []);
@@ -137,13 +177,21 @@ export default function ChatRoom() {
   };
 
   const sendMessage = () => {
-    if (!text.trim() || !socketRef.current) return;
-    socketRef.current.emit("message:send", {
-      roomId: DEFAULT_ROOM_ID,
-      author,
-      text: text.trim(),
-    });
+    const trimmed = text.trim();
+    if (!trimmed) return;
     setText("");
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit("message:send", { roomId: DEFAULT_ROOM_ID, author, text: trimmed });
+      return;
+    }
+
+    // Offline (or still connecting): hold the message locally and send it
+    // once the socket reconnects instead of dropping it.
+    setQueue((prev) => [
+      ...prev,
+      { clientId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, author, text: trimmed, queuedAt: new Date().toISOString() },
+    ]);
   };
 
   return (
@@ -191,6 +239,13 @@ export default function ChatRoom() {
           <div key={m.id} className="chat-app__message">
             <strong>{m.author}: </strong>
             <span>{m.text}</span>
+          </div>
+        ))}
+        {queue.map((q) => (
+          <div key={q.clientId} className="chat-app__message chat-app__message--queued">
+            <strong>{q.author}: </strong>
+            <span>{q.text}</span>
+            <em className="chat-app__queued-tag">(queued)</em>
           </div>
         ))}
       </div>

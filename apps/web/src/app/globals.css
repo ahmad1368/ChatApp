@@ -60,6 +60,15 @@ body {
   word-break: break-word;
 }
 
+.chat-app__message--queued {
+  opacity: 0.6;
+}
+
+.chat-app__queued-tag {
+  font-size: 11px;
+  margin-left: 6px;
+}
+
 .chat-app__composer {
   display: flex;
   gap: var(--chat-gap);
