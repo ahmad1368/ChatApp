@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { AuthTokens, AuthUser } from "@chatapp/shared";
 import { GoogleProfile } from "./googleAuth";
 import { AppleProfile } from "./appleAuth";
+import { FacebookProfile } from "./facebookAuth";
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 30 * 1000;
@@ -85,6 +86,7 @@ export class UserStore {
   private usersByPhone = new Map<string, AuthUser>();
   private usersByGoogleId = new Map<string, AuthUser>();
   private usersByAppleId = new Map<string, AuthUser>();
+  private usersByFacebookId = new Map<string, AuthUser>();
 
   findOrCreate(phoneNumber: string): AuthUser {
     const existing = this.usersByPhone.get(phoneNumber);
@@ -128,6 +130,22 @@ export class UserStore {
       createdAt: new Date().toISOString(),
     };
     this.usersByAppleId.set(profile.appleId, user);
+    return user;
+  }
+
+  findOrCreateByFacebook(profile: FacebookProfile): AuthUser {
+    const existing = this.usersByFacebookId.get(profile.facebookId);
+    if (existing) return existing;
+
+    const user: AuthUser = {
+      id: crypto.randomUUID(),
+      facebookId: profile.facebookId,
+      email: profile.email,
+      avatarUrl: profile.avatarUrl,
+      displayName: profile.name ?? profile.email ?? "Facebook user",
+      createdAt: new Date().toISOString(),
+    };
+    this.usersByFacebookId.set(profile.facebookId, user);
     return user;
   }
 }

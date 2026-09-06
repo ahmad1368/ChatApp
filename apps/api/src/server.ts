@@ -6,6 +6,7 @@ import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/share
 import { normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
 import { GoogleAuthService } from "./googleAuth";
 import { AppleAuthService } from "./appleAuth";
+import { FacebookAuthService } from "./facebookAuth";
 import { RateLimiter } from "./rateLimiter";
 import { createRedisAdapterIfConfigured } from "./redisAdapter";
 import { ErrorReportStore } from "./errorReports";
@@ -22,7 +23,11 @@ const MAX_PAGE_SIZE = 100;
 const MESSAGE_RATE_LIMIT = 20;
 const MESSAGE_RATE_WINDOW_MS = 10_000;
 
-export function createApp(deps?: { googleAuthService?: GoogleAuthService; appleAuthService?: AppleAuthService }): {
+export function createApp(deps?: {
+  googleAuthService?: GoogleAuthService;
+  appleAuthService?: AppleAuthService;
+  facebookAuthService?: FacebookAuthService;
+}): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
   pushService: PushService;
@@ -50,6 +55,7 @@ export function createApp(deps?: { googleAuthService?: GoogleAuthService; appleA
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
   const appleAuthService = deps?.appleAuthService ?? new AppleAuthService();
+  const facebookAuthService = deps?.facebookAuthService ?? new FacebookAuthService();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -274,6 +280,32 @@ export function createApp(deps?: { googleAuthService?: GoogleAuthService; appleA
     }
 
     const user = userStore.findOrCreateByApple(profile);
+    const tokens = tokenService.issueTokens(user.id);
+    res.json({ user, tokens });
+  });
+
+  // Sign in with Facebook: verifies the client-supplied access token via
+  // the Graph API's debug_token endpoint (confirms it's genuine, unexpired,
+  // and issued to *our* app specifically) before fetching the profile.
+  app.post("/api/auth/facebook", async (req, res) => {
+    if (!facebookAuthService.isConfigured()) {
+      res.status(503).json({ error: "Facebook Sign-In is not configured on this server" });
+      return;
+    }
+
+    const accessToken = typeof req.body?.accessToken === "string" ? req.body.accessToken : undefined;
+    if (!accessToken) {
+      res.status(400).json({ error: "accessToken is required" });
+      return;
+    }
+
+    const profile = await facebookAuthService.verify(accessToken);
+    if (!profile) {
+      res.status(401).json({ error: "Invalid Facebook access token" });
+      return;
+    }
+
+    const user = userStore.findOrCreateByFacebook(profile);
     const tokens = tokenService.issueTokens(user.id);
     res.json({ user, tokens });
   });

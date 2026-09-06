@@ -5,6 +5,7 @@ import { ChatMessage } from "@chatapp/shared";
 import { createApp } from "./server";
 import { GoogleAuthService } from "./googleAuth";
 import { AppleAuthService } from "./appleAuth";
+import { FacebookAuthService } from "./facebookAuth";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -32,6 +33,13 @@ function listenWithGoogleAuth(googleAuthService: GoogleAuthService) {
 
 function listenWithAppleAuth(appleAuthService: AppleAuthService) {
   const { app } = createApp({ appleAuthService });
+  const server = app.listen(0);
+  const { port } = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+function listenWithFacebookAuth(facebookAuthService: FacebookAuthService) {
+  const { app } = createApp({ facebookAuthService });
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}` };
@@ -688,6 +696,88 @@ test("POST /api/auth/apple returns the same user id on repeat sign-in", async ()
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken: "valid-token" }),
+    }).then((r) => r.json());
+    assert.equal(first.user.id, second.user.id);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/facebook responds 503 when FACEBOOK_APP_ID/SECRET aren't set", async () => {
+  const { server, baseUrl } = listenWithFacebookAuth(new FacebookAuthService(undefined, undefined, async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/facebook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken: "anything" }),
+    });
+    assert.equal(res.status, 503);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/facebook requires an accessToken", async () => {
+  const { server, baseUrl } = listenWithFacebookAuth(new FacebookAuthService("app-id", "app-secret", async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/facebook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/facebook rejects an invalid token", async () => {
+  const { server, baseUrl } = listenWithFacebookAuth(new FacebookAuthService("app-id", "app-secret", async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/facebook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken: "garbage" }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/facebook signs a user in and issues tokens for a valid token", async () => {
+  const fakeVerifier = async (token: string) =>
+    token === "valid-token" ? { facebookId: "fb-1", email: "a@b.com", name: "Alice" } : undefined;
+  const { server, baseUrl } = listenWithFacebookAuth(new FacebookAuthService("app-id", "app-secret", fakeVerifier));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/facebook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken: "valid-token" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.user.email, "a@b.com");
+    assert.ok(body.tokens.accessToken);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/facebook returns the same user id on repeat sign-in", async () => {
+  const fakeVerifier = async (token: string) =>
+    token === "valid-token" ? { facebookId: "fb-1", email: "a@b.com", name: "Alice" } : undefined;
+  const { server, baseUrl } = listenWithFacebookAuth(new FacebookAuthService("app-id", "app-secret", fakeVerifier));
+  try {
+    const first = await fetch(`${baseUrl}/api/auth/facebook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken: "valid-token" }),
+    }).then((r) => r.json());
+    const second = await fetch(`${baseUrl}/api/auth/facebook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessToken: "valid-token" }),
     }).then((r) => r.json());
     assert.equal(first.user.id, second.user.id);
   } finally {

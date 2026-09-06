@@ -31,6 +31,7 @@ export interface AuthUser {
   avatarUrl?: string;
   googleId?: string;
   appleId?: string;
+  facebookId?: string;
 }
 
 export interface AuthTokens {
