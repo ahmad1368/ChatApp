@@ -8,6 +8,7 @@ import { GoogleAuthService } from "./googleAuth";
 import { AppleAuthService } from "./appleAuth";
 import { FacebookAuthService } from "./facebookAuth";
 import { OtpService } from "./auth";
+import { RecaptchaService } from "./recaptcha";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -65,6 +66,13 @@ function listenWithAppleAuth(appleAuthService: AppleAuthService) {
 
 function listenWithFacebookAuth(facebookAuthService: FacebookAuthService) {
   const { app } = createApp({ facebookAuthService });
+  const server = app.listen(0);
+  const { port } = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+function listenWithRecaptcha(recaptchaService: RecaptchaService) {
+  const { app } = createApp({ recaptchaService });
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}` };
@@ -2510,6 +2518,34 @@ test("PUT /api/discovery-visibility rejects an overlong city", async () => {
       body: JSON.stringify({ city: "x".repeat(81) }),
     });
     assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/signup/request-otp rejects when reCAPTCHA verification fails", async () => {
+  const { server, baseUrl } = listenWithRecaptcha(new RecaptchaService("test-secret", async () => false));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/signup/request-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumber: "+15551110060", recaptchaToken: "bad-token" }),
+    });
+    assert.equal(res.status, 403);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/auth/signup/request-otp succeeds when reCAPTCHA verification passes", async () => {
+  const { server, baseUrl } = listenWithRecaptcha(new RecaptchaService("test-secret", async () => true));
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/signup/request-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumber: "+15551110061", recaptchaToken: "good-token" }),
+    });
+    assert.equal(res.status, 202);
   } finally {
     server.close();
   }
