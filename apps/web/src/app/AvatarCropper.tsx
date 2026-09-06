@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { detectFace } from "./faceDetection";
 
 const VIEWPORT_SIZE = 260; // on-screen crop circle, in px
 const OUTPUT_SIZE = 400; // exported image dimensions
@@ -22,8 +23,22 @@ export default function AvatarCropper({ file, onCancel, onCropped }: Props) {
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isSaving, setIsSaving] = useState(false);
+  const [faceCheck, setFaceCheck] = useState<"checking" | "found" | "not-found" | "unavailable">("checking");
+  const [proceedAnyway, setProceedAnyway] = useState(false);
   const dragStart = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    const runCheck = () => {
+      detectFace(img).then((found) => {
+        setFaceCheck(found === undefined ? "unavailable" : found ? "found" : "not-found");
+      });
+    };
+    if (img.complete) runCheck();
+    else img.addEventListener("load", runCheck, { once: true });
+  }, []);
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     dragStart.current = { x: e.clientX, y: e.clientY, offsetX: offset.x, offsetY: offset.y };
@@ -78,6 +93,8 @@ export default function AvatarCropper({ file, onCancel, onCropped }: Props) {
     onCropped({ mimeType: "image/jpeg", base64 });
   };
 
+  const blockedByMissingFace = faceCheck === "not-found" && !proceedAnyway;
+
   return (
     <div>
       <div
@@ -127,12 +144,24 @@ export default function AvatarCropper({ file, onCancel, onCropped }: Props) {
         style={{ width: "100%", marginBottom: 16 }}
       />
 
+      {faceCheck === "not-found" && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
+          <p style={{ margin: "0 0 6px" }}>
+            We couldn't detect a face in this photo. Profiles with a clear photo of your face tend to get more matches.
+          </p>
+          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input type="checkbox" checked={proceedAnyway} onChange={(e) => setProceedAnyway(e.target.checked)} />
+            Use this photo anyway
+          </label>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8 }}>
         <button type="button" onClick={onCancel} style={{ flex: 1, padding: 10 }}>
           Cancel
         </button>
-        <button type="button" onClick={confirmCrop} disabled={isSaving} style={{ flex: 1, padding: 10 }}>
-          {isSaving ? "Saving…" : "Use photo"}
+        <button type="button" onClick={confirmCrop} disabled={isSaving || blockedByMissingFace} style={{ flex: 1, padding: 10 }}>
+          {isSaving ? "Saving…" : faceCheck === "checking" ? "Checking photo…" : "Use photo"}
         </button>
       </div>
     </div>

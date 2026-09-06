@@ -55,6 +55,7 @@ npm run dev:web   # http://localhost:3000
 - #32 Preferred age range — seventh onboarding step, dual range sliders (18-99) validated against the legal minimum
 - #33 Search radius — eighth onboarding step, distance slider plus opt-in browser geolocation with coordinates rounded server-side to ~1.1km precision before storage
 - #34 Avatar upload and crop — replaces the onboarding avatar step's URL paste with a real upload + drag/zoom circular crop, backed by the existing #12 upload store
+- #35 Automatic face detection in the main photo — on-device MediaPipe face detection during avatar crop, with a soft "use anyway" warning rather than a hard block
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`
