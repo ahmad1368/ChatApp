@@ -52,6 +52,9 @@ export default function ChatRoom() {
           <Link href={`/privacy/export?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
             Download my data
           </Link>
+          <Link href={`/privacy/location?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
+            Location privacy
+          </Link>
         </div>
       </div>
       <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12, minHeight: 240, marginBottom: 12 }}>
