@@ -1,14 +1,24 @@
 import cors from "cors";
-import express from "express";
+import express, { Express } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
-import { MessageStore } from "./rooms";
+import { exportDataForAuthor } from "./dataExport";
+import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
+import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 
-export function createApp(store: MessageStore) {
+const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
+
+export function createApp(): { app: Express; messagesByRoom: Map<string, ChatMessage[]> } {
   const app = express();
   app.use(cors());
   app.use(express.json());
+
+  const messagesByRoom = new Map<string, ChatMessage[]>();
+  const locations = new LocationStore();
+
+  const accountDeletion = new AccountDeletionCoordinator();
+  accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
@@ -19,14 +29,71 @@ export function createApp(store: MessageStore) {
   app.get("/api/rooms/:roomId/messages", (req, res) => {
     const { roomId } = req.params;
     const since = typeof req.query.since === "string" ? req.query.since : undefined;
-    res.json(store.list(roomId, since));
+    const all = messagesByRoom.get(roomId) ?? [];
+    res.json(since ? all.filter((m) => m.createdAt > since) : all);
   });
 
-  return app;
+  // GDPR data portability: its own high-priority, dependency-free path,
+  // same as Report/Block/SOS. Streams the requester's own data back as a
+  // downloadable JSON backup rather than requiring a separate export job.
+  app.get("/api/account/:author/export", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    const dataExport = exportDataForAuthor(messagesByRoom, author);
+    res.setHeader("Content-Disposition", `attachment; filename="chatapp-data-${encodeURIComponent(author)}.json"`);
+    res.json(dataExport);
+  });
+
+  // GDPR erasure: its own high-priority, dependency-free safety path, same
+  // as Report/Block/SOS. See AccountDeletionCoordinator for why this is a
+  // registry rather than a single hardcoded purge.
+  app.delete("/api/account/:author", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    res.json(accountDeletion.deleteAllDataFor(author));
+  });
+
+  // Location privacy: a user's exact coordinates never leave this process —
+  // every read returns a coordinate snapped to a ~5km grid cell instead.
+  app.put("/api/users/:author/location", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    if (!isValidCoordinates(req.body)) {
+      res.status(400).json({ error: "lat/lng must be numbers within valid ranges" });
+      return;
+    }
+    locations.setLocation(author, req.body);
+    res.json({ approximate: locations.getApproximateLocation(author) });
+  });
+
+  app.get("/api/users/:author/location", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    const approximate = locations.getApproximateLocation(author);
+    if (!approximate) {
+      res.status(404).json({ error: "no location on file for this user" });
+      return;
+    }
+    res.json({ approximate });
+  });
+
+  return { app, messagesByRoom };
 }
 
-export function createChatServer(store: MessageStore) {
-  const app = createApp(store);
+export function createChatServer() {
+  const { app, messagesByRoom } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
@@ -46,7 +113,9 @@ export function createChatServer(store: MessageStore) {
         text: payload.text,
         createdAt: new Date().toISOString(),
       };
-      store.add(roomId, message);
+      const existing = messagesByRoom.get(roomId) ?? [];
+      existing.push(message);
+      messagesByRoom.set(roomId, existing);
       io.to(roomId).emit("message:new", message);
     });
   });
@@ -55,9 +124,7 @@ export function createChatServer(store: MessageStore) {
 }
 
 if (require.main === module) {
-  const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
-  const store = new MessageStore();
-  const httpServer = createChatServer(store);
+  const httpServer = createChatServer();
   httpServer.listen(PORT, () => {
     console.log(`ChatApp API listening on port ${PORT}`);
   });

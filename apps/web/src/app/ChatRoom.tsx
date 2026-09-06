@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
 
@@ -71,7 +72,20 @@ export default function ChatRoom() {
 
   return (
     <main style={{ maxWidth: 480, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
-      <h1>ChatApp</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1>ChatApp</h1>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Link href={`/privacy?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
+            Privacy
+          </Link>
+          <Link href={`/privacy/export?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
+            Download my data
+          </Link>
+          <Link href={`/privacy/location?author=${encodeURIComponent(author)}`} style={{ fontSize: 13 }}>
+            Location privacy
+          </Link>
+        </div>
+      </div>
       <p
         role="status"
         style={{ fontSize: 12, color: syncStatus === "offline" ? "#c0392b" : "#6b7280", margin: "0 0 8px" }}
