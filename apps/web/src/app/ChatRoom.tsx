@@ -14,6 +14,26 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+// How long the tab can sit hidden before we drop the live connection to save
+// battery/data. Background delivery is still covered by Web Push (see #5);
+// this just avoids an idle socket burning power while nobody is looking.
+const DISCONNECT_AFTER_HIDDEN_MS = 2 * 60 * 1000;
+
+interface NetworkInformationLike {
+  saveData?: boolean;
+  effectiveType?: "slow-2g" | "2g" | "3g" | "4g";
+}
+
+function getNetworkInfo(): NetworkInformationLike | undefined {
+  if (typeof navigator === "undefined") return undefined;
+  return (navigator as Navigator & { connection?: NetworkInformationLike }).connection;
+}
+
+function prefersReducedData(): boolean {
+  const connection = getNetworkInfo();
+  return Boolean(connection?.saveData || connection?.effectiveType === "slow-2g" || connection?.effectiveType === "2g");
+}
+
 // PushManager.subscribe needs the VAPID public key as a Uint8Array, but the
 // server hands it over base64url-encoded.
 function urlBase64ToUint8Array(base64Url: string): Uint8Array {
@@ -41,11 +61,16 @@ export default function ChatRoom() {
   const [text, setText] = useState("");
   const [syncStatus, setSyncStatus] = useState<"connecting" | "synced" | "offline">("connecting");
   const [author] = useState(() => `guest-${Math.floor(Math.random() * 1000)}`);
+  // On a metered/slow connection, don't auto-open the live socket — let the
+  // user opt in instead of spending their data budget on a connection they
+  // didn't ask for.
+  const [liveUpdatesEnabled, setLiveUpdatesEnabled] = useState(() => !prefersReducedData());
   const [webPushStatus, setWebPushStatus] = useState<WebPushStatus>("unsupported");
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState>(
     "unsupported"
   );
   const socketRef = useRef<Socket | null>(null);
+  const hiddenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queueRef = useRef(queue);
   queueRef.current = queue;
   const authorRef = useRef(author);
@@ -54,6 +79,18 @@ export default function ChatRoom() {
   // reconnect (dropped wifi, backgrounded tab, another device catching up)
   // we only fetch what we missed instead of the whole history again.
   const lastSyncedAtRef = useRef<string | undefined>(undefined);
+
+  const syncSince = (since?: string) =>
+    fetch(`${API_URL}/api/rooms/${DEFAULT_ROOM_ID}/messages${since ? `?since=${encodeURIComponent(since)}` : ""}`)
+      .then((res) => res.json())
+      .then((incoming: ChatMessage[]) => {
+        if (incoming.length) {
+          lastSyncedAtRef.current = incoming[incoming.length - 1].createdAt;
+        }
+        setMessages((prev) => (since ? mergeMessages(prev, incoming) : incoming));
+        setSyncStatus("synced");
+      })
+      .catch(() => setSyncStatus("offline"));
 
   useEffect(() => {
     saveCachedMessages(DEFAULT_ROOM_ID, messages);
@@ -106,24 +143,23 @@ export default function ChatRoom() {
     }
   };
 
+  // Always load the room's history on mount, even if live updates are
+  // paused for Data Saver below — pausing only skips the live socket.
   useEffect(() => {
-    const syncSince = (since?: string) =>
-      fetch(
-        `${API_URL}/api/rooms/${DEFAULT_ROOM_ID}/messages${since ? `?since=${encodeURIComponent(since)}` : ""}`
-      )
-        .then((res) => res.json())
-        .then((incoming: ChatMessage[]) => {
-          if (incoming.length) {
-            lastSyncedAtRef.current = incoming[incoming.length - 1].createdAt;
-          }
-          setMessages((prev) => (since ? mergeMessages(prev, incoming) : incoming));
-          setSyncStatus("synced");
-        })
-        .catch(() => setSyncStatus("offline"));
-
     syncSince();
+  }, []);
 
-    const socket = io(API_URL);
+  useEffect(() => {
+    if (!liveUpdatesEnabled) return;
+
+    const socket = io(API_URL, {
+      // Skip the HTTP long-polling handshake and go straight to a WebSocket
+      // to cut data usage on every (re)connect.
+      transports: ["websocket"],
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 30000,
+      randomizationFactor: 0.5,
+    });
     socketRef.current = socket;
 
     const flushQueue = () => {
@@ -156,6 +192,24 @@ export default function ChatRoom() {
       }
     });
 
+    const clearHiddenTimer = () => {
+      if (hiddenTimerRef.current) {
+        clearTimeout(hiddenTimerRef.current);
+        hiddenTimerRef.current = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearHiddenTimer();
+        hiddenTimerRef.current = setTimeout(() => socket.disconnect(), DISCONNECT_AFTER_HIDDEN_MS);
+      } else {
+        clearHiddenTimer();
+        if (!socket.connected) socket.connect();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     // The browser's connectivity events fire faster than socket.io's own
     // reconnect backoff in some cases (e.g. coming back from airplane
     // mode) — nudge it to retry immediately instead of waiting.
@@ -165,10 +219,12 @@ export default function ChatRoom() {
     window.addEventListener("online", handleOnline);
 
     return () => {
+      clearHiddenTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("online", handleOnline);
       socket.disconnect();
     };
-  }, []);
+  }, [liveUpdatesEnabled]);
 
   const requestNotificationPermission = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) return;
@@ -204,14 +260,23 @@ export default function ChatRoom() {
           <Link href={`/privacy/location?author=${encodeURIComponent(author)}`}>Location privacy</Link>
         </div>
       </div>
-      <p
-        role="status"
-        className={`chat-app__status${syncStatus === "offline" ? " chat-app__status--offline" : ""}`}
-      >
-        {syncStatus === "connecting" && "Connecting…"}
-        {syncStatus === "synced" && "Synced"}
-        {syncStatus === "offline" && "Offline — reconnecting…"}
-      </p>
+      {liveUpdatesEnabled ? (
+        <p
+          role="status"
+          className={`chat-app__status${syncStatus === "offline" ? " chat-app__status--offline" : ""}`}
+        >
+          {syncStatus === "connecting" && "Connecting…"}
+          {syncStatus === "synced" && "Synced"}
+          {syncStatus === "offline" && "Offline — reconnecting…"}
+        </p>
+      ) : (
+        <p role="status" className="chat-app__status">
+          Data Saver detected — live updates are paused.{" "}
+          <button className="chat-app__link-button" onClick={() => setLiveUpdatesEnabled(true)}>
+            Enable live chat
+          </button>
+        </p>
+      )}
       {(webPushStatus === "default" || webPushStatus === "subscribing" || webPushStatus === "denied") && (
         <button
           className="chat-app__notify-button"
@@ -256,8 +321,9 @@ export default function ChatRoom() {
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Type a message"
+          disabled={!liveUpdatesEnabled}
         />
-        <button className="chat-app__send" onClick={sendMessage}>
+        <button className="chat-app__send" onClick={sendMessage} disabled={!liveUpdatesEnabled}>
           Send
         </button>
       </div>

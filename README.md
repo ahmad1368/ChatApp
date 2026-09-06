@@ -27,6 +27,7 @@ npm run dev:web   # http://localhost:3000
 - #4 Local push-style notifications — Notification API alerts for new messages while the tab is backgrounded (foreground/open-tab equivalent of mobile push; full Web Push tracked separately in #5)
 - #5 Web Push notifications — VAPID-backed subscribe/notify flow (service worker `push` handler, `/api/push/*` endpoints) so new messages can be delivered even when the tab is fully closed
 - #6 Offline-first mode and data cache management — localStorage message cache for instant load, plus an outgoing-message queue that flushes automatically on reconnect
+- #7 Battery and data usage optimization — WebSocket-only transport, tuned reconnection backoff, Data Saver opt-in, and auto-disconnect after the tab is hidden for 2 minutes
 - Complete account and data deletion (GDPR erasure) — `DELETE /api/account/:author`, web page at `/privacy`
 - Download a backup of personal data (GDPR export) — `GET /api/account/:author/export`, web download page at `/privacy/export`
 - Hide exact location and show only an approximation (~5km) — `PUT`/`GET /api/users/:author/location`, web page at `/privacy/location`
