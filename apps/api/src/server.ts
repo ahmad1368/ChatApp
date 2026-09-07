@@ -59,6 +59,7 @@ import { ProfileVisibilityStore } from "./profileVisibility";
 import { SocialLinksInfoStore, SOCIAL_PLATFORMS } from "./socialLinksInfo";
 import { TravelModeInfoStore } from "./travelModeInfo";
 import { ProfileColorThemeStore, PROFILE_COLOR_THEMES } from "./profileColorTheme";
+import { AchievementsInfoStore } from "./achievementsInfo";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
 import { optimizePhoto } from "./photoOptimization";
@@ -123,6 +124,7 @@ export function createApp(deps?: {
   socialLinksInfoStore: SocialLinksInfoStore;
   travelModeInfoStore: TravelModeInfoStore;
   profileColorThemeStore: ProfileColorThemeStore;
+  achievementsInfoStore: AchievementsInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -187,6 +189,7 @@ export function createApp(deps?: {
   const socialLinksInfoStore = new SocialLinksInfoStore();
   const travelModeInfoStore = new TravelModeInfoStore();
   const profileColorThemeStore = new ProfileColorThemeStore();
+  const achievementsInfoStore = new AchievementsInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -951,6 +954,23 @@ export function createApp(deps?: {
       promptAnswerCount: profilePromptsStore.getAnswers(author).length,
     });
     res.json({ completion });
+  });
+
+  // Editable-anytime "official achievements" list (#87) — degrees,
+  // certifications, awards, same one-value-per-author, replace-on-update
+  // shape as this app's other standalone profile fields. See
+  // achievementsInfo.ts for why resume-document upload is out of scope.
+  app.put("/api/achievements-info/:author", (req, res) => {
+    const result = achievementsInfoStore.update(req.params.author, req.body?.achievements, req.body?.hideAchievements);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ achievementsInfo: result.achievementsInfo });
+  });
+
+  app.get("/api/achievements-info/:author", (req, res) => {
+    res.json({ achievementsInfo: achievementsInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1758,6 +1778,7 @@ export function createApp(deps?: {
     socialLinksInfoStore,
     travelModeInfoStore,
     profileColorThemeStore,
+    achievementsInfoStore,
   };
 }
 
