@@ -68,6 +68,7 @@ import { DiscoveryFiltersStore, candidateMatchesFilters } from "./discoveryFilte
 import { ExploreModeStore, candidateMatchesExploreMode, EXPLORE_MODES } from "./exploreMode";
 import { TopPicksStore } from "./topPicks";
 import { ProfileVisitsStore } from "./profileVisits";
+import { ProfileBoostStore } from "./profileBoost";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -142,6 +143,7 @@ export function createApp(deps?: {
   exploreModeStore: ExploreModeStore;
   topPicksStore: TopPicksStore;
   profileVisitsStore: ProfileVisitsStore;
+  profileBoostStore: ProfileBoostStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -215,6 +217,7 @@ export function createApp(deps?: {
   const exploreModeStore = new ExploreModeStore();
   const topPicksStore = new TopPicksStore();
   const profileVisitsStore = new ProfileVisitsStore();
+  const profileBoostStore = new ProfileBoostStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1124,11 +1127,30 @@ export function createApp(deps?: {
   // than a full questionnaire.
   const getCandidateCompatibility = (a: string, b: string) =>
     computeInterestCompatibility(interestsInfoStore.get(a).interests, interestsInfoStore.get(b).interests);
+  // Tinder's real Boost (#105): a boosted candidate ranks ahead of
+  // everyone except someone who's superliked this viewer — see
+  // swipes.ts's getCandidates doc comment for the exact priority order.
+  const isCandidateBoosted = (candidate: string) => profileBoostStore.isBoosted(candidate);
 
   app.get("/api/swipe-candidates/:author", (req, res) => {
     res.json({
-      candidates: swipeStore.getCandidates(req.params.author, isExcludedCandidate, getCandidateCompatibility),
+      candidates: swipeStore.getCandidates(req.params.author, isExcludedCandidate, getCandidateCompatibility, isCandidateBoosted),
     });
+  });
+
+  // Tinder's real Boost (#105): free here since this app has no premium
+  // tier to gate it behind, same call as #92's free Rewind.
+  app.post("/api/profile-boost/:author", (req, res) => {
+    const result = profileBoostStore.activateBoost(req.params.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ expiresAt: result.expiresAt });
+  });
+
+  app.get("/api/profile-boost/:author", (req, res) => {
+    res.json(profileBoostStore.getStatus(req.params.author));
   });
 
   // Tinder's real "Likes You" (#103): free here since this app has no
@@ -1149,7 +1171,7 @@ export function createApp(deps?: {
   app.get("/api/top-picks/:author", (req, res) => {
     const author = req.params.author;
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, isCandidateBoosted, TOP_PICKS_POOL_SIZE)
       .map((c) => c.author);
     const picks = topPicksStore.getTopPicks(author, pool, (candidate) => smartScoreStore.getRating(candidate));
     res.json({ picks });
@@ -2111,6 +2133,7 @@ export function createApp(deps?: {
     exploreModeStore,
     topPicksStore,
     profileVisitsStore,
+    profileBoostStore,
   };
 }
 

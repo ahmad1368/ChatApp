@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getOrCreateGuestIdentity } from "../guestIdentity";
 import ExploreModeSelector from "../ExploreModeSelector";
 import TopPicks from "../TopPicks";
+import ProfileBoost from "../ProfileBoost";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -139,6 +140,7 @@ export default function DiscoverPage() {
         <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/matches">Your matches</Link> &middot;{" "}
         <Link href="/liked-you">Who liked you</Link> &middot; <Link href="/visitors">Profile visitors</Link>
       </p>
+      <ProfileBoost author={author} />
       <ExploreModeSelector author={author} onChange={loadCandidates} />
       <TopPicks author={author} />
       {matchNotice && (
