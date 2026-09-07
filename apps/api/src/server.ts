@@ -38,6 +38,7 @@ import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetecto
 import { PhotoAlbumStore } from "./photoAlbums";
 import { IntroVideoStore } from "./introVideo";
 import { VoiceIntroStore } from "./voiceIntro";
+import { BioStore } from "./bio";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -78,6 +79,7 @@ export function createApp(deps?: {
   photoAlbumStore: PhotoAlbumStore;
   introVideoStore: IntroVideoStore;
   voiceIntroStore: VoiceIntroStore;
+  bioStore: BioStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -123,6 +125,7 @@ export function createApp(deps?: {
   const photoAlbumStore = new PhotoAlbumStore();
   const introVideoStore = new IntroVideoStore();
   const voiceIntroStore = new VoiceIntroStore();
+  const bioStore = new BioStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -426,6 +429,21 @@ export function createApp(deps?: {
   app.delete("/api/voice-intro/:author", (req, res) => {
     voiceIntroStore.remove(req.params.author);
     res.status(204).send();
+  });
+
+  // Editable-anytime text bio (#65), independent of the one-time bio
+  // collected during onboarding — see bio.ts.
+  app.put("/api/bio/:author", (req, res) => {
+    const result = bioStore.update(req.params.author, req.body?.bio);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ bio: result.bio });
+  });
+
+  app.get("/api/bio/:author", (req, res) => {
+    res.json({ bio: bioStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1214,6 +1232,7 @@ export function createApp(deps?: {
     photoAlbumStore,
     introVideoStore,
     voiceIntroStore,
+    bioStore,
   };
 }
 
