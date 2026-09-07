@@ -5442,6 +5442,48 @@ test("PUT /api/explore-mode/:author accepts null to clear the active mode", asyn
   }
 });
 
+test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/view-mode/alice`);
+    assert.deepEqual(await res.json(), { mode: "card" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/view-mode/:author saves a mode and GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/view-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "grid" }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { mode: "grid" });
+
+    const getRes = await fetch(`${baseUrl}/api/view-mode/alice`);
+    assert.deepEqual(await getRes.json(), { mode: "grid" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/view-mode/:author rejects an invalid mode", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/view-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "carousel" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/swipe-candidates/:author only shows candidates matching the swiper's active explore mode", async () => {
   const { server, baseUrl } = listen();
   try {

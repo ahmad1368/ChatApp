@@ -16,6 +16,8 @@ interface SwipeCandidate {
   compatibility: number;
 }
 
+type ViewMode = "card" | "grid" | "list";
+
 /**
  * Tinder's swipe-card interface (#91) — Like/Pass buttons rather than a
  * draggable gesture card: this app has no gesture-physics library
@@ -35,6 +37,7 @@ export default function DiscoverPage() {
   const [error, setError] = useState<string | null>(null);
   const [superLikesRemaining, setSuperLikesRemaining] = useState(0);
   const [bioKeyword, setBioKeyword] = useState("");
+  const [viewMode, setViewModeState] = useState<ViewMode>("card");
 
   // OkCupid/Tinder's real bio keyword search (#113): a one-off query
   // string, not a persisted preference (see DiscoveryFiltersEditor for
@@ -62,11 +65,28 @@ export default function DiscoverPage() {
       body: JSON.stringify({ author }),
     }).then(() => loadCandidates());
     loadSuperLikesRemaining();
+    fetch(`${API_URL}/api/view-mode/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setViewModeState(body.mode ?? "card"))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [author]);
 
-  const swipe = async (direction: "like" | "pass" | "superlike") => {
-    const candidate = candidates[0];
+  // OkCupid's real DoubleTake-style grid browsing (#115) — a persisted
+  // preference (see viewMode.ts), not just local UI state, so it follows
+  // the author across sessions/devices the same way #99's explore mode
+  // choice does.
+  const setViewMode = (mode: ViewMode) => {
+    setViewModeState(mode);
+    fetch(`${API_URL}/api/view-mode/${encodeURIComponent(author)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    }).catch(() => {});
+  };
+
+  const swipe = async (direction: "like" | "pass" | "superlike", targetAuthor?: string) => {
+    const candidate = candidates.find((c) => c.author === targetAuthor) ?? candidates[0];
     if (!candidate || busy) return;
     setBusy(true);
     setError(null);
@@ -86,7 +106,7 @@ export default function DiscoverPage() {
         setMatchNotice(null);
       }
       setLastSwiped(candidate.author);
-      setCandidates((prev) => prev.slice(1));
+      setCandidates((prev) => prev.filter((c) => c.author !== candidate.author));
       if (direction === "superlike") {
         loadSuperLikesRemaining();
       }
@@ -181,6 +201,20 @@ export default function DiscoverPage() {
       <TopPicks author={author} />
       <CrossedPaths author={author} />
       <SharedContacts author={author} />
+      {/* Web-only "grid or list" browsing (#115) — an alternative to the
+          one-at-a-time swipe card, its own persisted preference. */}
+      <div style={{ display: "flex", gap: 6, justifyContent: "center", margin: "8px 0" }} role="radiogroup" aria-label="Discovery view">
+        {(["card", "grid", "list"] as const).map((mode) => (
+          <button
+            key={mode}
+            onClick={() => setViewMode(mode)}
+            aria-pressed={viewMode === mode}
+            style={{ fontWeight: viewMode === mode ? "bold" : "normal" }}
+          >
+            {mode === "card" ? "🂠 Card" : mode === "grid" ? "▦ Grid" : "☰ List"}
+          </button>
+        ))}
+      </div>
       {matchNotice && (
         <div style={{ background: "#fef3c7", padding: 12, borderRadius: 8, marginBottom: 12 }}>
           🎉 It&apos;s a match with {matchNotice}!
@@ -191,31 +225,74 @@ export default function DiscoverPage() {
           ↺ Rewind
         </button>
       )}
-      {current ? (
-        <div style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 32, marginTop: 16 }}>
-          <p style={{ fontSize: 20, fontWeight: "bold" }}>
-            <Link href={`/profile/${encodeURIComponent(current.author)}`}>{current.author}</Link>
-          </p>
-          <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{current.compatibility}% match</p>
-          <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16 }}>
-            <button onClick={() => swipe("pass")} disabled={busy} style={{ fontSize: 24 }}>
-              ✕
-            </button>
-            <button
-              onClick={() => swipe("superlike")}
-              disabled={busy || superLikesRemaining <= 0}
-              style={{ fontSize: 24 }}
-              title={superLikesRemaining > 0 ? "Super Like" : "No Super Likes left today"}
-            >
-              ⭐
-            </button>
-            <button onClick={() => swipe("like")} disabled={busy} style={{ fontSize: 24 }}>
-              ♥
-            </button>
+      {viewMode === "card" ? (
+        current ? (
+          <div style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 32, marginTop: 16 }}>
+            <p style={{ fontSize: 20, fontWeight: "bold" }}>
+              <Link href={`/profile/${encodeURIComponent(current.author)}`}>{current.author}</Link>
+            </p>
+            <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{current.compatibility}% match</p>
+            <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16 }}>
+              <button onClick={() => swipe("pass")} disabled={busy} style={{ fontSize: 24 }}>
+                ✕
+              </button>
+              <button
+                onClick={() => swipe("superlike")}
+                disabled={busy || superLikesRemaining <= 0}
+                style={{ fontSize: 24 }}
+                title={superLikesRemaining > 0 ? "Super Like" : "No Super Likes left today"}
+              >
+                ⭐
+              </button>
+              <button onClick={() => swipe("like")} disabled={busy} style={{ fontSize: 24 }}>
+                ♥
+              </button>
+            </div>
+            <p style={{ color: "var(--color-muted)", fontSize: 12, marginTop: 8 }}>
+              {superLikesRemaining} Super Like{superLikesRemaining === 1 ? "" : "s"} left today
+            </p>
           </div>
-          <p style={{ color: "var(--color-muted)", fontSize: 12, marginTop: 8 }}>
-            {superLikesRemaining} Super Like{superLikesRemaining === 1 ? "" : "s"} left today
-          </p>
+        ) : (
+          <p style={{ color: "var(--color-muted)", marginTop: 16 }}>No more profiles right now — check back later.</p>
+        )
+      ) : candidates.length > 0 ? (
+        <div
+          style={
+            viewMode === "grid"
+              ? { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12, marginTop: 16 }
+              : { display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }
+          }
+        >
+          {candidates.map((candidate) => (
+            <div
+              key={candidate.author}
+              style={{
+                border: "1px solid var(--color-border)",
+                borderRadius: 8,
+                padding: 12,
+                display: "flex",
+                flexDirection: viewMode === "grid" ? "column" : "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <div>
+                <Link href={`/profile/${encodeURIComponent(candidate.author)}`} style={{ fontWeight: "bold" }}>
+                  {candidate.author}
+                </Link>
+                <p style={{ color: "var(--color-muted)", fontSize: 12, margin: 0 }}>{candidate.compatibility}% match</p>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => swipe("pass", candidate.author)} disabled={busy}>
+                  ✕
+                </button>
+                <button onClick={() => swipe("like", candidate.author)} disabled={busy}>
+                  ♥
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       ) : (
         <p style={{ color: "var(--color-muted)", marginTop: 16 }}>No more profiles right now — check back later.</p>
