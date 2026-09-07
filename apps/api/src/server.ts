@@ -75,6 +75,7 @@ import { CrossedPathsStore } from "./crossedPaths";
 import { SquadStore } from "./squads";
 import { PresenceStore } from "./presence";
 import { VanishModeStore } from "./vanishMode";
+import { PhotoInteractionStore } from "./photoInteractions";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -155,6 +156,7 @@ export function createApp(deps?: {
   squadStore: SquadStore;
   presenceStore: PresenceStore;
   vanishModeStore: VanishModeStore;
+  photoInteractionStore: PhotoInteractionStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -234,6 +236,7 @@ export function createApp(deps?: {
   const squadStore = new SquadStore();
   const presenceStore = new PresenceStore();
   const vanishModeStore = new VanishModeStore();
+  const photoInteractionStore = new PhotoInteractionStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1323,6 +1326,59 @@ export function createApp(deps?: {
     res.json({ enabled: vanishModeStore.isEnabled(req.params.author) });
   });
 
+  // Hinge's real "like or comment on one specific photo" (#112): gated the
+  // same way #45's photo serve is (block check + #59's album access level)
+  // plus confirming photoId is actually in owner's album, ahead of
+  // photoInteractions.ts's own validation.
+  const canInteractWithPhoto = (actor: string, owner: string, photoId: string): string | null => {
+    if (isBlockedEitherWay(actor, owner)) return "Cannot interact with this author's photos";
+    if (!photoAlbumStore.canView(actor, owner)) return "This album isn't public — request access from its owner";
+    if (!photoAlbumStore.listPhotos(owner).includes(photoId)) return "Photo not found in that owner's album";
+    return null;
+  };
+
+  app.post("/api/photo-likes/:owner/:photoId", (req, res) => {
+    const liker = typeof req.body?.liker === "string" ? req.body.liker.trim() : "";
+    const blockedReason = canInteractWithPhoto(liker, req.params.owner, req.params.photoId);
+    if (blockedReason) {
+      res.status(403).json({ error: blockedReason });
+      return;
+    }
+    const result = photoInteractionStore.toggleLike(liker, req.params.owner, req.params.photoId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ liked: result.liked, likeCount: photoInteractionStore.getLikeCount(req.params.owner, req.params.photoId) });
+  });
+
+  app.get("/api/photo-likes/:owner/:photoId", (req, res) => {
+    const viewer = typeof req.query.viewer === "string" ? req.query.viewer.trim() : "";
+    res.json({
+      likeCount: photoInteractionStore.getLikeCount(req.params.owner, req.params.photoId),
+      liked: viewer ? photoInteractionStore.hasLiked(viewer, req.params.owner, req.params.photoId) : false,
+    });
+  });
+
+  app.post("/api/photo-notes/:owner/:photoId", (req, res) => {
+    const sender = typeof req.body?.sender === "string" ? req.body.sender.trim() : "";
+    const blockedReason = canInteractWithPhoto(sender, req.params.owner, req.params.photoId);
+    if (blockedReason) {
+      res.status(403).json({ error: blockedReason });
+      return;
+    }
+    const result = photoInteractionStore.sendNote(sender, req.params.owner, req.params.photoId, req.body?.text);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ note: result.note });
+  });
+
+  app.get("/api/photo-notes/:owner/:photoId", (req, res) => {
+    res.json({ notes: photoInteractionStore.getNotes(req.params.owner, req.params.photoId) });
+  });
+
   // Tinder's real Explore Mode (#99): a curated themed deck (cafes/sports/
   // travel) instead of the normal, unfiltered discovery deck.
   app.get("/api/explore-mode/catalog", (_req, res) => {
@@ -2293,6 +2349,7 @@ export function createApp(deps?: {
     squadStore,
     presenceStore,
     vanishModeStore,
+    photoInteractionStore,
   };
 }
 

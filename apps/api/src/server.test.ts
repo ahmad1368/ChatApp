@@ -5884,6 +5884,150 @@ test("GET /api/swipe-candidates/:author still shows a vanish-mode candidate to s
   }
 });
 
+async function addAlbumPhoto(baseUrl: string, photoStore: import("./photos").PhotoStore, owner: string) {
+  const uploaded = photoStore.upload(owner, "image/png", TINY_PNG_BASE64);
+  const id = uploaded.success ? uploaded.photo.id : "";
+  await fetch(`${baseUrl}/api/photo-albums/${owner}/photos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ photoId: id }),
+  });
+  return id;
+}
+
+test("POST /api/photo-likes/:owner/:photoId toggles a like and GET reflects it (#112)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const photoId = await addAlbumPhoto(baseUrl, photoStore, "bob");
+
+    const likeRes = await fetch(`${baseUrl}/api/photo-likes/bob/${photoId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ liker: "alice" }),
+    });
+    assert.deepEqual(await likeRes.json(), { liked: true, likeCount: 1 });
+
+    const getRes = await fetch(`${baseUrl}/api/photo-likes/bob/${photoId}?viewer=alice`);
+    assert.deepEqual(await getRes.json(), { likeCount: 1, liked: true });
+
+    const unlikeRes = await fetch(`${baseUrl}/api/photo-likes/bob/${photoId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ liker: "alice" }),
+    });
+    assert.deepEqual(await unlikeRes.json(), { liked: false, likeCount: 0 });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-likes/:owner/:photoId rejects liking your own photo", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const photoId = await addAlbumPhoto(baseUrl, photoStore, "bob");
+    const res = await fetch(`${baseUrl}/api/photo-likes/bob/${photoId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ liker: "bob" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-likes/:owner/:photoId 404s (via 403) for a photoId not in that owner's album", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/photo-likes/bob/not-a-real-photo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ liker: "alice" }),
+    });
+    assert.equal(res.status, 403);
+    assert.deepEqual(await res.json(), { error: "Photo not found in that owner's album" });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-likes/:owner/:photoId rejects a blocked author", async () => {
+  const { server, baseUrl, photoStore, blockStore } = listen();
+  try {
+    const photoId = await addAlbumPhoto(baseUrl, photoStore, "bob");
+    blockStore.block("bob", "alice");
+
+    const res = await fetch(`${baseUrl}/api/photo-likes/bob/${photoId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ liker: "alice" }),
+    });
+    assert.equal(res.status, 403);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-likes/:owner/:photoId rejects when the album is private and the liker has no access", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const photoId = await addAlbumPhoto(baseUrl, photoStore, "bob");
+    await fetch(`${baseUrl}/api/photo-albums/bob/access-level`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accessLevel: "private" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/photo-likes/bob/${photoId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ liker: "alice" }),
+    });
+    assert.equal(res.status, 403);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-notes/:owner/:photoId then GET returns the note (#112)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const photoId = await addAlbumPhoto(baseUrl, photoStore, "bob");
+
+    const postRes = await fetch(`${baseUrl}/api/photo-notes/bob/${photoId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sender: "alice", text: "Love this photo!" }),
+    });
+    assert.equal(postRes.status, 201);
+    const postBody = await postRes.json();
+    assert.equal(postBody.note.author, "alice");
+    assert.equal(postBody.note.text, "Love this photo!");
+
+    const getRes = await fetch(`${baseUrl}/api/photo-notes/bob/${photoId}`);
+    const getBody = await getRes.json();
+    assert.equal(getBody.notes.length, 1);
+    assert.equal(getBody.notes[0].text, "Love this photo!");
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-notes/:owner/:photoId rejects a note that's too long", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const photoId = await addAlbumPhoto(baseUrl, photoStore, "bob");
+    const res = await fetch(`${baseUrl}/api/photo-notes/bob/${photoId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sender: "alice", text: "x".repeat(400) }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/crossed-paths/:author returns an empty list before anyone's location is recorded", async () => {
   const { server, baseUrl } = listen();
   try {

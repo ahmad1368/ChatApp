@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getOrCreateGuestIdentity } from "../../guestIdentity";
+import ProfilePhotoGallery from "../../ProfilePhotoGallery";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -129,6 +130,7 @@ export default function ViewProfilePage({ params }: { params: { author: string }
           {Object.keys(preview).length === 0 && <p style={{ color: "var(--color-muted)" }}>Nothing shared yet.</p>}
         </dl>
       )}
+      <ProfilePhotoGallery owner={params.author} viewer={viewer} />
     </main>
   );
 }
