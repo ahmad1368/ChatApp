@@ -62,6 +62,7 @@ import { ProfileColorThemeStore, PROFILE_COLOR_THEMES } from "./profileColorThem
 import { AchievementsInfoStore } from "./achievementsInfo";
 import { DisplayNameModeStore, DISPLAY_NAME_MODES } from "./displayNameMode";
 import { StylizedAvatarStore, AVATAR_STYLES } from "./stylizedAvatar";
+import { SwipeStore } from "./swipes";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
 import { optimizePhoto } from "./photoOptimization";
@@ -129,6 +130,7 @@ export function createApp(deps?: {
   achievementsInfoStore: AchievementsInfoStore;
   displayNameModeStore: DisplayNameModeStore;
   stylizedAvatarStore: StylizedAvatarStore;
+  swipeStore: SwipeStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -196,6 +198,7 @@ export function createApp(deps?: {
   const achievementsInfoStore = new AchievementsInfoStore();
   const displayNameModeStore = new DisplayNameModeStore();
   const stylizedAvatarStore = new StylizedAvatarStore();
+  const swipeStore = new SwipeStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -1020,6 +1023,43 @@ export function createApp(deps?: {
     res.json({ stylizedAvatarInfo: stylizedAvatarStore.get(req.params.author) });
   });
 
+  // Tinder's swipe-card interface (#91): opt-in candidate pool, a
+  // like/pass decision on each candidate, and mutual-like match
+  // detection. See swipes.ts for what's deliberately out of scope
+  // (a Kafka/Redis-backed recommendation service, native gesture layer).
+  app.post("/api/discovery/join", (req, res) => {
+    const result = swipeStore.joinDiscovery(req.body?.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ success: true });
+  });
+
+  app.delete("/api/discovery/join/:author", (req, res) => {
+    swipeStore.leaveDiscovery(req.params.author);
+    res.status(204).send();
+  });
+
+  app.get("/api/swipe-candidates/:author", (req, res) => {
+    const isBlockedEitherWay = (a: string, b: string) =>
+      blockStore.getBlockedAuthors(a).includes(b) || blockStore.getBlockedAuthors(b).includes(a);
+    res.json({ candidates: swipeStore.getCandidates(req.params.author, isBlockedEitherWay) });
+  });
+
+  app.post("/api/swipes", (req, res) => {
+    const result = swipeStore.recordSwipe(req.body?.swiper, req.body?.swiped, req.body?.direction);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ matched: result.matched });
+  });
+
+  app.get("/api/matches/:author", (req, res) => {
+    res.json({ matches: swipeStore.getMatches(req.params.author) });
+  });
+
   // "Share My Date": its own high-priority, dependency-free safety path,
   // same as Report/Block. Each trusted contact gets a distinct share code,
   // and the sharer can push a live status update or revoke access. This is
@@ -1828,6 +1868,7 @@ export function createApp(deps?: {
     achievementsInfoStore,
     displayNameModeStore,
     stylizedAvatarStore,
+    swipeStore,
   };
 }
 
