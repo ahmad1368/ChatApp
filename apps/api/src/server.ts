@@ -56,6 +56,7 @@ import { InstagramService } from "./instagramAuth";
 import { InstagramInfoStore } from "./instagramInfo";
 import { InterestsInfoStore, INTEREST_CATALOG } from "./interestsInfo";
 import { ProfileVisibilityStore } from "./profileVisibility";
+import { buildProfilePreview } from "./profilePreview";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -816,6 +817,30 @@ export function createApp(deps?: {
 
   app.get("/api/profile-visibility/:author", (req, res) => {
     res.json({ visibility: profileVisibilityStore.get(req.params.author) });
+  });
+
+  // "Preview profile as seen by other users" (#81): composes every
+  // standalone profile field (#61-#79) into the single view another user
+  // would see, respecting each field's own hide flag — see profilePreview.ts.
+  app.get("/api/profile-preview/:author", (req, res) => {
+    const author = req.params.author;
+    const preview = buildProfilePreview({
+      bio: bioStore.get(author),
+      jobInfo: jobInfoStore.get(author),
+      educationInfo: educationInfoStore.get(author),
+      heightInfo: heightInfoStore.get(author),
+      lifestyleInfo: lifestyleInfoStore.get(author),
+      familyPlansInfo: familyPlansInfoStore.get(author),
+      zodiacInfo: zodiacInfoStore.get(author),
+      languagesInfo: languagesInfoStore.get(author),
+      beliefsInfo: beliefsInfoStore.get(author),
+      petsInfo: petsInfoStore.get(author),
+      personalityInfo: personalityInfoStore.get(author),
+      spotifyInfo: spotifyInfoStore.get(author),
+      instagramInfo: instagramInfoStore.get(author),
+      interestsInfo: interestsInfoStore.get(author),
+    });
+    res.json({ preview });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
