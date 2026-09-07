@@ -29,6 +29,7 @@ import DisplayNameModeEditor from "../../DisplayNameModeEditor";
 import StylizedAvatarEditor from "../../StylizedAvatarEditor";
 import ProfileCompletion from "../../ProfileCompletion";
 import ProfilePreview from "../../ProfilePreview";
+import SmartScoreDisplay from "../../SmartScoreDisplay";
 
 /**
  * "Quickly edit and update details from settings" (#90) — a single place to
@@ -74,6 +75,7 @@ export default function ProfileSettingsPage() {
       <StylizedAvatarEditor author={author} />
       <ProfileVisibilityEditor author={author} />
       <ProfilePreview author={author} />
+      <SmartScoreDisplay author={author} />
     </main>
   );
 }
