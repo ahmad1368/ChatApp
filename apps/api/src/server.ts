@@ -64,6 +64,7 @@ import { DisplayNameModeStore, DISPLAY_NAME_MODES } from "./displayNameMode";
 import { StylizedAvatarStore, AVATAR_STYLES } from "./stylizedAvatar";
 import { SwipeStore } from "./swipes";
 import { SmartScoreStore } from "./smartScore";
+import { DiscoveryFiltersStore, candidateMatchesFilters } from "./discoveryFilters";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -134,6 +135,7 @@ export function createApp(deps?: {
   stylizedAvatarStore: StylizedAvatarStore;
   swipeStore: SwipeStore;
   smartScoreStore: SmartScoreStore;
+  discoveryFiltersStore: DiscoveryFiltersStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -203,6 +205,7 @@ export function createApp(deps?: {
   const stylizedAvatarStore = new StylizedAvatarStore();
   const swipeStore = new SwipeStore();
   const smartScoreStore = new SmartScoreStore();
+  const discoveryFiltersStore = new DiscoveryFiltersStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -1046,14 +1049,50 @@ export function createApp(deps?: {
   });
 
   app.get("/api/swipe-candidates/:author", (req, res) => {
-    const isBlockedEitherWay = (a: string, b: string) =>
-      blockStore.getBlockedAuthors(a).includes(b) || blockStore.getBlockedAuthors(b).includes(a);
+    // OkCupid's real advanced discovery filters (#96): a candidate who
+    // fails the swiper's own height/education/language filters is excluded
+    // the same way a blocked candidate is — see discoveryFilters.ts for why
+    // this reads raw profile data regardless of the candidate's own hide
+    // flags.
+    const isExcluded = (a: string, b: string) => {
+      if (blockStore.getBlockedAuthors(a).includes(b) || blockStore.getBlockedAuthors(b).includes(a)) {
+        return true;
+      }
+      const filters = discoveryFiltersStore.get(a);
+      const candidateData = {
+        heightCm: heightInfoStore.get(b).heightCm,
+        hasEducation: educationInfoStore.get(b).school !== "",
+        languages: languagesInfoStore.get(b).languages,
+      };
+      return !candidateMatchesFilters(filters, candidateData);
+    };
     // OkCupid's real percentage-match algorithm (#94), computed from #79's
     // interest tags — see interestCompatibility.ts for why interests
     // rather than a full questionnaire.
     const getCompatibility = (a: string, b: string) =>
       computeInterestCompatibility(interestsInfoStore.get(a).interests, interestsInfoStore.get(b).interests);
-    res.json({ candidates: swipeStore.getCandidates(req.params.author, isBlockedEitherWay, getCompatibility) });
+    res.json({ candidates: swipeStore.getCandidates(req.params.author, isExcluded, getCompatibility) });
+  });
+
+  // OkCupid's advanced discovery filters (#96): height range, education
+  // requirement, and required languages — narrows /api/swipe-candidates.
+  app.put("/api/discovery-filters/:author", (req, res) => {
+    const result = discoveryFiltersStore.update(
+      req.params.author,
+      req.body?.minHeightCm,
+      req.body?.maxHeightCm,
+      req.body?.requireEducation,
+      req.body?.requiredLanguages
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ filters: result.filters });
+  });
+
+  app.get("/api/discovery-filters/:author", (req, res) => {
+    res.json({ filters: discoveryFiltersStore.get(req.params.author) });
   });
 
   app.post("/api/swipes", (req, res) => {
@@ -1911,6 +1950,7 @@ export function createApp(deps?: {
     stylizedAvatarStore,
     swipeStore,
     smartScoreStore,
+    discoveryFiltersStore,
   };
 }
 

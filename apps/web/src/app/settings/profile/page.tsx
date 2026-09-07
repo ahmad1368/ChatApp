@@ -27,6 +27,7 @@ import ProfileColorThemeEditor from "../../ProfileColorThemeEditor";
 import AchievementsInfoEditor from "../../AchievementsInfoEditor";
 import DisplayNameModeEditor from "../../DisplayNameModeEditor";
 import StylizedAvatarEditor from "../../StylizedAvatarEditor";
+import DiscoveryFiltersEditor from "../../DiscoveryFiltersEditor";
 import ProfileCompletion from "../../ProfileCompletion";
 import ProfilePreview from "../../ProfilePreview";
 import SmartScoreDisplay from "../../SmartScoreDisplay";
@@ -74,6 +75,7 @@ export default function ProfileSettingsPage() {
       <DisplayNameModeEditor author={author} />
       <StylizedAvatarEditor author={author} />
       <ProfileVisibilityEditor author={author} />
+      <DiscoveryFiltersEditor author={author} />
       <ProfilePreview author={author} />
       <SmartScoreDisplay author={author} />
     </main>
