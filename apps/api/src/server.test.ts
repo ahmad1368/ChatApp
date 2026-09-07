@@ -5554,3 +5554,63 @@ test("GET /api/liked-you/:author excludes someone once the author swipes back on
     server.close();
   }
 });
+
+test("GET /api/profile-boost/:author reports inactive before any activation", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-boost/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { active: false, expiresAt: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/profile-boost/:author activates a boost reflected in GET /api/profile-boost/:author", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const postRes = await fetch(`${baseUrl}/api/profile-boost/alice`, { method: "POST" });
+    assert.equal(postRes.status, 201);
+    const postBody = await postRes.json();
+    assert.equal(typeof postBody.expiresAt, "string");
+
+    const getRes = await fetch(`${baseUrl}/api/profile-boost/alice`);
+    const getBody = await getRes.json();
+    assert.equal(getBody.active, true);
+    assert.equal(getBody.expiresAt, postBody.expiresAt);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author ranks a boosted candidate ahead of a non-boosted one", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/profile-boost/carol`, { method: "POST" });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["carol", "bob"]
+    );
+  } finally {
+    server.close();
+  }
+});
