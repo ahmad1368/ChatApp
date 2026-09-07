@@ -76,6 +76,7 @@ import { SquadStore } from "./squads";
 import { PresenceStore } from "./presence";
 import { VanishModeStore } from "./vanishMode";
 import { PhotoInteractionStore } from "./photoInteractions";
+import { bioMatchesKeyword } from "./bioSearch";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -1171,9 +1172,18 @@ export function createApp(deps?: {
   // doc comment for the exact priority order.
   const getCandidateBoostLevel = (candidate: string) => profileBoostStore.getBoostLevel(candidate);
 
+  // OkCupid/Tinder's real bio keyword search (#113): an optional ?bioKeyword=
+  // query narrows the same eligible pool everything else above filters,
+  // rather than a separate search endpoint or a persisted preference (see
+  // discoveryFilters.ts for the contrast) — it's a one-off query, not a
+  // standing filter the swiper wants applied to every future session.
   app.get("/api/swipe-candidates/:author", (req, res) => {
+    const bioKeyword = typeof req.query.bioKeyword === "string" ? req.query.bioKeyword : "";
+    const excludeCandidate = bioKeyword
+      ? (a: string, b: string) => isExcludedCandidate(a, b) || !bioMatchesKeyword(bioStore.get(b), bioKeyword)
+      : isExcludedCandidate;
     res.json({
-      candidates: swipeStore.getCandidates(req.params.author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel),
+      candidates: swipeStore.getCandidates(req.params.author, excludeCandidate, getCandidateCompatibility, getCandidateBoostLevel),
     });
   });
 
