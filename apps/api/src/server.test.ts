@@ -3256,3 +3256,66 @@ test("PUT /api/education-info/:author rejects a school containing a phone number
     server.close();
   }
 });
+
+test("GET /api/height-info/:author returns empty fields before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/height-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { heightInfo: { heightCm: null, hideHeight: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/height-info/:author sets height info, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/height-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heightCm: 170, hideHeight: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { heightInfo: { heightCm: 170, hideHeight: true } });
+
+    const getRes = await fetch(`${baseUrl}/api/height-info/alice`);
+    assert.deepEqual(await getRes.json(), { heightInfo: { heightCm: 170, hideHeight: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/height-info/:author rejects a height outside the valid range", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/height-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heightCm: 999, hideHeight: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/height-info/:author accepts a null height to clear it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/height-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heightCm: 170, hideHeight: false }),
+    });
+    const res = await fetch(`${baseUrl}/api/height-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heightCm: null, hideHeight: false }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { heightInfo: { heightCm: null, hideHeight: false } });
+  } finally {
+    server.close();
+  }
+});

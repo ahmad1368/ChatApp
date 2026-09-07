@@ -42,6 +42,7 @@ import { BioStore } from "./bio";
 import { ProfilePromptsStore, PROFILE_PROMPT_CATALOG } from "./profilePrompts";
 import { JobInfoStore } from "./jobInfo";
 import { EducationInfoStore } from "./educationInfo";
+import { HeightInfoStore } from "./heightInfo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -86,6 +87,7 @@ export function createApp(deps?: {
   profilePromptsStore: ProfilePromptsStore;
   jobInfoStore: JobInfoStore;
   educationInfoStore: EducationInfoStore;
+  heightInfoStore: HeightInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -135,6 +137,7 @@ export function createApp(deps?: {
   const profilePromptsStore = new ProfilePromptsStore();
   const jobInfoStore = new JobInfoStore();
   const educationInfoStore = new EducationInfoStore();
+  const heightInfoStore = new HeightInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -503,6 +506,21 @@ export function createApp(deps?: {
 
   app.get("/api/education-info/:author", (req, res) => {
     res.json({ educationInfo: educationInfoStore.get(req.params.author) });
+  });
+
+  // Editable-anytime height (#69), same one-value-per-author,
+  // replace-on-update shape as this app's other standalone profile fields.
+  app.put("/api/height-info/:author", (req, res) => {
+    const result = heightInfoStore.update(req.params.author, req.body?.heightCm, req.body?.hideHeight);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ heightInfo: result.heightInfo });
+  });
+
+  app.get("/api/height-info/:author", (req, res) => {
+    res.json({ heightInfo: heightInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1295,6 +1313,7 @@ export function createApp(deps?: {
     profilePromptsStore,
     jobInfoStore,
     educationInfoStore,
+    heightInfoStore,
   };
 }
 
