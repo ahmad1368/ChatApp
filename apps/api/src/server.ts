@@ -37,6 +37,7 @@ import { RecaptchaService } from "./recaptcha";
 import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetector";
 import { PhotoAlbumStore } from "./photoAlbums";
 import { IntroVideoStore } from "./introVideo";
+import { VoiceIntroStore } from "./voiceIntro";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -76,6 +77,7 @@ export function createApp(deps?: {
   discoveryVisibilityStore: DiscoveryVisibilityStore;
   photoAlbumStore: PhotoAlbumStore;
   introVideoStore: IntroVideoStore;
+  voiceIntroStore: VoiceIntroStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -120,6 +122,7 @@ export function createApp(deps?: {
   const discoveryVisibilityStore = new DiscoveryVisibilityStore();
   const photoAlbumStore = new PhotoAlbumStore();
   const introVideoStore = new IntroVideoStore();
+  const voiceIntroStore = new VoiceIntroStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -396,6 +399,32 @@ export function createApp(deps?: {
 
   app.delete("/api/intro-video/:author", (req, res) => {
     introVideoStore.remove(req.params.author);
+    res.status(204).send();
+  });
+
+  // Hinge-style 30-second voice intro (#64): same one-per-profile,
+  // replace-on-reupload shape as #63's intro video, audio mime types only.
+  app.post("/api/voice-intro", (req, res) => {
+    const result = voiceIntroStore.upload(req.body?.author, req.body?.mimeType, req.body?.data);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ success: true });
+  });
+
+  app.get("/api/voice-intro/:author", (req, res) => {
+    const clip = voiceIntroStore.get(req.params.author);
+    if (!clip) {
+      res.status(404).json({ error: "No voice intro for this author" });
+      return;
+    }
+    res.setHeader("Content-Type", clip.mimeType);
+    res.status(200).send(clip.data);
+  });
+
+  app.delete("/api/voice-intro/:author", (req, res) => {
+    voiceIntroStore.remove(req.params.author);
     res.status(204).send();
   });
 
@@ -1184,6 +1213,7 @@ export function createApp(deps?: {
     discoveryVisibilityStore,
     photoAlbumStore,
     introVideoStore,
+    voiceIntroStore,
   };
 }
 

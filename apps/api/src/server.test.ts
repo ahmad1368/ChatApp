@@ -2936,3 +2936,67 @@ test("DELETE /api/intro-video/:author removes the video", async () => {
     server.close();
   }
 });
+
+test("GET /api/voice-intro/:author 404s when none is uploaded", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/voice-intro/alice`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/voice-intro uploads a clip, then GET serves it back with the right content type", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const data = Buffer.from("fake audio bytes").toString("base64");
+    const uploadRes = await fetch(`${baseUrl}/api/voice-intro`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "audio/webm", data }),
+    });
+    assert.equal(uploadRes.status, 201);
+
+    const getRes = await fetch(`${baseUrl}/api/voice-intro/alice`);
+    assert.equal(getRes.status, 200);
+    assert.equal(getRes.headers.get("content-type"), "audio/webm");
+    const served = Buffer.from(await getRes.arrayBuffer());
+    assert.deepEqual(served, Buffer.from(data, "base64"));
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/voice-intro rejects an unsupported mime type", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/voice-intro`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "audio/x-wav", data: "abc" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/voice-intro/:author removes the clip", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const data = Buffer.from("fake audio bytes").toString("base64");
+    await fetch(`${baseUrl}/api/voice-intro`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "audio/webm", data }),
+    });
+    const deleteRes = await fetch(`${baseUrl}/api/voice-intro/alice`, { method: "DELETE" });
+    assert.equal(deleteRes.status, 204);
+
+    const getRes = await fetch(`${baseUrl}/api/voice-intro/alice`);
+    assert.equal(getRes.status, 404);
+  } finally {
+    server.close();
+  }
+});

@@ -15,6 +15,7 @@ import SOSButton from "./SOSButton";
 import BiometricLock from "./BiometricLock";
 import { getOrCreateGuestIdentity } from "./guestIdentity";
 import IntroVideoUpload from "./IntroVideoUpload";
+import VoiceIntroRecorder from "./VoiceIntroRecorder";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -1084,6 +1085,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         </div>
       </section>
       <IntroVideoUpload author={author} />
+      <VoiceIntroRecorder author={author} />
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
         <ReportDialog
