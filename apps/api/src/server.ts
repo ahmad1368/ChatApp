@@ -60,6 +60,7 @@ import { SocialLinksInfoStore, SOCIAL_PLATFORMS } from "./socialLinksInfo";
 import { TravelModeInfoStore } from "./travelModeInfo";
 import { ProfileColorThemeStore, PROFILE_COLOR_THEMES } from "./profileColorTheme";
 import { AchievementsInfoStore } from "./achievementsInfo";
+import { DisplayNameModeStore, DISPLAY_NAME_MODES } from "./displayNameMode";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
 import { optimizePhoto } from "./photoOptimization";
@@ -125,6 +126,7 @@ export function createApp(deps?: {
   travelModeInfoStore: TravelModeInfoStore;
   profileColorThemeStore: ProfileColorThemeStore;
   achievementsInfoStore: AchievementsInfoStore;
+  displayNameModeStore: DisplayNameModeStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -190,6 +192,7 @@ export function createApp(deps?: {
   const travelModeInfoStore = new TravelModeInfoStore();
   const profileColorThemeStore = new ProfileColorThemeStore();
   const achievementsInfoStore = new AchievementsInfoStore();
+  const displayNameModeStore = new DisplayNameModeStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -971,6 +974,26 @@ export function createApp(deps?: {
 
   app.get("/api/achievements-info/:author", (req, res) => {
     res.json({ achievementsInfo: achievementsInfoStore.get(req.params.author) });
+  });
+
+  // Editable-anytime display-name mode (#88) — how #21's onboarding name is
+  // actually rendered to other users, same one-value-per-author,
+  // replace-on-update shape as this app's other standalone profile fields.
+  app.get("/api/display-name-mode/modes", (_req, res) => {
+    res.json({ modes: DISPLAY_NAME_MODES });
+  });
+
+  app.put("/api/display-name-mode/:author", (req, res) => {
+    const result = displayNameModeStore.update(req.params.author, req.body?.mode, req.body?.nickname);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ preference: result.preference });
+  });
+
+  app.get("/api/display-name-mode/:author", (req, res) => {
+    res.json({ preference: displayNameModeStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1779,6 +1802,7 @@ export function createApp(deps?: {
     travelModeInfoStore,
     profileColorThemeStore,
     achievementsInfoStore,
+    displayNameModeStore,
   };
 }
 
