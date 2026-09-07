@@ -35,6 +35,7 @@ function listen() {
     watermarkStore,
     photoStore,
     presenceStore,
+    spotifyInfoStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -51,6 +52,7 @@ function listen() {
     watermarkStore,
     photoStore,
     presenceStore,
+    spotifyInfoStore,
   };
 }
 
@@ -6380,6 +6382,83 @@ test("GET /api/shared-contacts/:author excludes a blocked candidate even with sh
     blockStore.block("alice", "bob");
 
     const res = await fetch(`${baseUrl}/api/shared-contacts/alice`);
+    assert.deepEqual(await res.json(), { candidates: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/music-matches/:author returns candidates sharing at least one top track (#118)", async () => {
+  const { server, baseUrl, spotifyInfoStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    spotifyInfoStore.connect("alice", ["Song A", "Song B"]);
+    spotifyInfoStore.connect("bob", ["Song A", "Song C"]);
+    spotifyInfoStore.connect("carol", ["Song D"]);
+
+    const res = await fetch(`${baseUrl}/api/music-matches/alice`);
+    const body = await res.json();
+    assert.deepEqual(body.candidates, [{ author: "bob", sharedTracks: ["Song A"], compatibility: 50 }]);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/music-matches/:author returns nothing when the author hasn't connected Spotify", async () => {
+  const { server, baseUrl, spotifyInfoStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    spotifyInfoStore.connect("bob", ["Song A"]);
+
+    const res = await fetch(`${baseUrl}/api/music-matches/alice`);
+    assert.deepEqual(await res.json(), { candidates: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/music-matches/:author excludes a candidate hiding their Spotify info", async () => {
+  const { server, baseUrl, spotifyInfoStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    spotifyInfoStore.connect("alice", ["Song A"]);
+    spotifyInfoStore.connect("bob", ["Song A"]);
+    await fetch(`${baseUrl}/api/spotify-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hideSpotify: true }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/music-matches/alice`);
     assert.deepEqual(await res.json(), { candidates: [] });
   } finally {
     server.close();

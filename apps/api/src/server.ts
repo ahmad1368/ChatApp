@@ -79,6 +79,7 @@ import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
 import { ViewModeStore } from "./viewMode";
+import { computeMusicMatch } from "./musicMatch";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -1289,6 +1290,33 @@ export function createApp(deps?: {
       .filter((entry) => entry.sharedContacts > 0)
       .sort((a, b) => b.sharedContacts - a.sharedContacts);
     res.json({ candidates: withSharedContacts });
+  });
+
+  // Hinge's real "you both like X" shared-interest framing (#118) applied
+  // to #77's Spotify top tracks — same drawn-from-the-same-pool shape as
+  // #108/#114 above. Respects #77's own hideSpotify flag on both sides
+  // (a candidate hiding their Spotify info shouldn't have it surfaced
+  // here either) and requires both accounts actually connected.
+  app.get("/api/music-matches/:author", (req, res) => {
+    const author = req.params.author;
+    const authorSpotify = spotifyInfoStore.get(author);
+    if (!authorSpotify.connected || authorSpotify.hideSpotify) {
+      res.json({ candidates: [] });
+      return;
+    }
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .map((c) => c.author);
+    const musicMatches = pool
+      .map((candidate) => {
+        const candidateSpotify = spotifyInfoStore.get(candidate);
+        if (!candidateSpotify.connected || candidateSpotify.hideSpotify) return null;
+        const match = computeMusicMatch(authorSpotify.topTracks, candidateSpotify.topTracks);
+        return match.sharedTracks.length > 0 ? { author: candidate, ...match } : null;
+      })
+      .filter((entry): entry is { author: string; sharedTracks: string[]; compatibility: number } => entry !== null)
+      .sort((a, b) => b.sharedTracks.length - a.sharedTracks.length);
+    res.json({ candidates: musicMatches });
   });
 
   // Match.com/Tinder's real "Double Date" (#109): a small group of
