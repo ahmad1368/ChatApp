@@ -55,6 +55,7 @@ import { SpotifyInfoStore } from "./spotifyInfo";
 import { InstagramService } from "./instagramAuth";
 import { InstagramInfoStore } from "./instagramInfo";
 import { InterestsInfoStore, INTEREST_CATALOG } from "./interestsInfo";
+import { ProfileVisibilityStore } from "./profileVisibility";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -112,6 +113,7 @@ export function createApp(deps?: {
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
   interestsInfoStore: InterestsInfoStore;
+  profileVisibilityStore: ProfileVisibilityStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -172,6 +174,7 @@ export function createApp(deps?: {
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
   const interestsInfoStore = new InterestsInfoStore();
+  const profileVisibilityStore = new ProfileVisibilityStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -797,6 +800,22 @@ export function createApp(deps?: {
 
   app.get("/api/interests-info/:author", (req, res) => {
     res.json({ interestsInfo: interestsInfoStore.get(req.params.author) });
+  });
+
+  // Feeld-style "hide specific profile sections" toggle (#80): age and
+  // distance, the two core profile fields shown by default that don't
+  // already have a per-field hide flag like #67-#79's optional details.
+  app.put("/api/profile-visibility/:author", (req, res) => {
+    const result = profileVisibilityStore.update(req.params.author, req.body?.hideAge, req.body?.hideDistance);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ visibility: result.visibility });
+  });
+
+  app.get("/api/profile-visibility/:author", (req, res) => {
+    res.json({ visibility: profileVisibilityStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1600,6 +1619,7 @@ export function createApp(deps?: {
     spotifyInfoStore,
     instagramInfoStore,
     interestsInfoStore,
+    profileVisibilityStore,
   };
 }
 
