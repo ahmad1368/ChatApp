@@ -4428,3 +4428,58 @@ test("PUT /api/display-name-mode/:author rejects mode nickname with an empty nic
     server.close();
   }
 });
+
+test("GET /api/stylized-avatar/styles returns the fixed style list", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/stylized-avatar/styles`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.styles) && body.styles.length > 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/stylized-avatar/:author returns empty fields before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/stylized-avatar/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { stylizedAvatarInfo: { style: null, active: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/stylized-avatar/:author sets the style, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/stylized-avatar/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ style: "cartoonA", active: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { stylizedAvatarInfo: { style: "cartoonA", active: true } });
+
+    const getRes = await fetch(`${baseUrl}/api/stylized-avatar/alice`);
+    assert.deepEqual(await getRes.json(), { stylizedAvatarInfo: { style: "cartoonA", active: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/stylized-avatar/:author rejects activating with no style chosen", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/stylized-avatar/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ style: null, active: true }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
