@@ -58,6 +58,7 @@ import { InterestsInfoStore, INTEREST_CATALOG } from "./interestsInfo";
 import { ProfileVisibilityStore } from "./profileVisibility";
 import { SocialLinksInfoStore, SOCIAL_PLATFORMS } from "./socialLinksInfo";
 import { TravelModeInfoStore } from "./travelModeInfo";
+import { ProfileColorThemeStore, PROFILE_COLOR_THEMES } from "./profileColorTheme";
 import { buildProfilePreview } from "./profilePreview";
 import { optimizePhoto } from "./photoOptimization";
 
@@ -120,6 +121,7 @@ export function createApp(deps?: {
   profileVisibilityStore: ProfileVisibilityStore;
   socialLinksInfoStore: SocialLinksInfoStore;
   travelModeInfoStore: TravelModeInfoStore;
+  profileColorThemeStore: ProfileColorThemeStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -183,6 +185,7 @@ export function createApp(deps?: {
   const profileVisibilityStore = new ProfileVisibilityStore();
   const socialLinksInfoStore = new SocialLinksInfoStore();
   const travelModeInfoStore = new TravelModeInfoStore();
+  const profileColorThemeStore = new ProfileColorThemeStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -902,6 +905,26 @@ export function createApp(deps?: {
 
   app.get("/api/travel-mode-info/:author", (req, res) => {
     res.json({ travelModeInfo: travelModeInfoStore.get(req.params.author) });
+  });
+
+  // Editable-anytime profile color theme (#85), same one-value-per-author,
+  // replace-on-update shape as this app's other standalone profile fields —
+  // distinct from ThemeToggle.tsx's app-wide light/dark UI theme.
+  app.get("/api/profile-color-theme/themes", (_req, res) => {
+    res.json({ themes: PROFILE_COLOR_THEMES });
+  });
+
+  app.put("/api/profile-color-theme/:author", (req, res) => {
+    const result = profileColorThemeStore.set(req.params.author, req.body?.theme);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ theme: result.theme });
+  });
+
+  app.get("/api/profile-color-theme/:author", (req, res) => {
+    res.json({ theme: profileColorThemeStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1708,6 +1731,7 @@ export function createApp(deps?: {
     profileVisibilityStore,
     socialLinksInfoStore,
     travelModeInfoStore,
+    profileColorThemeStore,
   };
 }
 
