@@ -78,6 +78,7 @@ import { VanishModeStore } from "./vanishMode";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
+import { ViewModeStore } from "./viewMode";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -160,6 +161,7 @@ export function createApp(deps?: {
   vanishModeStore: VanishModeStore;
   photoInteractionStore: PhotoInteractionStore;
   contactsGraphStore: ContactsGraphStore;
+  viewModeStore: ViewModeStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -241,6 +243,7 @@ export function createApp(deps?: {
   const vanishModeStore = new VanishModeStore();
   const photoInteractionStore = new PhotoInteractionStore();
   const contactsGraphStore = new ContactsGraphStore();
+  const viewModeStore = new ViewModeStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1441,6 +1444,22 @@ export function createApp(deps?: {
     res.json({ mode: exploreModeStore.get(req.params.author) });
   });
 
+  // OkCupid's real DoubleTake-style grid browsing as a web-native
+  // alternative to the one-at-a-time swipe deck (#115) — a persisted
+  // display preference, same shape as #99's explore mode above.
+  app.put("/api/view-mode/:author", (req, res) => {
+    const result = viewModeStore.set(req.params.author, req.body?.mode);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ mode: result.mode });
+  });
+
+  app.get("/api/view-mode/:author", (req, res) => {
+    res.json({ mode: viewModeStore.get(req.params.author) });
+  });
+
   // OkCupid's advanced discovery filters (#96, extended by #97 and #98):
   // height range, education requirement, required languages, non-smoking,
   // allowed drinking, and verified-only — narrows /api/swipe-candidates.
@@ -2394,6 +2413,7 @@ export function createApp(deps?: {
     vanishModeStore,
     photoInteractionStore,
     contactsGraphStore,
+    viewModeStore,
   };
 }
 
