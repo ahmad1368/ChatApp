@@ -66,6 +66,7 @@ import { SwipeStore } from "./swipes";
 import { SmartScoreStore } from "./smartScore";
 import { DiscoveryFiltersStore, candidateMatchesFilters } from "./discoveryFilters";
 import { ExploreModeStore, candidateMatchesExploreMode, EXPLORE_MODES } from "./exploreMode";
+import { TopPicksStore } from "./topPicks";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -138,6 +139,7 @@ export function createApp(deps?: {
   smartScoreStore: SmartScoreStore;
   discoveryFiltersStore: DiscoveryFiltersStore;
   exploreModeStore: ExploreModeStore;
+  topPicksStore: TopPicksStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -209,6 +211,8 @@ export function createApp(deps?: {
   const smartScoreStore = new SmartScoreStore();
   const discoveryFiltersStore = new DiscoveryFiltersStore();
   const exploreModeStore = new ExploreModeStore();
+  const topPicksStore = new TopPicksStore();
+  const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -1051,46 +1055,66 @@ export function createApp(deps?: {
     res.status(204).send();
   });
 
-  app.get("/api/swipe-candidates/:author", (req, res) => {
-    // OkCupid's real advanced discovery filters (#96, extended by #97 with
-    // non-smoking/lifestyle and #98 with verified-only): a candidate who
-    // fails the swiper's own filters is excluded the same way a blocked
-    // candidate is — see discoveryFilters.ts for why this reads raw
-    // profile data regardless of the candidate's own hide flags, and for
-    // the documented gap between guest "author" identities and the
-    // verifiedOnly signal's real-account VerificationStore.
-    const isExcluded = (a: string, b: string) => {
-      if (blockStore.getBlockedAuthors(a).includes(b) || blockStore.getBlockedAuthors(b).includes(a)) {
-        return true;
-      }
-      const filters = discoveryFiltersStore.get(a);
-      const candidateLifestyle = lifestyleInfoStore.get(b);
-      const candidateData = {
-        heightCm: heightInfoStore.get(b).heightCm,
-        hasEducation: educationInfoStore.get(b).school !== "",
-        languages: languagesInfoStore.get(b).languages,
-        smoking: candidateLifestyle.smoking,
-        drinking: candidateLifestyle.drinking,
-        isVerified: verificationStore.isVerified(b),
-      };
-      if (!candidateMatchesFilters(filters, candidateData)) {
-        return true;
-      }
-      // Tinder's real Explore Mode (#99): when the swiper has a themed
-      // deck active (cafes/sports/travel), only candidates sharing at
-      // least one of that theme's interest tags are shown.
-      const exploreMode = exploreModeStore.get(a);
-      if (!candidateMatchesExploreMode(exploreMode, interestsInfoStore.get(b).interests)) {
-        return true;
-      }
-      return false;
+  // OkCupid's real advanced discovery filters (#96, extended by #97 with
+  // non-smoking/lifestyle and #98 with verified-only): a candidate who
+  // fails the swiper's own filters is excluded the same way a blocked
+  // candidate is — see discoveryFilters.ts for why this reads raw profile
+  // data regardless of the candidate's own hide flags, and for the
+  // documented gap between guest "author" identities and the
+  // verifiedOnly signal's real-account VerificationStore. Shared between
+  // /api/swipe-candidates and #101's /api/top-picks, which both draw from
+  // the same eligible-candidate pool.
+  const isExcludedCandidate = (a: string, b: string) => {
+    if (blockStore.getBlockedAuthors(a).includes(b) || blockStore.getBlockedAuthors(b).includes(a)) {
+      return true;
+    }
+    const filters = discoveryFiltersStore.get(a);
+    const candidateLifestyle = lifestyleInfoStore.get(b);
+    const candidateData = {
+      heightCm: heightInfoStore.get(b).heightCm,
+      hasEducation: educationInfoStore.get(b).school !== "",
+      languages: languagesInfoStore.get(b).languages,
+      smoking: candidateLifestyle.smoking,
+      drinking: candidateLifestyle.drinking,
+      isVerified: verificationStore.isVerified(b),
     };
-    // OkCupid's real percentage-match algorithm (#94), computed from #79's
-    // interest tags — see interestCompatibility.ts for why interests
-    // rather than a full questionnaire.
-    const getCompatibility = (a: string, b: string) =>
-      computeInterestCompatibility(interestsInfoStore.get(a).interests, interestsInfoStore.get(b).interests);
-    res.json({ candidates: swipeStore.getCandidates(req.params.author, isExcluded, getCompatibility) });
+    if (!candidateMatchesFilters(filters, candidateData)) {
+      return true;
+    }
+    // Tinder's real Explore Mode (#99): when the swiper has a themed deck
+    // active (cafes/sports/travel), only candidates sharing at least one
+    // of that theme's interest tags are shown.
+    const exploreMode = exploreModeStore.get(a);
+    if (!candidateMatchesExploreMode(exploreMode, interestsInfoStore.get(b).interests)) {
+      return true;
+    }
+    return false;
+  };
+  // OkCupid's real percentage-match algorithm (#94), computed from #79's
+  // interest tags — see interestCompatibility.ts for why interests rather
+  // than a full questionnaire.
+  const getCandidateCompatibility = (a: string, b: string) =>
+    computeInterestCompatibility(interestsInfoStore.get(a).interests, interestsInfoStore.get(b).interests);
+
+  app.get("/api/swipe-candidates/:author", (req, res) => {
+    res.json({
+      candidates: swipeStore.getCandidates(req.params.author, isExcludedCandidate, getCandidateCompatibility),
+    });
+  });
+
+  // Tinder's real "Top Picks" (#101): a small, once-per-day curated list
+  // drawn from the same eligible pool as /api/swipe-candidates, ranked by
+  // #95's real Elo/Smart Score desirability rating — Tinder's own Top
+  // Picks is documented as powered by that same signal, so this reuses it
+  // rather than inventing a separate "quality" score. See topPicks.ts for
+  // the once-a-day caching.
+  app.get("/api/top-picks/:author", (req, res) => {
+    const author = req.params.author;
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, TOP_PICKS_POOL_SIZE)
+      .map((c) => c.author);
+    const picks = topPicksStore.getTopPicks(author, pool, (candidate) => smartScoreStore.getRating(candidate));
+    res.json({ picks });
   });
 
   // Tinder's real Explore Mode (#99): a curated themed deck (cafes/sports/
@@ -2006,6 +2030,7 @@ export function createApp(deps?: {
     smartScoreStore,
     discoveryFiltersStore,
     exploreModeStore,
+    topPicksStore,
   };
 }
 
