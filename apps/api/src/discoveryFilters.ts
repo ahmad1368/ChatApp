@@ -1,11 +1,14 @@
 import { MIN_HEIGHT_CM, MAX_HEIGHT_CM } from "./heightInfo";
 import { LANGUAGE_CATALOG, Language } from "./languagesInfo";
+import { DRINKING_OPTIONS, DrinkingOption, SmokingOption } from "./lifestyleInfo";
 
 export interface DiscoveryFilters {
   minHeightCm: number | null;
   maxHeightCm: number | null;
   requireEducation: boolean;
   requiredLanguages: Language[];
+  requireNonSmoking: boolean;
+  allowedDrinking: DrinkingOption[];
 }
 
 export type UpdateDiscoveryFiltersResult =
@@ -16,6 +19,8 @@ export interface CandidateProfileData {
   heightCm: number | null;
   hasEducation: boolean;
   languages: string[];
+  smoking: SmokingOption | null;
+  drinking: DrinkingOption | null;
 }
 
 const EMPTY_FILTERS: DiscoveryFilters = {
@@ -23,16 +28,23 @@ const EMPTY_FILTERS: DiscoveryFilters = {
   maxHeightCm: null,
   requireEducation: false,
   requiredLanguages: [],
+  requireNonSmoking: false,
+  allowedDrinking: [],
 };
 
 function isLanguage(value: unknown): value is Language {
   return typeof value === "string" && (LANGUAGE_CATALOG as readonly string[]).includes(value);
 }
 
+function isDrinkingOption(value: unknown): value is DrinkingOption {
+  return typeof value === "string" && (DRINKING_OPTIONS as readonly string[]).includes(value);
+}
+
 /**
- * OkCupid's real advanced discovery filters (#96), scoped to the three
- * fields the issue names — height, education, language — from the profile
- * data #68/#69/#73 already collect. Filtering reads that data regardless
+ * OkCupid's real advanced discovery filters (#96, extended by #97 with
+ * non-smoking/lifestyle), scoped to the fields the issues name — height,
+ * education, language, smoking, drinking — from the profile data
+ * #68/#69/#70/#73 already collect. Filtering reads that data regardless
  * of each candidate's own hide-on-my-profile flag (hideHeight, etc.): same
  * precedent as #94's interest-compatibility scorer reading interests
  * regardless of hideInterests — a "don't show this on my profile" choice
@@ -52,7 +64,9 @@ export class DiscoveryFiltersStore {
     minHeightCm: unknown,
     maxHeightCm: unknown,
     requireEducation: unknown,
-    requiredLanguages: unknown
+    requiredLanguages: unknown,
+    requireNonSmoking: unknown,
+    allowedDrinking: unknown
   ): UpdateDiscoveryFiltersResult {
     const authorName = typeof author === "string" ? author.trim() : "";
     if (!authorName) {
@@ -90,11 +104,24 @@ export class DiscoveryFiltersStore {
       languages.push(entry);
     }
 
+    if (!Array.isArray(allowedDrinking)) {
+      return { success: false, error: "allowedDrinking must be a list" };
+    }
+    const drinkingOptions: DrinkingOption[] = [];
+    for (const entry of allowedDrinking) {
+      if (!isDrinkingOption(entry)) {
+        return { success: false, error: "Invalid drinking option in allowedDrinking" };
+      }
+      drinkingOptions.push(entry);
+    }
+
     const filters: DiscoveryFilters = {
       minHeightCm: min,
       maxHeightCm: max,
       requireEducation: requireEducation === true,
       requiredLanguages: languages,
+      requireNonSmoking: requireNonSmoking === true,
+      allowedDrinking: drinkingOptions,
     };
     this.filtersByAuthor.set(authorName, filters);
     return { success: true, filters };
@@ -117,6 +144,12 @@ export function candidateMatchesFilters(filters: DiscoveryFilters, candidate: Ca
     return false;
   }
   if (filters.requiredLanguages.length > 0 && !filters.requiredLanguages.some((l) => candidate.languages.includes(l))) {
+    return false;
+  }
+  if (filters.requireNonSmoking && candidate.smoking !== "no") {
+    return false;
+  }
+  if (filters.allowedDrinking.length > 0 && (candidate.drinking === null || !filters.allowedDrinking.includes(candidate.drinking))) {
     return false;
   }
   return true;

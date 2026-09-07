@@ -4,10 +4,18 @@ import { useEffect, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+const DRINKING_LABELS: Record<string, string> = {
+  no: "No",
+  sometimes: "Sometimes",
+  yes: "Yes",
+  onSpecialOccasions: "On special occasions",
+};
+
 /**
- * OkCupid's advanced discovery filters (#96): height range, education
- * requirement, and required languages. Narrows /api/swipe-candidates for
- * this author — see discoveryFilters.ts for the matching logic.
+ * OkCupid's advanced discovery filters (#96, extended by #97): height
+ * range, education requirement, required languages, non-smoking, and
+ * allowed drinking. Narrows /api/swipe-candidates for this author — see
+ * discoveryFilters.ts for the matching logic.
  */
 export default function DiscoveryFiltersEditor({ author }: { author: string }) {
   const [catalog, setCatalog] = useState<string[]>([]);
@@ -15,6 +23,8 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
   const [maxHeightCm, setMaxHeightCm] = useState("");
   const [requireEducation, setRequireEducation] = useState(false);
   const [requiredLanguages, setRequiredLanguages] = useState<string[]>([]);
+  const [requireNonSmoking, setRequireNonSmoking] = useState(false);
+  const [allowedDrinking, setAllowedDrinking] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -30,6 +40,8 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
         setMaxHeightCm(filters?.maxHeightCm != null ? String(filters.maxHeightCm) : "");
         setRequireEducation(filters?.requireEducation ?? false);
         setRequiredLanguages(filters?.requiredLanguages ?? []);
+        setRequireNonSmoking(filters?.requireNonSmoking ?? false);
+        setAllowedDrinking(filters?.allowedDrinking ?? []);
       })
       .catch(() => {});
   }, [author]);
@@ -38,6 +50,10 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
     setRequiredLanguages((prev) =>
       prev.includes(language) ? prev.filter((l) => l !== language) : [...prev, language]
     );
+  };
+
+  const toggleDrinking = (option: string) => {
+    setAllowedDrinking((prev) => (prev.includes(option) ? prev.filter((d) => d !== option) : [...prev, option]));
   };
 
   const save = async () => {
@@ -52,6 +68,8 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
           maxHeightCm: maxHeightCm === "" ? null : Number(maxHeightCm),
           requireEducation,
           requiredLanguages,
+          requireNonSmoking,
+          allowedDrinking,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -109,6 +127,31 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
               style={{ textTransform: "capitalize", fontWeight: isSelected ? "bold" : "normal" }}
             >
               {language}
+            </button>
+          );
+        })}
+      </div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+        <input
+          type="checkbox"
+          checked={requireNonSmoking}
+          onChange={(e) => setRequireNonSmoking(e.target.checked)}
+        />
+        Only show non-smokers
+      </label>
+
+      <p style={{ marginTop: 8, marginBottom: 4 }}>Acceptable drinking habits:</p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {Object.entries(DRINKING_LABELS).map(([value, label]) => {
+          const isSelected = allowedDrinking.includes(value);
+          return (
+            <button
+              key={value}
+              onClick={() => toggleDrinking(value)}
+              style={{ fontWeight: isSelected ? "bold" : "normal" }}
+            >
+              {label}
             </button>
           );
         })}
