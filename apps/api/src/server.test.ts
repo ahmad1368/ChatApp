@@ -3319,3 +3319,66 @@ test("PUT /api/height-info/:author accepts a null height to clear it", async () 
     server.close();
   }
 });
+
+test("GET /api/lifestyle-info/:author returns empty fields before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/lifestyle-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      lifestyleInfo: { smoking: null, drinking: null, hideSmoking: false, hideDrinking: false },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/lifestyle-info/:author sets lifestyle info, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/lifestyle-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ smoking: "sometimes", drinking: "onSpecialOccasions", hideSmoking: true, hideDrinking: false }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), {
+      lifestyleInfo: { smoking: "sometimes", drinking: "onSpecialOccasions", hideSmoking: true, hideDrinking: false },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/lifestyle-info/alice`);
+    assert.deepEqual(await getRes.json(), {
+      lifestyleInfo: { smoking: "sometimes", drinking: "onSpecialOccasions", hideSmoking: true, hideDrinking: false },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/lifestyle-info/:author rejects an invalid smoking option", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/lifestyle-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ smoking: "a-lot", drinking: "no", hideSmoking: false, hideDrinking: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/lifestyle-info/:author rejects an invalid drinking option", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/lifestyle-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ smoking: "no", drinking: "heavily", hideSmoking: false, hideDrinking: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
