@@ -65,6 +65,7 @@ import { StylizedAvatarStore, AVATAR_STYLES } from "./stylizedAvatar";
 import { SwipeStore } from "./swipes";
 import { SmartScoreStore } from "./smartScore";
 import { DiscoveryFiltersStore, candidateMatchesFilters } from "./discoveryFilters";
+import { ExploreModeStore, candidateMatchesExploreMode, EXPLORE_MODES } from "./exploreMode";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -136,6 +137,7 @@ export function createApp(deps?: {
   swipeStore: SwipeStore;
   smartScoreStore: SmartScoreStore;
   discoveryFiltersStore: DiscoveryFiltersStore;
+  exploreModeStore: ExploreModeStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -206,6 +208,7 @@ export function createApp(deps?: {
   const swipeStore = new SwipeStore();
   const smartScoreStore = new SmartScoreStore();
   const discoveryFiltersStore = new DiscoveryFiltersStore();
+  const exploreModeStore = new ExploreModeStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -1070,7 +1073,17 @@ export function createApp(deps?: {
         drinking: candidateLifestyle.drinking,
         isVerified: verificationStore.isVerified(b),
       };
-      return !candidateMatchesFilters(filters, candidateData);
+      if (!candidateMatchesFilters(filters, candidateData)) {
+        return true;
+      }
+      // Tinder's real Explore Mode (#99): when the swiper has a themed
+      // deck active (cafes/sports/travel), only candidates sharing at
+      // least one of that theme's interest tags are shown.
+      const exploreMode = exploreModeStore.get(a);
+      if (!candidateMatchesExploreMode(exploreMode, interestsInfoStore.get(b).interests)) {
+        return true;
+      }
+      return false;
     };
     // OkCupid's real percentage-match algorithm (#94), computed from #79's
     // interest tags — see interestCompatibility.ts for why interests
@@ -1078,6 +1091,25 @@ export function createApp(deps?: {
     const getCompatibility = (a: string, b: string) =>
       computeInterestCompatibility(interestsInfoStore.get(a).interests, interestsInfoStore.get(b).interests);
     res.json({ candidates: swipeStore.getCandidates(req.params.author, isExcluded, getCompatibility) });
+  });
+
+  // Tinder's real Explore Mode (#99): a curated themed deck (cafes/sports/
+  // travel) instead of the normal, unfiltered discovery deck.
+  app.get("/api/explore-mode/catalog", (_req, res) => {
+    res.json({ modes: EXPLORE_MODES });
+  });
+
+  app.put("/api/explore-mode/:author", (req, res) => {
+    const result = exploreModeStore.update(req.params.author, req.body?.mode);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ mode: result.mode });
+  });
+
+  app.get("/api/explore-mode/:author", (req, res) => {
+    res.json({ mode: exploreModeStore.get(req.params.author) });
   });
 
   // OkCupid's advanced discovery filters (#96, extended by #97 and #98):
@@ -1961,6 +1993,7 @@ export function createApp(deps?: {
     swipeStore,
     smartScoreStore,
     discoveryFiltersStore,
+    exploreModeStore,
   };
 }
 

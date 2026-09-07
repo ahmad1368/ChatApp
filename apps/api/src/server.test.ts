@@ -5140,3 +5140,123 @@ test("GET /api/swipe-candidates/:author excludes unverified candidates when requ
     server.close();
   }
 });
+
+test("GET /api/explore-mode/catalog returns the fixed theme list", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/explore-mode/catalog`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { modes: ["cafes", "sports", "travel"] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/explore-mode/:author returns null before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/explore-mode/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { mode: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/explore-mode/:author saves a mode and GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/explore-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "sports" }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { mode: "sports" });
+
+    const getRes = await fetch(`${baseUrl}/api/explore-mode/alice`);
+    assert.deepEqual(await getRes.json(), { mode: "sports" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/explore-mode/:author rejects an invalid mode", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/explore-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "underwater-basket-weaving" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/explore-mode/:author accepts null to clear the active mode", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/explore-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "travel" }),
+    });
+    const res = await fetch(`${baseUrl}/api/explore-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: null }),
+    });
+    assert.deepEqual(await res.json(), { mode: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author only shows candidates matching the swiper's active explore mode", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/interests-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["gaming"], hideInterests: false }),
+    });
+    await fetch(`${baseUrl}/api/interests-info/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["coffee"], hideInterests: false }),
+    });
+
+    await fetch(`${baseUrl}/api/explore-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "cafes" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["carol"]
+    );
+  } finally {
+    server.close();
+  }
+});
