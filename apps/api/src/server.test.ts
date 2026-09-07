@@ -4214,3 +4214,58 @@ test("PUT /api/travel-mode-info/:author rejects a destination containing a phone
     server.close();
   }
 });
+
+test("GET /api/profile-color-theme/themes returns the fixed theme list", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-color-theme/themes`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.themes) && body.themes.length > 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/profile-color-theme/:author returns the default theme before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-color-theme/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { theme: "classic" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/profile-color-theme/:author sets the theme, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/profile-color-theme/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: "ocean" }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { theme: "ocean" });
+
+    const getRes = await fetch(`${baseUrl}/api/profile-color-theme/alice`);
+    assert.deepEqual(await getRes.json(), { theme: "ocean" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/profile-color-theme/:author rejects an invalid theme", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-color-theme/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: "chartreuse" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
