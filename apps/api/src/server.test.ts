@@ -3488,3 +3488,78 @@ test("PUT /api/zodiac-info/:author rejects a day invalid for the given month", a
     server.close();
   }
 });
+
+test("GET /api/languages-info/catalog returns the fixed language catalog", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/languages-info/catalog`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.languages) && body.languages.length > 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/languages-info/:author returns an empty list before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/languages-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { languagesInfo: { languages: [], hideLanguages: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/languages-info/:author sets languages, then GET returns them", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/languages-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ languages: ["english", "spanish"], hideLanguages: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), {
+      languagesInfo: { languages: ["english", "spanish"], hideLanguages: true },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/languages-info/alice`);
+    assert.deepEqual(await getRes.json(), {
+      languagesInfo: { languages: ["english", "spanish"], hideLanguages: true },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/languages-info/:author rejects an unknown language", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/languages-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ languages: ["klingon"], hideLanguages: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/languages-info/:author rejects more than the max number of languages", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const catalogRes = await fetch(`${baseUrl}/api/languages-info/catalog`);
+    const { languages } = await catalogRes.json();
+    const res = await fetch(`${baseUrl}/api/languages-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ languages: languages.slice(0, 6), hideLanguages: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
