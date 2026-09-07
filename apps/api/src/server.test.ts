@@ -4269,3 +4269,42 @@ test("PUT /api/profile-color-theme/:author rejects an invalid theme", async () =
     server.close();
   }
 });
+
+test("GET /api/profile-completion/:author is 0% for a brand-new profile", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-completion/alice`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.completion.percentage, 0);
+    assert.deepEqual(body.completion.completedSections, []);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/profile-completion/:author increases as sections are filled in", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/bio/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "Loves hiking" }),
+    });
+    await fetch(`${baseUrl}/api/job-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobTitle: "Engineer", company: "Acme", hideCompany: true }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/profile-completion/alice`);
+    const body = await res.json();
+    assert.ok(body.completion.percentage > 0);
+    assert.ok(body.completion.completedSections.includes("bio"));
+    // A hidden field still counts as complete — completion measures what
+    // the owner filled in, not what's currently visible to others.
+    assert.ok(body.completion.completedSections.includes("job"));
+  } finally {
+    server.close();
+  }
+});
