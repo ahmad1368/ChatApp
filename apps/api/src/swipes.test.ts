@@ -4,7 +4,7 @@ import { SwipeStore } from "./swipes";
 
 const NEVER_BLOCKED = () => false;
 const NO_COMPATIBILITY = () => 0;
-const NEVER_BOOSTED = () => false;
+const NEVER_BOOSTED = () => 0;
 
 function names(candidates: { author: string }[]): string[] {
   return candidates.map((c) => c.author);
@@ -321,8 +321,8 @@ test("getCandidates() ranks a boosted candidate ahead of a non-boosted one", () 
   store.joinDiscovery("alice");
   store.joinDiscovery("bob");
   store.joinDiscovery("carol");
-  const isBoosted = (candidate: string) => candidate === "carol";
-  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, isBoosted)), ["carol", "bob"]);
+  const boostLevel = (candidate: string) => (candidate === "carol" ? 1 : 0);
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, boostLevel)), ["carol", "bob"]);
 });
 
 test("getCandidates() still ranks a superliker ahead of a boosted candidate", () => {
@@ -331,6 +331,15 @@ test("getCandidates() still ranks a superliker ahead of a boosted candidate", ()
   store.joinDiscovery("bob");
   store.joinDiscovery("carol");
   store.recordSwipe("bob", "alice", "superlike");
-  const isBoosted = (candidate: string) => candidate === "carol";
-  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, isBoosted)), ["bob", "carol"]);
+  const boostLevel = (candidate: string) => (candidate === "carol" ? 1 : 0);
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, boostLevel)), ["bob", "carol"]);
+});
+
+test("getCandidates() ranks a superboosted candidate ahead of a boosted one", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.joinDiscovery("carol");
+  const boostLevel = (candidate: string) => (candidate === "bob" ? 1 : candidate === "carol" ? 2 : 0);
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, boostLevel)), ["carol", "bob"]);
 });

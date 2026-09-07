@@ -5560,24 +5560,125 @@ test("GET /api/profile-boost/:author reports inactive before any activation", as
   try {
     const res = await fetch(`${baseUrl}/api/profile-boost/alice`);
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { active: false, expiresAt: null });
+    assert.deepEqual(await res.json(), { active: false, tier: null, expiresAt: null });
   } finally {
     server.close();
   }
 });
 
-test("POST /api/profile-boost/:author activates a boost reflected in GET /api/profile-boost/:author", async () => {
+test("POST /api/profile-boost/:author activates a boost reflected in GET /api/profile-boost/:author, defaulting to the boost tier", async () => {
   const { server, baseUrl } = listen();
   try {
     const postRes = await fetch(`${baseUrl}/api/profile-boost/alice`, { method: "POST" });
     assert.equal(postRes.status, 201);
     const postBody = await postRes.json();
+    assert.equal(postBody.tier, "boost");
     assert.equal(typeof postBody.expiresAt, "string");
 
     const getRes = await fetch(`${baseUrl}/api/profile-boost/alice`);
     const getBody = await getRes.json();
     assert.equal(getBody.active, true);
+    assert.equal(getBody.tier, "boost");
     assert.equal(getBody.expiresAt, postBody.expiresAt);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/profile-boost/:author accepts an explicit superboost tier", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-boost/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "superboost" }),
+    });
+    assert.equal(res.status, 201);
+    assert.equal((await res.json()).tier, "superboost");
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/profile-boost/:author rejects an invalid tier", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-boost/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "mega-boost" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author ranks a superboosted candidate ahead of a boosted one", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/profile-boost/bob`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "boost" }),
+    });
+    await fetch(`${baseUrl}/api/profile-boost/carol`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "superboost" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["carol", "bob"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/peak-hours reports no peak hours before any swipe activity", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/peak-hours`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { peakHours: [], isPeakHourNow: false });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/peak-hours reflects the current hour as a peak hour after a swipe", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/peak-hours`);
+    const body = await res.json();
+    assert.equal(body.isPeakHourNow, true);
+    assert.equal(body.peakHours.includes(new Date().getUTCHours()), true);
   } finally {
     server.close();
   }
