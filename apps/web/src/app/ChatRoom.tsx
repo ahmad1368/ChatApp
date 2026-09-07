@@ -14,32 +14,6 @@ import ReportDialog from "./ReportDialog";
 import SOSButton from "./SOSButton";
 import BiometricLock from "./BiometricLock";
 import { getOrCreateGuestIdentity } from "./guestIdentity";
-import IntroVideoUpload from "./IntroVideoUpload";
-import VoiceIntroRecorder from "./VoiceIntroRecorder";
-import BioEditor from "./BioEditor";
-import ProfilePromptsEditor from "./ProfilePromptsEditor";
-import JobInfoEditor from "./JobInfoEditor";
-import EducationInfoEditor from "./EducationInfoEditor";
-import HeightInfoEditor from "./HeightInfoEditor";
-import LifestyleInfoEditor from "./LifestyleInfoEditor";
-import FamilyPlansInfoEditor from "./FamilyPlansInfoEditor";
-import ZodiacInfoEditor from "./ZodiacInfoEditor";
-import LanguagesInfoEditor from "./LanguagesInfoEditor";
-import BeliefsInfoEditor from "./BeliefsInfoEditor";
-import PetsInfoEditor from "./PetsInfoEditor";
-import PersonalityInfoEditor from "./PersonalityInfoEditor";
-import SpotifyConnect from "./SpotifyConnect";
-import InstagramConnect from "./InstagramConnect";
-import InterestsInfoEditor from "./InterestsInfoEditor";
-import ProfileVisibilityEditor from "./ProfileVisibilityEditor";
-import ProfilePreview from "./ProfilePreview";
-import SocialLinksEditor from "./SocialLinksEditor";
-import TravelModeEditor from "./TravelModeEditor";
-import ProfileColorThemeEditor from "./ProfileColorThemeEditor";
-import AchievementsInfoEditor from "./AchievementsInfoEditor";
-import DisplayNameModeEditor from "./DisplayNameModeEditor";
-import StylizedAvatarEditor from "./StylizedAvatarEditor";
-import ProfileCompletion from "./ProfileCompletion";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -1108,32 +1082,9 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           )}
         </div>
       </section>
-      <BioEditor author={author} />
-      <IntroVideoUpload author={author} />
-      <VoiceIntroRecorder author={author} />
-      <ProfilePromptsEditor author={author} />
-      <JobInfoEditor author={author} />
-      <EducationInfoEditor author={author} />
-      <HeightInfoEditor author={author} />
-      <LifestyleInfoEditor author={author} />
-      <FamilyPlansInfoEditor author={author} />
-      <ZodiacInfoEditor author={author} />
-      <LanguagesInfoEditor author={author} />
-      <BeliefsInfoEditor author={author} />
-      <PetsInfoEditor author={author} />
-      <PersonalityInfoEditor author={author} />
-      <SpotifyConnect author={author} />
-      <InstagramConnect author={author} />
-      <InterestsInfoEditor author={author} />
-      <ProfileVisibilityEditor author={author} />
-      <SocialLinksEditor author={author} />
-      <TravelModeEditor author={author} />
-      <ProfileColorThemeEditor author={author} />
-      <AchievementsInfoEditor author={author} />
-      <DisplayNameModeEditor author={author} />
-      <StylizedAvatarEditor author={author} />
-      <ProfileCompletion author={author} />
-      <ProfilePreview author={author} />
+      <section style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, marginTop: 12, fontSize: 13 }}>
+        <Link href="/settings/profile">Edit profile &rarr;</Link>
+      </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
         <ReportDialog
