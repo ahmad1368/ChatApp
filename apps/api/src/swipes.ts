@@ -3,6 +3,12 @@ export type SwipeDirection = (typeof SWIPE_DIRECTIONS)[number];
 
 export const DAILY_SUPER_LIKE_LIMIT = 1;
 
+// Coffee Meets Bagel/Tinder's real free-tier daily like cap (#116) —
+// Tinder's own free limit is around 100 right-swipes per 24 hours, a
+// separate allowance from Super Likes above (a Super Like never counts
+// against it, matching real Tinder).
+export const DAILY_LIKE_LIMIT = 100;
+
 export type RecordSwipeResult = { success: true; matched: boolean } | { success: false; error: string };
 export type JoinDiscoveryResult = { success: true } | { success: false; error: string };
 export type UndoLastSwipeResult = { success: true; swiped: string } | { success: false; error: string };
@@ -26,6 +32,22 @@ function isLikeOrSuperLike(direction: SwipeDirection | undefined): boolean {
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function usedToday(usage: Map<string, { date: string; count: number }>, author: string): number {
+  const entry = usage.get(author);
+  return entry?.date === todayKey() ? entry.count : 0;
+}
+
+function incrementUsage(usage: Map<string, { date: string; count: number }>, author: string): void {
+  usage.set(author, { date: todayKey(), count: usedToday(usage, author) + 1 });
+}
+
+function refundUsage(usage: Map<string, { date: string; count: number }>, author: string): void {
+  const entry = usage.get(author);
+  if (entry?.date === todayKey() && entry.count > 0) {
+    usage.set(author, { date: todayKey(), count: entry.count - 1 });
+  }
 }
 
 /**
@@ -77,6 +99,13 @@ function todayKey(): string {
  * already superliked this author (that's a direct, personal signal to
  * this specific viewer; Boost is a general visibility signal to every
  * viewer) — see profileBoost.ts.
+ *
+ * A regular "like" is rate-limited to DAILY_LIKE_LIMIT per author per UTC
+ * day (#116) — Coffee Meets Bagel/Tinder's real free-tier daily cap,
+ * tracked the same per-direction date+count shape as Super Likes above but
+ * as its own separate allowance (a Super Like never counts against it).
+ * "pass" is never limited — Tinder doesn't ration how many profiles you
+ * can reject.
  */
 export class SwipeStore {
   private candidates = new Set<string>();
@@ -84,6 +113,7 @@ export class SwipeStore {
   private matchesByAuthor = new Map<string, Set<string>>();
   private lastSwipeBySwiper = new Map<string, string>();
   private superLikesUsedToday = new Map<string, { date: string; count: number }>();
+  private likesUsedToday = new Map<string, { date: string; count: number }>();
 
   joinDiscovery(author: unknown): JoinDiscoveryResult {
     const authorName = typeof author === "string" ? author.trim() : "";
@@ -151,13 +181,16 @@ export class SwipeStore {
     }
 
     if (direction === "superlike") {
-      const usage = this.superLikesUsedToday.get(swiperName);
-      const today = todayKey();
-      const usedToday = usage?.date === today ? usage.count : 0;
-      if (usedToday >= DAILY_SUPER_LIKE_LIMIT) {
+      if (usedToday(this.superLikesUsedToday, swiperName) >= DAILY_SUPER_LIKE_LIMIT) {
         return { success: false, error: "You've used all your Super Likes for today" };
       }
-      this.superLikesUsedToday.set(swiperName, { date: today, count: usedToday + 1 });
+      incrementUsage(this.superLikesUsedToday, swiperName);
+    }
+    if (direction === "like") {
+      if (usedToday(this.likesUsedToday, swiperName) >= DAILY_LIKE_LIMIT) {
+        return { success: false, error: "You've used all your Likes for today" };
+      }
+      incrementUsage(this.likesUsedToday, swiperName);
     }
 
     swiperMap.set(swipedName, direction);
@@ -189,14 +222,13 @@ export class SwipeStore {
     this.lastSwipeBySwiper.delete(authorName);
     this.revokeMatch(authorName, swiped);
 
-    // Refund the daily Super Like if that's what's being undone, so a
-    // rewind doesn't cost the user their one-per-day allowance.
+    // Refund the daily Super Like or regular Like if that's what's being
+    // undone, so a rewind doesn't cost the user their daily allowance.
     if (undoneDirection === "superlike") {
-      const usage = this.superLikesUsedToday.get(authorName);
-      const today = todayKey();
-      if (usage?.date === today && usage.count > 0) {
-        this.superLikesUsedToday.set(authorName, { date: today, count: usage.count - 1 });
-      }
+      refundUsage(this.superLikesUsedToday, authorName);
+    }
+    if (undoneDirection === "like") {
+      refundUsage(this.likesUsedToday, authorName);
     }
 
     return { success: true, swiped };
@@ -259,8 +291,10 @@ export class SwipeStore {
   }
 
   getSuperLikesRemainingToday(author: string): number {
-    const usage = this.superLikesUsedToday.get(author);
-    const usedToday = usage?.date === todayKey() ? usage.count : 0;
-    return Math.max(0, DAILY_SUPER_LIKE_LIMIT - usedToday);
+    return Math.max(0, DAILY_SUPER_LIKE_LIMIT - usedToday(this.superLikesUsedToday, author));
+  }
+
+  getLikesRemainingToday(author: string): number {
+    return Math.max(0, DAILY_LIKE_LIMIT - usedToday(this.likesUsedToday, author));
   }
 }

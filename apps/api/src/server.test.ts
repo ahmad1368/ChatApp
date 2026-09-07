@@ -4861,6 +4861,37 @@ test("POST /api/swipes with direction superlike counts toward a match and decrem
   }
 });
 
+test("GET /api/likes-remaining/:author starts at the daily limit (#116)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/likes-remaining/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { remaining: 100 });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes with direction like decrements the daily like allowance, but not the Super Like one", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const swipeRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    assert.equal(swipeRes.status, 201);
+
+    const remainingRes = await fetch(`${baseUrl}/api/likes-remaining/alice`);
+    assert.deepEqual(await remainingRes.json(), { remaining: 99 });
+
+    const superLikeRemainingRes = await fetch(`${baseUrl}/api/super-likes-remaining/alice`);
+    assert.deepEqual(await superLikeRemainingRes.json(), { remaining: 1 });
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/swipe-candidates/:author includes a real interest-compatibility score and ranks by it", async () => {
   const { server, baseUrl } = listen();
   try {
