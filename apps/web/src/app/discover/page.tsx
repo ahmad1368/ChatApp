@@ -137,7 +137,7 @@ export default function DiscoverPage() {
       <h1>Discover</h1>
       <p>
         <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/matches">Your matches</Link> &middot;{" "}
-        <Link href="/liked-you">Who liked you</Link>
+        <Link href="/liked-you">Who liked you</Link> &middot; <Link href="/visitors">Profile visitors</Link>
       </p>
       <ExploreModeSelector author={author} onChange={loadCandidates} />
       <TopPicks author={author} />
@@ -153,7 +153,9 @@ export default function DiscoverPage() {
       )}
       {current ? (
         <div style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 32, marginTop: 16 }}>
-          <p style={{ fontSize: 20, fontWeight: "bold" }}>{current.author}</p>
+          <p style={{ fontSize: 20, fontWeight: "bold" }}>
+            <Link href={`/profile/${encodeURIComponent(current.author)}`}>{current.author}</Link>
+          </p>
           <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{current.compatibility}% match</p>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16 }}>
             <button onClick={() => swipe("pass")} disabled={busy} style={{ fontSize: 24 }}>
