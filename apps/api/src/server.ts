@@ -71,6 +71,7 @@ import { ProfileVisitsStore } from "./profileVisits";
 import { ProfileBoostStore } from "./profileBoost";
 import { PeakHoursStore } from "./peakHours";
 import { scanCandidateForFakeProfile } from "./fakeProfileDetector";
+import { CrossedPathsStore } from "./crossedPaths";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -147,6 +148,7 @@ export function createApp(deps?: {
   profileVisitsStore: ProfileVisitsStore;
   profileBoostStore: ProfileBoostStore;
   peakHoursStore: PeakHoursStore;
+  crossedPathsStore: CrossedPathsStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -222,6 +224,7 @@ export function createApp(deps?: {
   const profileVisitsStore = new ProfileVisitsStore();
   const profileBoostStore = new ProfileBoostStore();
   const peakHoursStore = new PeakHoursStore();
+  const crossedPathsStore = new CrossedPathsStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1204,6 +1207,25 @@ export function createApp(deps?: {
     res.json({ picks });
   });
 
+  // Tinder's real (now-discontinued) "Crossed Paths" (#108): candidates
+  // from the same eligible pool as /api/swipe-candidates whose recent
+  // real-world location trail physically overlapped with this author's
+  // — see crossedPaths.ts for the ping/threshold/window rules and the
+  // honest limitation on what "recent" means without background tracking.
+  app.get("/api/crossed-paths/:author", (req, res) => {
+    const author = req.params.author;
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .map((c) => c.author);
+    const crossedAuthors = crossedPathsStore.getCrossedAuthors(author, pool);
+    res.json({
+      crossedPaths: crossedAuthors.map((candidate) => ({
+        author: candidate,
+        compatibility: getCandidateCompatibility(author, candidate),
+      })),
+    });
+  });
+
   // Tinder's real Explore Mode (#99): a curated themed deck (cafes/sports/
   // travel) instead of the normal, unfiltered discovery deck.
   app.get("/api/explore-mode/catalog", (_req, res) => {
@@ -1584,6 +1606,10 @@ export function createApp(deps?: {
       return;
     }
     locations.setLocation(author, req.body);
+    // Tinder's real "Crossed Paths" (#108): each location update is also
+    // recorded as one ping in this author's recent-location trail — see
+    // crossedPaths.ts for why a ping rather than continuous tracking.
+    crossedPathsStore.recordPing(author, req.body);
     res.json({ approximate: locations.getApproximateLocation(author) });
   });
 
@@ -2166,6 +2192,7 @@ export function createApp(deps?: {
     profileVisitsStore,
     profileBoostStore,
     peakHoursStore,
+    crossedPathsStore,
   };
 }
 
