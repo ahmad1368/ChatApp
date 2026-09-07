@@ -3425,3 +3425,66 @@ test("PUT /api/family-plans-info/:author rejects an invalid option", async () =>
     server.close();
   }
 });
+
+test("GET /api/zodiac-info/:author returns empty fields before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/zodiac-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      zodiacInfo: { birthMonth: null, birthDay: null, zodiacSign: null, hideZodiac: false },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/zodiac-info/:author computes the zodiac sign, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/zodiac-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ birthMonth: 7, birthDay: 4, hideZodiac: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), {
+      zodiacInfo: { birthMonth: 7, birthDay: 4, zodiacSign: "cancer", hideZodiac: true },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/zodiac-info/alice`);
+    assert.deepEqual(await getRes.json(), {
+      zodiacInfo: { birthMonth: 7, birthDay: 4, zodiacSign: "cancer", hideZodiac: true },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/zodiac-info/:author rejects an out-of-range month", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/zodiac-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ birthMonth: 13, birthDay: 1, hideZodiac: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/zodiac-info/:author rejects a day invalid for the given month", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/zodiac-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ birthMonth: 2, birthDay: 30, hideZodiac: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});

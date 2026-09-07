@@ -45,6 +45,7 @@ import { EducationInfoStore } from "./educationInfo";
 import { HeightInfoStore } from "./heightInfo";
 import { LifestyleInfoStore } from "./lifestyleInfo";
 import { FamilyPlansInfoStore } from "./familyPlansInfo";
+import { ZodiacInfoStore } from "./zodiacInfo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -92,6 +93,7 @@ export function createApp(deps?: {
   heightInfoStore: HeightInfoStore;
   lifestyleInfoStore: LifestyleInfoStore;
   familyPlansInfoStore: FamilyPlansInfoStore;
+  zodiacInfoStore: ZodiacInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -144,6 +146,7 @@ export function createApp(deps?: {
   const heightInfoStore = new HeightInfoStore();
   const lifestyleInfoStore = new LifestyleInfoStore();
   const familyPlansInfoStore = new FamilyPlansInfoStore();
+  const zodiacInfoStore = new ZodiacInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -563,6 +566,22 @@ export function createApp(deps?: {
 
   app.get("/api/family-plans-info/:author", (req, res) => {
     res.json({ familyPlansInfo: familyPlansInfoStore.get(req.params.author) });
+  });
+
+  // Editable-anytime zodiac sign (#72), derived server-side from a
+  // birth month/day pair — same one-value-per-author, replace-on-update
+  // shape as this app's other standalone profile fields.
+  app.put("/api/zodiac-info/:author", (req, res) => {
+    const result = zodiacInfoStore.update(req.params.author, req.body?.birthMonth, req.body?.birthDay, req.body?.hideZodiac);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ zodiacInfo: result.zodiacInfo });
+  });
+
+  app.get("/api/zodiac-info/:author", (req, res) => {
+    res.json({ zodiacInfo: zodiacInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1358,6 +1377,7 @@ export function createApp(deps?: {
     heightInfoStore,
     lifestyleInfoStore,
     familyPlansInfoStore,
+    zodiacInfoStore,
   };
 }
 
