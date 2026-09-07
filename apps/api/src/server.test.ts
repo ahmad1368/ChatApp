@@ -5715,3 +5715,77 @@ test("GET /api/swipe-candidates/:author ranks a boosted candidate ahead of a non
     server.close();
   }
 });
+
+test("GET /api/swipe-candidates/:author excludes a candidate with enough reports against them", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    for (const reporter of ["r1", "r2", "r3"]) {
+      await fetch(`${baseUrl}/api/reports`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reporterAuthor: reporter, reportedAuthor: "bob", reason: "fakeProfile" }),
+      });
+    }
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["carol"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author excludes a candidate whose bio matches the spam heuristic", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/bio/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "check out my onlyfans" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["carol"]
+    );
+  } finally {
+    server.close();
+  }
+});
