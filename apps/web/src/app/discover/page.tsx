@@ -6,6 +6,11 @@ import { getOrCreateGuestIdentity } from "../guestIdentity";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+interface SwipeCandidate {
+  author: string;
+  compatibility: number;
+}
+
 /**
  * Tinder's swipe-card interface (#91) — Like/Pass buttons rather than a
  * draggable gesture card: this app has no gesture-physics library
@@ -13,10 +18,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
  * separate dependency decision than this issue's actual scope (the
  * decision engine in swipes.ts). Left/right/down arrow keys work as a
  * lightweight swipe stand-in (down = Super Like, #93), up rewinds (#92).
+ * The "% match" badge is OkCupid's real interest-compatibility score
+ * (#94), computed server-side from shared #79 interest tags.
  */
 export default function DiscoverPage() {
   const [author] = useState(() => getOrCreateGuestIdentity());
-  const [candidates, setCandidates] = useState<string[]>([]);
+  const [candidates, setCandidates] = useState<SwipeCandidate[]>([]);
   const [matchNotice, setMatchNotice] = useState<string | null>(null);
   const [lastSwiped, setLastSwiped] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -56,18 +63,18 @@ export default function DiscoverPage() {
       const res = await fetch(`${API_URL}/api/swipes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ swiper: author, swiped: candidate, direction }),
+        body: JSON.stringify({ swiper: author, swiped: candidate.author, direction }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body.error ?? "Failed to swipe");
       }
       if (body.matched) {
-        setMatchNotice(candidate);
+        setMatchNotice(candidate.author);
       } else {
         setMatchNotice(null);
       }
-      setLastSwiped(candidate);
+      setLastSwiped(candidate.author);
       setCandidates((prev) => prev.slice(1));
       if (direction === "superlike") {
         loadSuperLikesRemaining();
@@ -95,7 +102,10 @@ export default function DiscoverPage() {
       if (!res.ok) {
         throw new Error(body.error ?? "Failed to undo");
       }
-      setCandidates((prev) => [body.swiped, ...prev]);
+      // Refetch rather than unshifting a bare name back on: the server
+      // re-sorts by superliker-priority and #94's compatibility score,
+      // which this client has no way to reconstruct locally.
+      loadCandidates();
       setLastSwiped(null);
       setMatchNotice(null);
       loadSuperLikesRemaining();
@@ -138,7 +148,8 @@ export default function DiscoverPage() {
       )}
       {current ? (
         <div style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 32, marginTop: 16 }}>
-          <p style={{ fontSize: 20, fontWeight: "bold" }}>{current}</p>
+          <p style={{ fontSize: 20, fontWeight: "bold" }}>{current.author}</p>
+          <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{current.compatibility}% match</p>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16 }}>
             <button onClick={() => swipe("pass")} disabled={busy} style={{ fontSize: 24 }}>
               ✕

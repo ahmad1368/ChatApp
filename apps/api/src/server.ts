@@ -63,6 +63,7 @@ import { AchievementsInfoStore } from "./achievementsInfo";
 import { DisplayNameModeStore, DISPLAY_NAME_MODES } from "./displayNameMode";
 import { StylizedAvatarStore, AVATAR_STYLES } from "./stylizedAvatar";
 import { SwipeStore } from "./swipes";
+import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
 import { optimizePhoto } from "./photoOptimization";
@@ -1044,7 +1045,12 @@ export function createApp(deps?: {
   app.get("/api/swipe-candidates/:author", (req, res) => {
     const isBlockedEitherWay = (a: string, b: string) =>
       blockStore.getBlockedAuthors(a).includes(b) || blockStore.getBlockedAuthors(b).includes(a);
-    res.json({ candidates: swipeStore.getCandidates(req.params.author, isBlockedEitherWay) });
+    // OkCupid's real percentage-match algorithm (#94), computed from #79's
+    // interest tags — see interestCompatibility.ts for why interests
+    // rather than a full questionnaire.
+    const getCompatibility = (a: string, b: string) =>
+      computeInterestCompatibility(interestsInfoStore.get(a).interests, interestsInfoStore.get(b).interests);
+    res.json({ candidates: swipeStore.getCandidates(req.params.author, isBlockedEitherWay, getCompatibility) });
   });
 
   app.post("/api/swipes", (req, res) => {

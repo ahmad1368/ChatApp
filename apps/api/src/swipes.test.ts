@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import { SwipeStore } from "./swipes";
 
 const NEVER_BLOCKED = () => false;
+const NO_COMPATIBILITY = () => 0;
+
+function names(candidates: { author: string }[]): string[] {
+  return candidates.map((c) => c.author);
+}
 
 test("joinDiscovery() rejects a missing author", () => {
   const store = new SwipeStore();
@@ -13,7 +18,7 @@ test("joinDiscovery() rejects a missing author", () => {
 test("getCandidates() excludes the author themselves", () => {
   const store = new SwipeStore();
   store.joinDiscovery("alice");
-  assert.deepEqual(store.getCandidates("alice", NEVER_BLOCKED), []);
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), []);
 });
 
 test("getCandidates() returns other joined authors", () => {
@@ -21,7 +26,7 @@ test("getCandidates() returns other joined authors", () => {
   store.joinDiscovery("alice");
   store.joinDiscovery("bob");
   store.joinDiscovery("carol");
-  assert.deepEqual(store.getCandidates("alice", NEVER_BLOCKED).sort(), ["bob", "carol"]);
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)).sort(), ["bob", "carol"]);
 });
 
 test("getCandidates() excludes authors already swiped on", () => {
@@ -30,7 +35,7 @@ test("getCandidates() excludes authors already swiped on", () => {
   store.joinDiscovery("bob");
   store.joinDiscovery("carol");
   store.recordSwipe("alice", "bob", "pass");
-  assert.deepEqual(store.getCandidates("alice", NEVER_BLOCKED), ["carol"]);
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), ["carol"]);
 });
 
 test("getCandidates() excludes authors blocked either way", () => {
@@ -38,14 +43,31 @@ test("getCandidates() excludes authors blocked either way", () => {
   store.joinDiscovery("alice");
   store.joinDiscovery("bob");
   const isBlocked = (a: string, b: string) => (a === "alice" && b === "bob") || (a === "bob" && b === "alice");
-  assert.deepEqual(store.getCandidates("alice", isBlocked), []);
+  assert.deepEqual(names(store.getCandidates("alice", isBlocked)), []);
 });
 
 test("getCandidates() respects the limit", () => {
   const store = new SwipeStore();
   store.joinDiscovery("alice");
   for (let i = 0; i < 20; i++) store.joinDiscovery(`user${i}`);
-  assert.equal(store.getCandidates("alice", NEVER_BLOCKED, 5).length, 5);
+  assert.equal(store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, 5).length, 5);
+});
+
+test("getCandidates() includes each candidate's compatibility score from the injected scorer", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  const scorer = (a: string, b: string) => (a === "alice" && b === "bob" ? 42 : 0);
+  assert.deepEqual(store.getCandidates("alice", NEVER_BLOCKED, scorer), [{ author: "bob", compatibility: 42 }]);
+});
+
+test("getCandidates() ranks higher-compatibility candidates first among non-superlikers", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.joinDiscovery("carol");
+  const scorer = (a: string, b: string) => (b === "carol" ? 90 : 10);
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED, scorer)), ["carol", "bob"]);
 });
 
 test("recordSwipe() rejects missing swiper or swiped", () => {
@@ -123,12 +145,12 @@ test("undoLastSwipe() undoes a pass and makes the candidate swipeable again", ()
   store.joinDiscovery("alice");
   store.joinDiscovery("bob");
   store.recordSwipe("alice", "bob", "pass");
-  assert.deepEqual(store.getCandidates("alice", NEVER_BLOCKED), []);
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), []);
 
   const result = store.undoLastSwipe("alice");
   assert.equal(result.success, true);
   assert.equal(result.success && result.swiped, "bob");
-  assert.deepEqual(store.getCandidates("alice", NEVER_BLOCKED), ["bob"]);
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), ["bob"]);
 });
 
 test("undoLastSwipe() lets the swiper swipe on that candidate again afterward", () => {
@@ -238,5 +260,5 @@ test("getCandidates() surfaces authors who superliked this author first", () => 
   store.joinDiscovery("bob");
   store.joinDiscovery("carol");
   store.recordSwipe("carol", "alice", "superlike");
-  assert.deepEqual(store.getCandidates("alice", NEVER_BLOCKED), ["carol", "bob"]);
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), ["carol", "bob"]);
 });
