@@ -80,6 +80,8 @@ import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
 import { ViewModeStore } from "./viewMode";
 import { computeMusicMatch } from "./musicMatch";
+import { WeekendPlansStore, WEEKEND_PLAN_CATALOG } from "./weekendPlans";
+import { computeWeekendPlanMatch } from "./weekendPlanMatch";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -163,6 +165,7 @@ export function createApp(deps?: {
   photoInteractionStore: PhotoInteractionStore;
   contactsGraphStore: ContactsGraphStore;
   viewModeStore: ViewModeStore;
+  weekendPlansStore: WeekendPlansStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -245,6 +248,7 @@ export function createApp(deps?: {
   const photoInteractionStore = new PhotoInteractionStore();
   const contactsGraphStore = new ContactsGraphStore();
   const viewModeStore = new ViewModeStore();
+  const weekendPlansStore = new WeekendPlansStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -890,6 +894,25 @@ export function createApp(deps?: {
     res.json({ interestsInfo: interestsInfoStore.get(req.params.author) });
   });
 
+  // Tinder/Hinge's "what are you up to this weekend" prompt (#119), same
+  // fixed-catalog multi-select shape as #79's interests above.
+  app.get("/api/weekend-plans/catalog", (_req, res) => {
+    res.json({ weekendPlans: WEEKEND_PLAN_CATALOG });
+  });
+
+  app.put("/api/weekend-plans/:author", (req, res) => {
+    const result = weekendPlansStore.update(req.params.author, req.body?.weekendPlans, req.body?.hideWeekendPlans);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ weekendPlansInfo: result.weekendPlansInfo });
+  });
+
+  app.get("/api/weekend-plans/:author", (req, res) => {
+    res.json({ weekendPlansInfo: weekendPlansStore.get(req.params.author) });
+  });
+
   // Feeld-style "hide specific profile sections" toggle (#80): age and
   // distance, the two core profile fields shown by default that don't
   // already have a per-field hide flag like #67-#79's optional details.
@@ -1317,6 +1340,32 @@ export function createApp(deps?: {
       .filter((entry): entry is { author: string; sharedTracks: string[]; compatibility: number } => entry !== null)
       .sort((a, b) => b.sharedTracks.length - a.sharedTracks.length);
     res.json({ candidates: musicMatches });
+  });
+
+  // Tinder/Hinge's "what are you up to this weekend" suggestion (#119) —
+  // same shape as #118's music matches above, applied to #119's weekend-
+  // plan tags instead of Spotify top tracks. Respects hideWeekendPlans on
+  // both sides.
+  app.get("/api/weekend-plan-matches/:author", (req, res) => {
+    const author = req.params.author;
+    const authorPlans = weekendPlansStore.get(author);
+    if (authorPlans.hideWeekendPlans || authorPlans.weekendPlans.length === 0) {
+      res.json({ candidates: [] });
+      return;
+    }
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .map((c) => c.author);
+    const planMatches = pool
+      .map((candidate) => {
+        const candidatePlans = weekendPlansStore.get(candidate);
+        if (candidatePlans.hideWeekendPlans) return null;
+        const match = computeWeekendPlanMatch(authorPlans.weekendPlans, candidatePlans.weekendPlans);
+        return match.sharedPlans.length > 0 ? { author: candidate, ...match } : null;
+      })
+      .filter((entry): entry is { author: string; sharedPlans: string[]; compatibility: number } => entry !== null)
+      .sort((a, b) => b.sharedPlans.length - a.sharedPlans.length);
+    res.json({ candidates: planMatches });
   });
 
   // Match.com/Tinder's real "Double Date" (#109): a small group of
@@ -2451,6 +2500,7 @@ export function createApp(deps?: {
     photoInteractionStore,
     contactsGraphStore,
     viewModeStore,
+    weekendPlansStore,
   };
 }
 
