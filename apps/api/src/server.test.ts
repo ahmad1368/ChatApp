@@ -4171,6 +4171,53 @@ test("GET /api/profile-preview/:author combines visible fields and omits hidden 
   }
 });
 
+test("GET /api/profile-visitors/:author returns an empty list before anyone visits", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-visitors/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { visitors: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/profile-preview/:author with a ?viewer= records a visit reflected in GET /api/profile-visitors/:author", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/profile-preview/alice?viewer=bob`);
+
+    const res = await fetch(`${baseUrl}/api/profile-visitors/alice`);
+    const body = await res.json();
+    assert.equal(body.visitors.length, 1);
+    assert.equal(body.visitors[0].author, "bob");
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/profile-preview/:author without ?viewer= does not record a visit", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/profile-preview/alice`);
+    const res = await fetch(`${baseUrl}/api/profile-visitors/alice`);
+    assert.deepEqual(await res.json(), { visitors: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/profile-preview/:author never records a self-visit", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/profile-preview/alice?viewer=alice`);
+    const res = await fetch(`${baseUrl}/api/profile-visitors/alice`);
+    assert.deepEqual(await res.json(), { visitors: [] });
+  } finally {
+    server.close();
+  }
+});
+
 test("POST /api/photos re-encodes an uploaded photo as JPEG (smart optimization)", async () => {
   const { server, baseUrl, photoStore } = listen();
   try {

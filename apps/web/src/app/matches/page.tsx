@@ -59,7 +59,9 @@ export default function MatchesPage() {
               }}
             >
               <div>
-                <p style={{ fontWeight: "bold" }}>{match.author}</p>
+                <p style={{ fontWeight: "bold" }}>
+                  <Link href={`/profile/${encodeURIComponent(match.author)}`}>{match.author}</Link>
+                </p>
                 <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{match.compatibility}% compatible</p>
               </div>
               <Link href={`/room/${DEFAULT_ROOM_ID}`}>Chat</Link>

@@ -67,6 +67,7 @@ import { SmartScoreStore } from "./smartScore";
 import { DiscoveryFiltersStore, candidateMatchesFilters } from "./discoveryFilters";
 import { ExploreModeStore, candidateMatchesExploreMode, EXPLORE_MODES } from "./exploreMode";
 import { TopPicksStore } from "./topPicks";
+import { ProfileVisitsStore } from "./profileVisits";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -140,6 +141,7 @@ export function createApp(deps?: {
   discoveryFiltersStore: DiscoveryFiltersStore;
   exploreModeStore: ExploreModeStore;
   topPicksStore: TopPicksStore;
+  profileVisitsStore: ProfileVisitsStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -212,6 +214,7 @@ export function createApp(deps?: {
   const discoveryFiltersStore = new DiscoveryFiltersStore();
   const exploreModeStore = new ExploreModeStore();
   const topPicksStore = new TopPicksStore();
+  const profileVisitsStore = new ProfileVisitsStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -876,8 +879,17 @@ export function createApp(deps?: {
   // "Preview profile as seen by other users" (#81): composes every
   // standalone profile field (#61-#79) into the single view another user
   // would see, respecting each field's own hide flag — see profilePreview.ts.
+  // Tinder Gold's real "Who's Viewed You" (#104): an optional ?viewer=
+  // query records a visit whenever someone other than the profile owner
+  // loads this endpoint — see profileVisits.ts. Self-previews (no viewer,
+  // or viewer === author, as used by /settings/profile) are never
+  // recorded as a visit.
   app.get("/api/profile-preview/:author", (req, res) => {
     const author = req.params.author;
+    const viewer = typeof req.query.viewer === "string" ? req.query.viewer : "";
+    if (viewer) {
+      profileVisitsStore.recordVisit(viewer, author);
+    }
     const preview = buildProfilePreview({
       bio: bioStore.get(author),
       jobInfo: jobInfoStore.get(author),
@@ -895,6 +907,13 @@ export function createApp(deps?: {
       interestsInfo: interestsInfoStore.get(author),
     });
     res.json({ preview });
+  });
+
+  // Tinder Gold's real "Who's Viewed You" (#104): who visited this
+  // author's profile (via ?viewer= on the route above) within the last
+  // 24 hours — see profileVisits.ts for the pruning/window rules.
+  app.get("/api/profile-visitors/:author", (req, res) => {
+    res.json({ visitors: profileVisitsStore.getRecentVisitors(req.params.author) });
   });
 
   // Editable-anytime social media links (#83), same one-value-per-author,
@@ -2091,6 +2110,7 @@ export function createApp(deps?: {
     discoveryFiltersStore,
     exploreModeStore,
     topPicksStore,
+    profileVisitsStore,
   };
 }
 

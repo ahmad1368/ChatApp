@@ -87,7 +87,9 @@ export default function LikedYouPage() {
               }}
             >
               <div>
-                <p style={{ fontWeight: "bold" }}>{entry.author}</p>
+                <p style={{ fontWeight: "bold" }}>
+                  <Link href={`/profile/${encodeURIComponent(entry.author)}`}>{entry.author}</Link>
+                </p>
                 <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{entry.compatibility}% match</p>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
