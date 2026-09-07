@@ -106,6 +106,16 @@ function refundUsage(usage: Map<string, { date: string; count: number }>, author
  * as its own separate allowance (a Super Like never counts against it).
  * "pass" is never limited — Tinder doesn't ration how many profiles you
  * can reject.
+ *
+ * `getCandidates` recycling previously-passed profiles once the never-
+ * swiped pool is empty (#117) is real Tinder's own queue-refill behavior:
+ * its local candidate cache runs out long before its full backend pool
+ * does, so it re-surfaces earlier passes rather than leaving discovery
+ * permanently empty. Only "pass" is recycled — a like/superlike/match is
+ * a decision already made (recycling it would be indistinguishable from
+ * swiping twice) — and `recordSwipe` allows a fresh swipe to overwrite an
+ * existing "pass" for exactly this reason, while any other prior
+ * direction still can't be re-swiped.
  */
 export class SwipeStore {
   private candidates = new Set<string>();
@@ -144,6 +154,18 @@ export class SwipeStore {
       eligible.push(candidate);
     }
 
+    // Coffee Meets Bagel/Tinder's real queue-refill behavior (#117): once
+    // every joined candidate has been swiped on, recycle previously-passed
+    // profiles back into the pool rather than leaving discovery
+    // permanently empty. See the class doc comment for why only "pass".
+    if (eligible.length === 0 && swiped) {
+      for (const [candidate, direction] of swiped) {
+        if (direction !== "pass") continue;
+        if (isBlockedEitherWay(author, candidate)) continue;
+        eligible.push(candidate);
+      }
+    }
+
     // Surface anyone who's already superliked this author first — the
     // "special attention" a Super Like (#93) is actually for. Within
     // that, a higher boost level (#105, #106's Super Boost outranking a
@@ -176,7 +198,11 @@ export class SwipeStore {
     }
 
     const swiperMap = this.swipesBySwiper.get(swiperName) ?? new Map<string, SwipeDirection>();
-    if (swiperMap.has(swipedName)) {
+    // A prior "pass" can be overwritten (#117's recycled queue gives it a
+    // second chance) — a prior like/superlike is a decision already made
+    // and can't be re-swiped.
+    const existingDirection = swiperMap.get(swipedName);
+    if (existingDirection && existingDirection !== "pass") {
       return { success: false, error: "Already swiped on this profile" };
     }
 
