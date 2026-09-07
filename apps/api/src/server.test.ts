@@ -9,6 +9,7 @@ import { AppleAuthService } from "./appleAuth";
 import { FacebookAuthService } from "./facebookAuth";
 import { OtpService } from "./auth";
 import { RecaptchaService } from "./recaptcha";
+import { SpotifyService } from "./spotifyAuth";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -66,6 +67,13 @@ function listenWithAppleAuth(appleAuthService: AppleAuthService) {
 
 function listenWithFacebookAuth(facebookAuthService: FacebookAuthService) {
   const { app } = createApp({ facebookAuthService });
+  const server = app.listen(0);
+  const { port } = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+function listenWithSpotify(spotifyService: SpotifyService) {
+  const { app } = createApp({ spotifyService });
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}` };
@@ -3756,6 +3764,92 @@ test("PUT /api/personality-info/:author rejects an out-of-range enneagram type",
       body: JSON.stringify({ mbtiType: "INFP", enneagramType: 10, hideMbti: false, hideEnneagram: false }),
     });
     assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/spotify/connect 503s when Spotify isn't configured", async () => {
+  const { server, baseUrl } = listenWithSpotify(new SpotifyService(undefined, undefined, async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/spotify/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", code: "abc", redirectUri: "https://example.com/callback" }),
+    });
+    assert.equal(res.status, 503);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/spotify/connect rejects a missing author", async () => {
+  const { server, baseUrl } = listenWithSpotify(
+    new SpotifyService("client-id", "client-secret", async () => ({ topTracks: ["Song A"] }))
+  );
+  try {
+    const res = await fetch(`${baseUrl}/api/spotify/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "abc", redirectUri: "https://example.com/callback" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/spotify/connect returns 401 when the fetcher fails", async () => {
+  const { server, baseUrl } = listenWithSpotify(new SpotifyService("client-id", "client-secret", async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/spotify/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", code: "bad-code", redirectUri: "https://example.com/callback" }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/spotify/connect connects and stores top tracks, then GET/DELETE reflect it", async () => {
+  const { server, baseUrl } = listenWithSpotify(
+    new SpotifyService("client-id", "client-secret", async () => ({ topTracks: ["Song A — Artist A"] }))
+  );
+  try {
+    const connectRes = await fetch(`${baseUrl}/api/spotify/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", code: "good-code", redirectUri: "https://example.com/callback" }),
+    });
+    assert.equal(connectRes.status, 200);
+    assert.deepEqual(await connectRes.json(), {
+      spotifyInfo: { connected: true, topTracks: ["Song A — Artist A"], hideSpotify: false },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/spotify-info/alice`);
+    assert.deepEqual(await getRes.json(), {
+      spotifyInfo: { connected: true, topTracks: ["Song A — Artist A"], hideSpotify: false },
+    });
+
+    const deleteRes = await fetch(`${baseUrl}/api/spotify/alice`, { method: "DELETE" });
+    assert.deepEqual(await deleteRes.json(), { spotifyInfo: { connected: false, topTracks: [], hideSpotify: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/spotify-info/:author updates the hide flag", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/spotify-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hideSpotify: true }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { spotifyInfo: { connected: false, topTracks: [], hideSpotify: true } });
   } finally {
     server.close();
   }

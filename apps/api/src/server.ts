@@ -50,6 +50,8 @@ import { LanguagesInfoStore, LANGUAGE_CATALOG } from "./languagesInfo";
 import { BeliefsInfoStore } from "./beliefsInfo";
 import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
 import { PersonalityInfoStore } from "./personalityInfo";
+import { SpotifyService } from "./spotifyAuth";
+import { SpotifyInfoStore } from "./spotifyInfo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -66,6 +68,7 @@ export function createApp(deps?: {
   appleAuthService?: AppleAuthService;
   facebookAuthService?: FacebookAuthService;
   recaptchaService?: RecaptchaService;
+  spotifyService?: SpotifyService;
 }): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
@@ -102,6 +105,7 @@ export function createApp(deps?: {
   beliefsInfoStore: BeliefsInfoStore;
   petsInfoStore: PetsInfoStore;
   personalityInfoStore: PersonalityInfoStore;
+  spotifyInfoStore: SpotifyInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -159,12 +163,14 @@ export function createApp(deps?: {
   const beliefsInfoStore = new BeliefsInfoStore();
   const petsInfoStore = new PetsInfoStore();
   const personalityInfoStore = new PersonalityInfoStore();
+  const spotifyInfoStore = new SpotifyInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
   const appleAuthService = deps?.appleAuthService ?? new AppleAuthService();
   const facebookAuthService = deps?.facebookAuthService ?? new FacebookAuthService();
   const recaptchaService = deps?.recaptchaService ?? new RecaptchaService();
+  const spotifyService = deps?.spotifyService ?? new SpotifyService();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -677,6 +683,50 @@ export function createApp(deps?: {
 
   app.get("/api/personality-info/:author", (req, res) => {
     res.json({ personalityInfo: personalityInfoStore.get(req.params.author) });
+  });
+
+  // Connect Spotify to show top tracks (#77) — same "client does the OAuth
+  // redirect, hands the server a code" shape as #25's Facebook sign-in,
+  // adapted to Spotify's authorization-code flow. Distinct from
+  // job/education/etc: the value comes from an external API fetch, not
+  // user-typed input.
+  app.post("/api/spotify/connect", async (req, res) => {
+    if (!spotifyService.isConfigured()) {
+      res.status(503).json({ error: "Spotify integration is not configured on this server" });
+      return;
+    }
+
+    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
+    const code = typeof req.body?.code === "string" ? req.body.code : "";
+    const redirectUri = typeof req.body?.redirectUri === "string" ? req.body.redirectUri : "";
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    if (!code || !redirectUri) {
+      res.status(400).json({ error: "code and redirectUri are required" });
+      return;
+    }
+
+    const profile = await spotifyService.fetchTopTracks(code, redirectUri);
+    if (!profile) {
+      res.status(401).json({ error: "Failed to connect Spotify account" });
+      return;
+    }
+
+    res.json({ spotifyInfo: spotifyInfoStore.connect(author, profile.topTracks) });
+  });
+
+  app.delete("/api/spotify/:author", (req, res) => {
+    res.json({ spotifyInfo: spotifyInfoStore.disconnect(req.params.author) });
+  });
+
+  app.put("/api/spotify-info/:author", (req, res) => {
+    res.json({ spotifyInfo: spotifyInfoStore.setHideSpotify(req.params.author, req.body?.hideSpotify === true) });
+  });
+
+  app.get("/api/spotify-info/:author", (req, res) => {
+    res.json({ spotifyInfo: spotifyInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1477,6 +1527,7 @@ export function createApp(deps?: {
     beliefsInfoStore,
     petsInfoStore,
     personalityInfoStore,
+    spotifyInfoStore,
   };
 }
 
