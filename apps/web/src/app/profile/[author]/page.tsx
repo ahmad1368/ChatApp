@@ -27,6 +27,20 @@ interface ProfilePreviewData {
   interests?: string[];
 }
 
+interface PresenceStatus {
+  online: boolean;
+  lastActiveAt: string | null;
+}
+
+function formatLastActive(lastActiveAt: string): string {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(lastActiveAt).getTime()) / 60_000));
+  if (minutes < 1) return "Active just now";
+  if (minutes < 60) return `Active ${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `Active ${hours}h ago`;
+  return `Active ${Math.round(hours / 24)}d ago`;
+}
+
 const FIELD_LABELS: Record<keyof ProfilePreviewData, string> = {
   bio: "Bio",
   jobTitle: "Job title",
@@ -58,6 +72,7 @@ const FIELD_LABELS: Record<keyof ProfilePreviewData, string> = {
 export default function ViewProfilePage({ params }: { params: { author: string } }) {
   const [viewer] = useState(() => getOrCreateGuestIdentity());
   const [preview, setPreview] = useState<ProfilePreviewData | null>(null);
+  const [presence, setPresence] = useState<PresenceStatus | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/api/profile-preview/${encodeURIComponent(params.author)}?viewer=${encodeURIComponent(viewer)}`)
@@ -66,12 +81,43 @@ export default function ViewProfilePage({ params }: { params: { author: string }
       .catch(() => {});
   }, [params.author, viewer]);
 
+  // Badoo's real online/last-active indicator (#110): a plain snapshot
+  // fetch is enough here since this page doesn't already hold a socket
+  // connection the way ChatRoom.tsx does; polled rather than pushed live,
+  // matching the coarse "how recently was this person around" framing.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      fetch(`${API_URL}/api/presence/${encodeURIComponent(params.author)}`)
+        .then((res) => res.json())
+        .then((body) => {
+          if (!cancelled) setPresence(body);
+        })
+        .catch(() => {});
+    };
+    load();
+    const interval = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [params.author]);
+
   return (
     <main style={{ maxWidth: 480, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
       <p>
         <Link href="/discover">&larr; Back to Discover</Link>
       </p>
       <h1>{params.author}</h1>
+      {presence && (
+        <p style={{ color: presence.online ? "#2e7d32" : "var(--color-muted)", margin: "0 0 12px" }}>
+          {presence.online
+            ? "🟢 Online now"
+            : presence.lastActiveAt
+              ? formatLastActive(presence.lastActiveAt)
+              : "Activity unknown"}
+        </p>
+      )}
       {preview && (
         <dl style={{ marginTop: 8 }}>
           {(Object.entries(preview) as [keyof ProfilePreviewData, unknown][]).map(([key, value]) => (
