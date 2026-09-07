@@ -5058,6 +5058,72 @@ test("PUT /api/discovery-filters/:author rejects an invalid drinking option", as
   }
 });
 
+test("GET /api/swipe-candidates/:author?bioKeyword= narrows candidates to a bio substring match (#113)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/bio/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "I love hiking on weekends" }),
+    });
+    await fetch(`${baseUrl}/api/bio/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "Coffee enthusiast" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice?bioKeyword=hiking`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["bob"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author with no bioKeyword returns everyone regardless of bio", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["bob"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/swipe-candidates/:author excludes candidates that fail the swiper's height filter", async () => {
   const { server, baseUrl } = listen();
   try {

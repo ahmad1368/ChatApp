@@ -33,9 +33,15 @@ export default function DiscoverPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [superLikesRemaining, setSuperLikesRemaining] = useState(0);
+  const [bioKeyword, setBioKeyword] = useState("");
 
-  const loadCandidates = () => {
-    fetch(`${API_URL}/api/swipe-candidates/${encodeURIComponent(author)}`)
+  // OkCupid/Tinder's real bio keyword search (#113): a one-off query
+  // string, not a persisted preference (see DiscoveryFiltersEditor for
+  // the contrast) — narrows the same eligible pool the arrow-key swipe
+  // deck already draws from.
+  const loadCandidates = (keyword: string = bioKeyword) => {
+    const query = keyword.trim() ? `?bioKeyword=${encodeURIComponent(keyword.trim())}` : "";
+    fetch(`${API_URL}/api/swipe-candidates/${encodeURIComponent(author)}${query}`)
       .then((res) => res.json())
       .then((body) => setCandidates(body.candidates ?? []))
       .catch(() => {});
@@ -53,7 +59,7 @@ export default function DiscoverPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ author }),
-    }).then(loadCandidates);
+    }).then(() => loadCandidates());
     loadSuperLikesRemaining();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [author]);
@@ -122,6 +128,10 @@ export default function DiscoverPage() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Don't hijack arrow keys while the user is typing in the #113 bio
+      // search box (or any future text input on this page).
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
       if (e.key === "ArrowRight") swipe("like");
       if (e.key === "ArrowLeft") swipe("pass");
       if (e.key === "ArrowDown") swipe("superlike");
@@ -143,6 +153,29 @@ export default function DiscoverPage() {
         <Link href="/double-date">Double Date</Link>
       </p>
       <ProfileBoost author={author} />
+      <div style={{ display: "flex", gap: 6, justifyContent: "center", margin: "8px 0" }}>
+        <input
+          type="text"
+          value={bioKeyword}
+          onChange={(e) => setBioKeyword(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") loadCandidates(bioKeyword);
+          }}
+          placeholder="Search bios for a keyword"
+          style={{ flex: 1, maxWidth: 240 }}
+        />
+        <button onClick={() => loadCandidates(bioKeyword)}>Search</button>
+        {bioKeyword && (
+          <button
+            onClick={() => {
+              setBioKeyword("");
+              loadCandidates("");
+            }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
       <ExploreModeSelector author={author} onChange={loadCandidates} />
       <TopPicks author={author} />
       <CrossedPaths author={author} />
