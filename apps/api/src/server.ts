@@ -49,6 +49,7 @@ import { ZodiacInfoStore } from "./zodiacInfo";
 import { LanguagesInfoStore, LANGUAGE_CATALOG } from "./languagesInfo";
 import { BeliefsInfoStore } from "./beliefsInfo";
 import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
+import { PersonalityInfoStore } from "./personalityInfo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -100,6 +101,7 @@ export function createApp(deps?: {
   languagesInfoStore: LanguagesInfoStore;
   beliefsInfoStore: BeliefsInfoStore;
   petsInfoStore: PetsInfoStore;
+  personalityInfoStore: PersonalityInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -156,6 +158,7 @@ export function createApp(deps?: {
   const languagesInfoStore = new LanguagesInfoStore();
   const beliefsInfoStore = new BeliefsInfoStore();
   const petsInfoStore = new PetsInfoStore();
+  const personalityInfoStore = new PersonalityInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -652,6 +655,28 @@ export function createApp(deps?: {
 
   app.get("/api/pets-info/:author", (req, res) => {
     res.json({ petsInfo: petsInfoStore.get(req.params.author) });
+  });
+
+  // Editable-anytime personality type (#76): MBTI and Enneagram, same
+  // one-value-per-author, replace-on-update shape as this app's other
+  // standalone profile fields.
+  app.put("/api/personality-info/:author", (req, res) => {
+    const result = personalityInfoStore.update(
+      req.params.author,
+      req.body?.mbtiType,
+      req.body?.enneagramType,
+      req.body?.hideMbti,
+      req.body?.hideEnneagram
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ personalityInfo: result.personalityInfo });
+  });
+
+  app.get("/api/personality-info/:author", (req, res) => {
+    res.json({ personalityInfo: personalityInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1451,6 +1476,7 @@ export function createApp(deps?: {
     languagesInfoStore,
     beliefsInfoStore,
     petsInfoStore,
+    personalityInfoStore,
   };
 }
 
