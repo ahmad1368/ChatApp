@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getOrCreateGuestIdentity } from "../guestIdentity";
 import ExploreModeSelector from "../ExploreModeSelector";
+import TopPicks from "../TopPicks";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -138,6 +139,7 @@ export default function DiscoverPage() {
         <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/matches">Your matches</Link>
       </p>
       <ExploreModeSelector author={author} onChange={loadCandidates} />
+      <TopPicks author={author} />
       {matchNotice && (
         <div style={{ background: "#fef3c7", padding: 12, borderRadius: 8, marginBottom: 12 }}>
           🎉 It&apos;s a match with {matchNotice}!

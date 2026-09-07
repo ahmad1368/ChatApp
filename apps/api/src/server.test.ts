@@ -5292,3 +5292,68 @@ test("GET /api/swipe-candidates/:author only shows candidates matching the swipe
     server.close();
   }
 });
+
+test("GET /api/top-picks/:author returns an empty list before anyone joins discovery", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/top-picks/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { picks: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/top-picks/:author ranks candidates by real desirability rating, excludes blocked candidates, and caches for the day", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "dave" }),
+    });
+
+    // Someone else's swipe raises bob's real Elo/Smart Score rating above
+    // carol's and dave's default 1500, and blocks dave from ever appearing.
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "someone-else", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockerAuthor: "alice", blockedAuthor: "dave" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/top-picks/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.picks.map((p: { author: string }) => p.author),
+      ["bob", "carol"]
+    );
+    assert.ok(body.picks[0].desirabilityRating > body.picks[1].desirabilityRating);
+
+    // Requesting again the same day returns the same cached picks even
+    // though carol's rating hasn't changed relative to bob's.
+    const secondRes = await fetch(`${baseUrl}/api/top-picks/alice`);
+    assert.deepEqual(await secondRes.json(), body);
+  } finally {
+    server.close();
+  }
+});
