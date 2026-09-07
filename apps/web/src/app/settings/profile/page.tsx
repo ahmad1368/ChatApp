@@ -21,6 +21,7 @@ import SpotifyConnect from "../../SpotifyConnect";
 import InstagramConnect from "../../InstagramConnect";
 import InterestsInfoEditor from "../../InterestsInfoEditor";
 import ProfileVisibilityEditor from "../../ProfileVisibilityEditor";
+import VanishModeEditor from "../../VanishModeEditor";
 import SocialLinksEditor from "../../SocialLinksEditor";
 import TravelModeEditor from "../../TravelModeEditor";
 import PassportModeEditor from "../../PassportModeEditor";
@@ -77,6 +78,7 @@ export default function ProfileSettingsPage() {
       <DisplayNameModeEditor author={author} />
       <StylizedAvatarEditor author={author} />
       <ProfileVisibilityEditor author={author} />
+      <VanishModeEditor author={author} />
       <DiscoveryFiltersEditor author={author} />
       <ProfilePreview author={author} />
       <SmartScoreDisplay author={author} />

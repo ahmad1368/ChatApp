@@ -5792,6 +5792,98 @@ test("GET /api/swipe-candidates/:author excludes a candidate whose bio matches t
   }
 });
 
+test("PUT /api/vanish-mode/:author then GET reflects the toggle", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const offRes = await fetch(`${baseUrl}/api/vanish-mode/alice`);
+    assert.deepEqual(await offRes.json(), { enabled: false });
+
+    const putRes = await fetch(`${baseUrl}/api/vanish-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    assert.deepEqual(await putRes.json(), { enabled: true });
+
+    const onRes = await fetch(`${baseUrl}/api/vanish-mode/alice`);
+    assert.deepEqual(await onRes.json(), { enabled: true });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author excludes a candidate with vanish mode on (#111)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/vanish-mode/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["carol"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author still shows a vanish-mode candidate to someone they already liked (#111)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    await fetch(`${baseUrl}/api/vanish-mode/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["bob"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/crossed-paths/:author returns an empty list before anyone's location is recorded", async () => {
   const { server, baseUrl } = listen();
   try {

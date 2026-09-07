@@ -253,6 +253,11 @@ export class SwipeStore {
     return likedBy.map((candidate) => ({ author: candidate, compatibility: getCompatibility(author, candidate) }));
   }
 
+  /** Whether `swiper` has already liked or superliked `swiped` — #111's Incognito Mode exception to hiding from discovery. */
+  hasLiked(swiper: string, swiped: string): boolean {
+    return isLikeOrSuperLike(this.swipesBySwiper.get(swiper)?.get(swiped));
+  }
+
   getSuperLikesRemainingToday(author: string): number {
     const usage = this.superLikesUsedToday.get(author);
     const usedToday = usage?.date === todayKey() ? usage.count : 0;

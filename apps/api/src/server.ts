@@ -74,6 +74,7 @@ import { scanCandidateForFakeProfile } from "./fakeProfileDetector";
 import { CrossedPathsStore } from "./crossedPaths";
 import { SquadStore } from "./squads";
 import { PresenceStore } from "./presence";
+import { VanishModeStore } from "./vanishMode";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -153,6 +154,7 @@ export function createApp(deps?: {
   crossedPathsStore: CrossedPathsStore;
   squadStore: SquadStore;
   presenceStore: PresenceStore;
+  vanishModeStore: VanishModeStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -231,6 +233,7 @@ export function createApp(deps?: {
   const crossedPathsStore = new CrossedPathsStore();
   const squadStore = new SquadStore();
   const presenceStore = new PresenceStore();
+  const vanishModeStore = new VanishModeStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1145,6 +1148,13 @@ export function createApp(deps?: {
     if (!candidateMatchesExploreMode(exploreMode, interestsInfoStore.get(b).interests)) {
       return true;
     }
+    // Bumble's real Incognito Mode (#111): a candidate with vanish mode on
+    // is hidden from everyone except someone they've already liked or
+    // superliked themselves — see vanishMode.ts for why that specific
+    // exception rather than a blanket hide.
+    if (vanishModeStore.isEnabled(b) && !swipeStore.hasLiked(b, a)) {
+      return true;
+    }
     return false;
   };
   // OkCupid's real percentage-match algorithm (#94), computed from #79's
@@ -1295,6 +1305,22 @@ export function createApp(deps?: {
   // aren't already holding a socket connection to that author.
   app.get("/api/presence/:author", (req, res) => {
     res.json(presenceStore.getStatus(req.params.author));
+  });
+
+  // Bumble's real Incognito Mode (#111): see vanishMode.ts and
+  // isExcludedCandidate above for the actual hide-from-discovery behavior
+  // this toggle drives.
+  app.put("/api/vanish-mode/:author", (req, res) => {
+    const result = vanishModeStore.setEnabled(req.params.author, req.body?.enabled);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ enabled: result.enabled });
+  });
+
+  app.get("/api/vanish-mode/:author", (req, res) => {
+    res.json({ enabled: vanishModeStore.isEnabled(req.params.author) });
   });
 
   // Tinder's real Explore Mode (#99): a curated themed deck (cafes/sports/
@@ -2266,6 +2292,7 @@ export function createApp(deps?: {
     crossedPathsStore,
     squadStore,
     presenceStore,
+    vanishModeStore,
   };
 }
 
