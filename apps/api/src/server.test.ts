@@ -4021,3 +4021,32 @@ test("PUT /api/interests-info/:author rejects more than the max number of intere
     server.close();
   }
 });
+
+test("GET /api/profile-visibility/:author returns defaults before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-visibility/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { visibility: { hideAge: false, hideDistance: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/profile-visibility/:author sets the flags, then GET returns them", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/profile-visibility/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hideAge: true, hideDistance: false }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { visibility: { hideAge: true, hideDistance: false } });
+
+    const getRes = await fetch(`${baseUrl}/api/profile-visibility/alice`);
+    assert.deepEqual(await getRes.json(), { visibility: { hideAge: true, hideDistance: false } });
+  } finally {
+    server.close();
+  }
+});
