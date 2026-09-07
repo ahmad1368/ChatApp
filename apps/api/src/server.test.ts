@@ -3563,3 +3563,66 @@ test("PUT /api/languages-info/:author rejects more than the max number of langua
     server.close();
   }
 });
+
+test("GET /api/beliefs-info/:author returns empty fields before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/beliefs-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      beliefsInfo: { religion: null, politicalView: null, hideReligion: false, hidePoliticalView: false },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/beliefs-info/:author sets beliefs info, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/beliefs-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ religion: "spiritual", politicalView: "notPolitical", hideReligion: true, hidePoliticalView: false }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), {
+      beliefsInfo: { religion: "spiritual", politicalView: "notPolitical", hideReligion: true, hidePoliticalView: false },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/beliefs-info/alice`);
+    assert.deepEqual(await getRes.json(), {
+      beliefsInfo: { religion: "spiritual", politicalView: "notPolitical", hideReligion: true, hidePoliticalView: false },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/beliefs-info/:author rejects an invalid religion option", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/beliefs-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ religion: "pastafarian", politicalView: "moderate", hideReligion: false, hidePoliticalView: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/beliefs-info/:author rejects an invalid political view option", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/beliefs-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ religion: "buddhist", politicalView: "anarchist", hideReligion: false, hidePoliticalView: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});

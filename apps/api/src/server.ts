@@ -47,6 +47,7 @@ import { LifestyleInfoStore } from "./lifestyleInfo";
 import { FamilyPlansInfoStore } from "./familyPlansInfo";
 import { ZodiacInfoStore } from "./zodiacInfo";
 import { LanguagesInfoStore, LANGUAGE_CATALOG } from "./languagesInfo";
+import { BeliefsInfoStore } from "./beliefsInfo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -96,6 +97,7 @@ export function createApp(deps?: {
   familyPlansInfoStore: FamilyPlansInfoStore;
   zodiacInfoStore: ZodiacInfoStore;
   languagesInfoStore: LanguagesInfoStore;
+  beliefsInfoStore: BeliefsInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -150,6 +152,7 @@ export function createApp(deps?: {
   const familyPlansInfoStore = new FamilyPlansInfoStore();
   const zodiacInfoStore = new ZodiacInfoStore();
   const languagesInfoStore = new LanguagesInfoStore();
+  const beliefsInfoStore = new BeliefsInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -605,6 +608,28 @@ export function createApp(deps?: {
 
   app.get("/api/languages-info/:author", (req, res) => {
     res.json({ languagesInfo: languagesInfoStore.get(req.params.author) });
+  });
+
+  // Editable-anytime religion/political-views (#74), same
+  // one-value-per-author, replace-on-update shape as this app's other
+  // standalone profile fields.
+  app.put("/api/beliefs-info/:author", (req, res) => {
+    const result = beliefsInfoStore.update(
+      req.params.author,
+      req.body?.religion,
+      req.body?.politicalView,
+      req.body?.hideReligion,
+      req.body?.hidePoliticalView
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ beliefsInfo: result.beliefsInfo });
+  });
+
+  app.get("/api/beliefs-info/:author", (req, res) => {
+    res.json({ beliefsInfo: beliefsInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1402,6 +1427,7 @@ export function createApp(deps?: {
     familyPlansInfoStore,
     zodiacInfoStore,
     languagesInfoStore,
+    beliefsInfoStore,
   };
 }
 
