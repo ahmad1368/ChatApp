@@ -5884,3 +5884,110 @@ test("GET /api/crossed-paths/:author excludes a blocked candidate even if paths 
     server.close();
   }
 });
+
+test("POST /api/squads creates a squad and GET /api/squads/:author returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/squads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ members: ["alice", "bob"] }),
+    });
+    assert.equal(createRes.status, 201);
+    const createBody = await createRes.json();
+    assert.deepEqual(createBody.squad.members, ["alice", "bob"]);
+
+    const getRes = await fetch(`${baseUrl}/api/squads/alice`);
+    const getBody = await getRes.json();
+    assert.equal(getBody.squad.id, createBody.squad.id);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/squads rejects too few members", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/squads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ members: ["alice"] }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/squads/:squadId disbands a squad, allowing members to form a new one", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/squads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ members: ["alice", "bob"] }),
+    });
+    const squadId = (await createRes.json()).squad.id;
+
+    const deleteRes = await fetch(`${baseUrl}/api/squads/${squadId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(deleteRes.status, 204);
+
+    const recreateRes = await fetch(`${baseUrl}/api/squads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ members: ["alice", "carol"] }),
+    });
+    assert.equal(recreateRes.status, 201);
+  } finally {
+    server.close();
+  }
+});
+
+test("Two squads mutually liking each other via /api/squad-swipes creates a group match with a shared room", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const squadARes = await fetch(`${baseUrl}/api/squads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ members: ["alice", "bob"] }),
+    });
+    const squadA = (await squadARes.json()).squad.id;
+
+    const squadBRes = await fetch(`${baseUrl}/api/squads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ members: ["carol", "dave"] }),
+    });
+    const squadB = (await squadBRes.json()).squad.id;
+
+    await fetch(`${baseUrl}/api/squads/${squadA}/discovery`, { method: "POST" });
+    await fetch(`${baseUrl}/api/squads/${squadB}/discovery`, { method: "POST" });
+
+    const candidatesRes = await fetch(`${baseUrl}/api/squad-candidates/${squadA}`);
+    assert.deepEqual((await candidatesRes.json()).candidates, [squadB]);
+
+    await fetch(`${baseUrl}/api/squad-swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiperSquadId: squadA, swipedSquadId: squadB, direction: "like" }),
+    });
+    const matchRes = await fetch(`${baseUrl}/api/squad-swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiperSquadId: squadB, swipedSquadId: squadA, direction: "like" }),
+    });
+    assert.equal(matchRes.status, 201);
+    const matchBody = await matchRes.json();
+    assert.equal(matchBody.matched, true);
+    assert.equal(typeof matchBody.roomId, "string");
+
+    const matchesRes = await fetch(`${baseUrl}/api/squad-matches/${squadA}`);
+    assert.deepEqual(await matchesRes.json(), { matches: [{ squadId: squadB, roomId: matchBody.roomId }] });
+  } finally {
+    server.close();
+  }
+});

@@ -72,6 +72,7 @@ import { ProfileBoostStore } from "./profileBoost";
 import { PeakHoursStore } from "./peakHours";
 import { scanCandidateForFakeProfile } from "./fakeProfileDetector";
 import { CrossedPathsStore } from "./crossedPaths";
+import { SquadStore } from "./squads";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -149,6 +150,7 @@ export function createApp(deps?: {
   profileBoostStore: ProfileBoostStore;
   peakHoursStore: PeakHoursStore;
   crossedPathsStore: CrossedPathsStore;
+  squadStore: SquadStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -225,6 +227,7 @@ export function createApp(deps?: {
   const profileBoostStore = new ProfileBoostStore();
   const peakHoursStore = new PeakHoursStore();
   const crossedPathsStore = new CrossedPathsStore();
+  const squadStore = new SquadStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1226,6 +1229,63 @@ export function createApp(deps?: {
     });
   });
 
+  // Match.com/Tinder's real "Double Date" (#109): a small group of
+  // friends (2-4) teams up as one squad and swipes on other squads
+  // together — see squads.ts for why a mutual like reuses this app's
+  // existing multi-room chat instead of a separate group-chat system.
+  app.post("/api/squads", (req, res) => {
+    const result = squadStore.createSquad(req.body?.members);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ squad: result.squad });
+  });
+
+  app.get("/api/squads/:author", (req, res) => {
+    res.json({ squad: squadStore.getSquadForAuthor(req.params.author) });
+  });
+
+  app.delete("/api/squads/:squadId", (req, res) => {
+    const result = squadStore.disbandSquad(req.params.squadId, req.body?.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  app.post("/api/squads/:squadId/discovery", (req, res) => {
+    const result = squadStore.joinDiscovery(req.params.squadId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ success: true });
+  });
+
+  app.delete("/api/squads/:squadId/discovery", (req, res) => {
+    squadStore.leaveDiscovery(req.params.squadId);
+    res.status(204).send();
+  });
+
+  app.get("/api/squad-candidates/:squadId", (req, res) => {
+    res.json({ candidates: squadStore.getCandidates(req.params.squadId) });
+  });
+
+  app.post("/api/squad-swipes", (req, res) => {
+    const result = squadStore.recordSwipe(req.body?.swiperSquadId, req.body?.swipedSquadId, req.body?.direction);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ matched: result.matched, roomId: result.roomId });
+  });
+
+  app.get("/api/squad-matches/:squadId", (req, res) => {
+    res.json({ matches: squadStore.getGroupMatches(req.params.squadId) });
+  });
+
   // Tinder's real Explore Mode (#99): a curated themed deck (cafes/sports/
   // travel) instead of the normal, unfiltered discovery deck.
   app.get("/api/explore-mode/catalog", (_req, res) => {
@@ -2193,6 +2253,7 @@ export function createApp(deps?: {
     profileBoostStore,
     peakHoursStore,
     crossedPathsStore,
+    squadStore,
   };
 }
 
