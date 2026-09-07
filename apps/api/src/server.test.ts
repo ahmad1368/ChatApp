@@ -4373,3 +4373,58 @@ test("PUT /api/achievements-info/:author rejects a title containing a phone numb
     server.close();
   }
 });
+
+test("GET /api/display-name-mode/modes returns the fixed mode list", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/display-name-mode/modes`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.modes) && body.modes.length > 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/display-name-mode/:author returns the default preference before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/display-name-mode/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { preference: { mode: "fullName", nickname: "" } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/display-name-mode/:author sets the preference, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/display-name-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "nickname", nickname: "Al" }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { preference: { mode: "nickname", nickname: "Al" } });
+
+    const getRes = await fetch(`${baseUrl}/api/display-name-mode/alice`);
+    assert.deepEqual(await getRes.json(), { preference: { mode: "nickname", nickname: "Al" } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/display-name-mode/:author rejects mode nickname with an empty nickname", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/display-name-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "nickname", nickname: "" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
