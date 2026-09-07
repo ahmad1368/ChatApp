@@ -5789,3 +5789,98 @@ test("GET /api/swipe-candidates/:author excludes a candidate whose bio matches t
     server.close();
   }
 });
+
+test("GET /api/crossed-paths/:author returns an empty list before anyone's location is recorded", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/crossed-paths/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { crossedPaths: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/crossed-paths/:author includes a candidate whose recent location was near the author's", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/users/alice/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 40.7128, lng: -74.006 }),
+    });
+    await fetch(`${baseUrl}/api/users/bob/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 40.713, lng: -74.0062 }),
+    });
+    await fetch(`${baseUrl}/api/users/carol/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 34.0522, lng: -118.2437 }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/crossed-paths/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.crossedPaths.map((c: { author: string }) => c.author),
+      ["bob"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/crossed-paths/:author excludes a blocked candidate even if paths crossed", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    await fetch(`${baseUrl}/api/users/alice/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 40.7128, lng: -74.006 }),
+    });
+    await fetch(`${baseUrl}/api/users/bob/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 40.713, lng: -74.0062 }),
+    });
+
+    await fetch(`${baseUrl}/api/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockerAuthor: "alice", blockedAuthor: "bob" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/crossed-paths/alice`);
+    assert.deepEqual(await res.json(), { crossedPaths: [] });
+  } finally {
+    server.close();
+  }
+});
