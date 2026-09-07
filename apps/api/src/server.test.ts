@@ -6592,6 +6592,72 @@ test("GET /api/weekend-plan-matches/:author excludes a candidate hiding their we
   }
 });
 
+test("GET /api/bio-matches/:author returns candidates sharing at least one bio keyword (#120)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/bio/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "I love hiking and coffee" }),
+    });
+    await fetch(`${baseUrl}/api/bio/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "Coffee lover who also enjoys hiking" }),
+    });
+    await fetch(`${baseUrl}/api/bio/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "Big fan of cooking and baking" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/bio-matches/alice`);
+    const body = await res.json();
+    assert.equal(body.candidates.length, 1);
+    assert.equal(body.candidates[0].author, "bob");
+    assert.deepEqual(body.candidates[0].sharedKeywords.sort(), ["coffee", "hiking"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/bio-matches/:author returns nothing when the author has no bio", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/bio/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "I love hiking" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/bio-matches/alice`);
+    assert.deepEqual(await res.json(), { candidates: [] });
+  } finally {
+    server.close();
+  }
+});
+
 test("POST /api/squads creates a squad and GET /api/squads/:author returns it", async () => {
   const { server, baseUrl } = listen();
   try {
