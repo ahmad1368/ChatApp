@@ -139,7 +139,8 @@ export default function DiscoverPage() {
       <h1>Discover</h1>
       <p>
         <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/matches">Your matches</Link> &middot;{" "}
-        <Link href="/liked-you">Who liked you</Link> &middot; <Link href="/visitors">Profile visitors</Link>
+        <Link href="/liked-you">Who liked you</Link> &middot; <Link href="/visitors">Profile visitors</Link> &middot;{" "}
+        <Link href="/double-date">Double Date</Link>
       </p>
       <ProfileBoost author={author} />
       <ExploreModeSelector author={author} onChange={loadCandidates} />
