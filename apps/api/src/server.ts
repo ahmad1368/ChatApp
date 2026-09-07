@@ -1153,8 +1153,20 @@ export function createApp(deps?: {
     res.status(201).json({ matched: result.matched });
   });
 
+  // OkCupid's mutual compatibility percentage (#100), shown persistently
+  // once matched rather than only during swiping (#94's transient
+  // swipe-card badge) — same computeInterestCompatibility score, computed
+  // per match at the route level like #94's swipe-candidates route.
   app.get("/api/matches/:author", (req, res) => {
-    res.json({ matches: swipeStore.getMatches(req.params.author) });
+    const author = req.params.author;
+    const matches = swipeStore.getMatches(author).map((matchedAuthor) => ({
+      author: matchedAuthor,
+      compatibility: computeInterestCompatibility(
+        interestsInfoStore.get(author).interests,
+        interestsInfoStore.get(matchedAuthor).interests
+      ),
+    }));
+    res.json({ matches });
   });
 
   // Tinder's "Rewind" feature (#92): undo only the single most recent

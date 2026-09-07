@@ -4563,7 +4563,39 @@ test("POST /api/swipes reports a match on mutual likes, and GET /api/matches ref
     assert.deepEqual(await res.json(), { matched: true });
 
     const matchesRes = await fetch(`${baseUrl}/api/matches/alice`);
-    assert.deepEqual(await matchesRes.json(), { matches: ["bob"] });
+    assert.deepEqual(await matchesRes.json(), { matches: [{ author: "bob", compatibility: 0 }] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/matches/:author includes each match's real interest-compatibility percentage", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/interests-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking", "yoga"], hideInterests: false }),
+    });
+    await fetch(`${baseUrl}/api/interests-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking", "yoga"], hideInterests: false }),
+    });
+
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/matches/alice`);
+    assert.deepEqual(await res.json(), { matches: [{ author: "bob", compatibility: 100 }] });
   } finally {
     server.close();
   }
