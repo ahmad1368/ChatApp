@@ -34,6 +34,7 @@ function listen() {
     contactBlockStore,
     watermarkStore,
     photoStore,
+    presenceStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -49,6 +50,7 @@ function listen() {
     contactBlockStore,
     watermarkStore,
     photoStore,
+    presenceStore,
   };
 }
 
@@ -5987,6 +5989,32 @@ test("Two squads mutually liking each other via /api/squad-swipes creates a grou
 
     const matchesRes = await fetch(`${baseUrl}/api/squad-matches/${squadA}`);
     assert.deepEqual(await matchesRes.json(), { matches: [{ squadId: squadB, roomId: matchBody.roomId }] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/presence/:author reports offline with no last-active time before any activity", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/presence/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { online: false, lastActiveAt: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/presence/:author reflects the live PresenceStore (#110) — see presence.test.ts for the online/multi-tab/last-active semantics themselves", async () => {
+  const { server, baseUrl, presenceStore } = listen();
+  try {
+    presenceStore.markOnline("alice", 1_000);
+    const onlineRes = await fetch(`${baseUrl}/api/presence/alice`);
+    assert.deepEqual(await onlineRes.json(), { online: true, lastActiveAt: new Date(1_000).toISOString() });
+
+    presenceStore.markOffline("alice", 2_000);
+    const offlineRes = await fetch(`${baseUrl}/api/presence/alice`);
+    assert.deepEqual(await offlineRes.json(), { online: false, lastActiveAt: new Date(2_000).toISOString() });
   } finally {
     server.close();
   }

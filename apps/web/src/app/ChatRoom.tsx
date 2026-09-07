@@ -602,6 +602,10 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
 
     socket.on("connect", () => {
       socket.emit("join", roomId);
+      // Announce identity for #110's live online/last-active indicator —
+      // see server.ts's presence:online handler and presence.ts for why
+      // this only affects presence once per connection, not once per join.
+      socket.emit("presence:online", authorRef.current);
       // Reconnect sync: catch up on anything sent while we were disconnected.
       syncSince(lastSyncedAtRef.current);
       flushQueue();

@@ -73,6 +73,7 @@ import { PeakHoursStore } from "./peakHours";
 import { scanCandidateForFakeProfile } from "./fakeProfileDetector";
 import { CrossedPathsStore } from "./crossedPaths";
 import { SquadStore } from "./squads";
+import { PresenceStore } from "./presence";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -151,6 +152,7 @@ export function createApp(deps?: {
   peakHoursStore: PeakHoursStore;
   crossedPathsStore: CrossedPathsStore;
   squadStore: SquadStore;
+  presenceStore: PresenceStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -228,6 +230,7 @@ export function createApp(deps?: {
   const peakHoursStore = new PeakHoursStore();
   const crossedPathsStore = new CrossedPathsStore();
   const squadStore = new SquadStore();
+  const presenceStore = new PresenceStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1286,6 +1289,14 @@ export function createApp(deps?: {
     res.json({ matches: squadStore.getGroupMatches(req.params.squadId) });
   });
 
+  // Badoo's real online/last-active indicator (#110): "online" is driven
+  // live by the presence:online/disconnect socket handlers below; this
+  // endpoint just exposes the current snapshot for profile views that
+  // aren't already holding a socket connection to that author.
+  app.get("/api/presence/:author", (req, res) => {
+    res.json(presenceStore.getStatus(req.params.author));
+  });
+
   // Tinder's real Explore Mode (#99): a curated themed deck (cafes/sports/
   // travel) instead of the normal, unfiltered discovery deck.
   app.get("/api/explore-mode/catalog", (_req, res) => {
@@ -2254,11 +2265,12 @@ export function createApp(deps?: {
     peakHoursStore,
     crossedPathsStore,
     squadStore,
+    presenceStore,
   };
 }
 
 export async function createChatServer() {
-  const { app, messagesByRoom, pushService, reportStore } = createApp();
+  const { app, messagesByRoom, pushService, reportStore, presenceStore } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
@@ -2272,6 +2284,17 @@ export async function createChatServer() {
   io.on("connection", (socket) => {
     socket.on("join", (roomId: string = DEFAULT_ROOM_ID) => {
       socket.join(roomId);
+    });
+
+    // Badoo's real online/last-active indicator (#110): the client
+    // announces its author once per connection so this socket can be
+    // attributed to them on disconnect (see presence.ts for why a
+    // connection *count* is tracked rather than a boolean — multi-tab).
+    socket.on("presence:online", (author: string) => {
+      if (typeof author !== "string" || !author) return;
+      socket.data.author = author;
+      presenceStore.markOnline(author);
+      io.emit("presence:update", { author, ...presenceStore.getStatus(author) });
     });
 
     socket.on("message:send", (payload: SendMessagePayload) => {
@@ -2315,6 +2338,9 @@ export async function createChatServer() {
       const existing = messagesByRoom.get(roomId) ?? [];
       existing.push(message);
       messagesByRoom.set(roomId, existing);
+      // Sending a message counts as activity even for the rare case where
+      // presence:online was never announced on this socket (see presence.ts).
+      presenceStore.recordActivity(message.author);
       io.to(roomId).emit("message:new", message);
       pushService.notifyOthers(message.author, { title: message.author, body: message.text }).catch((err) => {
         console.error("Failed to deliver push notifications:", err);
@@ -2323,6 +2349,11 @@ export async function createChatServer() {
 
     socket.on("disconnect", () => {
       messageRateLimiter.clear(socket.id);
+      const author = socket.data.author as string | undefined;
+      if (author) {
+        presenceStore.markOffline(author);
+        io.emit("presence:update", { author, ...presenceStore.getStatus(author) });
+      }
     });
   });
 
