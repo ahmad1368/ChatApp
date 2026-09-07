@@ -262,3 +262,55 @@ test("getCandidates() surfaces authors who superliked this author first", () => 
   store.recordSwipe("carol", "alice", "superlike");
   assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), ["carol", "bob"]);
 });
+
+test("getLikedBy() returns an empty list when nobody has liked this author", () => {
+  const store = new SwipeStore();
+  assert.deepEqual(store.getLikedBy("alice", NEVER_BLOCKED), []);
+});
+
+test("getLikedBy() includes an author who liked but was not swiped back", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("bob", "alice", "like");
+  assert.deepEqual(names(store.getLikedBy("alice", NEVER_BLOCKED)), ["bob"]);
+});
+
+test("getLikedBy() excludes a pass", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("bob", "alice", "pass");
+  assert.deepEqual(store.getLikedBy("alice", NEVER_BLOCKED), []);
+});
+
+test("getLikedBy() excludes someone once the author has swiped back on them", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("bob", "alice", "like");
+  store.recordSwipe("alice", "bob", "pass");
+  assert.deepEqual(store.getLikedBy("alice", NEVER_BLOCKED), []);
+});
+
+test("getLikedBy() excludes a mutual match (already swiped back with a like)", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("bob", "alice", "like");
+  store.recordSwipe("alice", "bob", "like");
+  assert.deepEqual(store.getLikedBy("alice", NEVER_BLOCKED), []);
+});
+
+test("getLikedBy() excludes a blocked author", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("bob", "alice", "like");
+  const isBlocked = (a: string, b: string) => a === "bob" || b === "bob";
+  assert.deepEqual(store.getLikedBy("alice", isBlocked), []);
+});
+
+test("getLikedBy() surfaces superlikers first, then ranks by compatibility", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("bob", "alice", "like");
+  store.recordSwipe("carol", "alice", "superlike");
+  assert.deepEqual(names(store.getLikedBy("alice", NEVER_BLOCKED)), ["carol", "bob"]);
+});
+
+test("getLikedBy() includes each liker's compatibility score", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("bob", "alice", "like");
+  const scorer = (a: string, b: string) => (a === "alice" && b === "bob" ? 75 : 0);
+  assert.deepEqual(store.getLikedBy("alice", NEVER_BLOCKED, scorer), [{ author: "bob", compatibility: 75 }]);
+});

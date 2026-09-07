@@ -208,6 +208,38 @@ export class SwipeStore {
     return [...(this.matchesByAuthor.get(author) ?? new Set<string>())];
   }
 
+  /**
+   * Tinder's real "Likes You" (#103): everyone who's already liked or
+   * superliked this author but hasn't been swiped back on yet — real
+   * Tinder blurs this list behind a paywall; this app has no premium
+   * tier (same call as #92's free Rewind), so it's shown in full. Once
+   * `author` swipes back either way, that person either becomes a match
+   * (visible in getMatches) or drops off this list — never both places
+   * at once. Ranked the same way as getCandidates: superlikers first,
+   * then by compatibility.
+   */
+  getLikedBy(author: string, isBlockedEitherWay: (a: string, b: string) => boolean, getCompatibility: CompatibilityScorer = () => 0): SwipeCandidate[] {
+    const alreadySwipedByAuthor = this.swipesBySwiper.get(author);
+    const likedBy: string[] = [];
+    for (const [swiper, swipedMap] of this.swipesBySwiper) {
+      if (swiper === author) continue;
+      const direction = swipedMap.get(author);
+      if (direction !== "like" && direction !== "superlike") continue;
+      if (alreadySwipedByAuthor?.has(swiper)) continue;
+      if (isBlockedEitherWay(author, swiper)) continue;
+      likedBy.push(swiper);
+    }
+
+    const superlikedMe = (candidate: string) => this.swipesBySwiper.get(candidate)?.get(author) === "superlike";
+    likedBy.sort((a, b) => {
+      const superlikeDiff = Number(superlikedMe(b)) - Number(superlikedMe(a));
+      if (superlikeDiff !== 0) return superlikeDiff;
+      return getCompatibility(author, b) - getCompatibility(author, a);
+    });
+
+    return likedBy.map((candidate) => ({ author: candidate, compatibility: getCompatibility(author, candidate) }));
+  }
+
   getSuperLikesRemainingToday(author: string): number {
     const usage = this.superLikesUsedToday.get(author);
     const usedToday = usage?.date === todayKey() ? usage.count : 0;
