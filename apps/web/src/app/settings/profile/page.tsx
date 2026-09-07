@@ -23,6 +23,7 @@ import InterestsInfoEditor from "../../InterestsInfoEditor";
 import ProfileVisibilityEditor from "../../ProfileVisibilityEditor";
 import SocialLinksEditor from "../../SocialLinksEditor";
 import TravelModeEditor from "../../TravelModeEditor";
+import PassportModeEditor from "../../PassportModeEditor";
 import ProfileColorThemeEditor from "../../ProfileColorThemeEditor";
 import AchievementsInfoEditor from "../../AchievementsInfoEditor";
 import DisplayNameModeEditor from "../../DisplayNameModeEditor";
@@ -70,6 +71,7 @@ export default function ProfileSettingsPage() {
       <InterestsInfoEditor author={author} />
       <SocialLinksEditor author={author} />
       <TravelModeEditor author={author} />
+      <PassportModeEditor author={author} />
       <ProfileColorThemeEditor author={author} />
       <AchievementsInfoEditor author={author} />
       <DisplayNameModeEditor author={author} />

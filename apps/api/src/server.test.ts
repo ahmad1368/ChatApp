@@ -294,6 +294,87 @@ test("GET /api/users/:author/location returns the same approximation set via PUT
   }
 });
 
+test("GET /api/users/:author/passport-location reports inactive before any Passport location is set", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/users/alice/passport-location`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { active: false, cityName: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/users/:author/passport-location rejects invalid coordinates", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/users/alice/passport-location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cityName: "Tokyo", coordinates: { lat: 999, lng: 0 } }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/users/:author/passport-location activates Passport mode and overrides GET /api/users/:author/location", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/users/alice/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 48.8566, lng: 2.3522 }), // real GPS: Paris
+    });
+
+    const putRes = await fetch(`${baseUrl}/api/users/alice/passport-location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cityName: "Tokyo", coordinates: { lat: 35.6762, lng: 139.6503 } }),
+    });
+    assert.equal(putRes.status, 200);
+
+    const statusRes = await fetch(`${baseUrl}/api/users/alice/passport-location`);
+    assert.deepEqual(await statusRes.json(), { active: true, cityName: "Tokyo" });
+
+    const locationRes = await fetch(`${baseUrl}/api/users/alice/location`);
+    const body = await locationRes.json();
+    // Tokyo, not Paris, is the effective location while Passport is active.
+    assert.ok(Math.abs(body.approximate.lat - 35.6762) < 1);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/users/:author/passport-location deactivates Passport mode and reverts to the real GPS location", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/users/alice/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 48.8566, lng: 2.3522 }),
+    });
+    await fetch(`${baseUrl}/api/users/alice/passport-location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cityName: "Tokyo", coordinates: { lat: 35.6762, lng: 139.6503 } }),
+    });
+
+    const deleteRes = await fetch(`${baseUrl}/api/users/alice/passport-location`, { method: "DELETE" });
+    assert.equal(deleteRes.status, 204);
+
+    const statusRes = await fetch(`${baseUrl}/api/users/alice/passport-location`);
+    assert.deepEqual(await statusRes.json(), { active: false, cityName: null });
+
+    const locationRes = await fetch(`${baseUrl}/api/users/alice/location`);
+    const body = await locationRes.json();
+    assert.ok(Math.abs(body.approximate.lat - 48.8566) < 1);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/push/public-key exposes a VAPID public key", async () => {
   const { server, baseUrl } = listen();
   try {

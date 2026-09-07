@@ -3,8 +3,18 @@ export interface Coordinates {
   lng: number;
 }
 
+export interface PassportLocation {
+  cityName: string;
+  coordinates: Coordinates;
+}
+
+export type SetPassportLocationResult =
+  | { success: true; location: PassportLocation }
+  | { success: false; error: string };
+
 const EARTH_RADIUS_KM = 6371;
 export const DEFAULT_PRECISION_KM = 5;
+export const MAX_CITY_NAME_LENGTH = 80;
 const KM_PER_DEGREE_LAT = 111;
 
 function toRadians(degrees: number): number {
@@ -46,9 +56,22 @@ export function approximateLocation(exact: Coordinates, precisionKm: number = DE
 /**
  * In-memory store of exact locations, keyed by author. Exact coordinates
  * never leave this module — every read goes through approximateLocation().
+ *
+ * Tinder's real Passport (#102) lets a user manually set their discovery
+ * location to a different city, overriding their real GPS position until
+ * they turn it off — distinct from #84's TravelModeInfo, which is only a
+ * cosmetic "I'm temporarily somewhere else" profile badge and never
+ * changes what location the app actually treats the user as being at.
+ * `getEffectiveLocation()` is that real override: it returns the active
+ * Passport location when set, falling back to the real GPS location
+ * otherwise — the one method the rest of the app (discovery, search
+ * radius) should read instead of `getApproximateLocation()` directly, so
+ * Passport mode actually takes effect rather than being a label with no
+ * behavior behind it.
  */
 export class LocationStore {
   private exactByAuthor = new Map<string, Coordinates>();
+  private passportByAuthor = new Map<string, PassportLocation>();
 
   setLocation(author: string, exact: Coordinates): void {
     this.exactByAuthor.set(author, exact);
@@ -62,5 +85,48 @@ export class LocationStore {
 
   hasLocation(author: string): boolean {
     return this.exactByAuthor.has(author);
+  }
+
+  setPassportLocation(author: unknown, cityName: unknown, coordinates: unknown): SetPassportLocationResult {
+    const authorName = typeof author === "string" ? author.trim() : "";
+    if (!authorName) {
+      return { success: false, error: "author is required" };
+    }
+
+    const cityNameValue = typeof cityName === "string" ? cityName.trim() : "";
+    if (!cityNameValue) {
+      return { success: false, error: "cityName is required" };
+    }
+    if (cityNameValue.length > MAX_CITY_NAME_LENGTH) {
+      return { success: false, error: `cityName must be ${MAX_CITY_NAME_LENGTH} characters or fewer` };
+    }
+
+    if (!isValidCoordinates(coordinates)) {
+      return { success: false, error: "lat/lng must be numbers within valid ranges" };
+    }
+
+    const location: PassportLocation = { cityName: cityNameValue, coordinates };
+    this.passportByAuthor.set(authorName, location);
+    return { success: true, location };
+  }
+
+  clearPassportLocation(author: string): void {
+    this.passportByAuthor.delete(author);
+  }
+
+  isPassportActive(author: string): boolean {
+    return this.passportByAuthor.has(author);
+  }
+
+  getPassportCityName(author: string): string | null {
+    return this.passportByAuthor.get(author)?.cityName ?? null;
+  }
+
+  getEffectiveLocation(author: string, precisionKm: number = DEFAULT_PRECISION_KM): Coordinates | null {
+    const passport = this.passportByAuthor.get(author);
+    if (passport) {
+      return approximateLocation(passport.coordinates, precisionKm);
+    }
+    return this.getApproximateLocation(author, precisionKm);
   }
 }
