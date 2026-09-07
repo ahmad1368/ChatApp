@@ -343,3 +343,27 @@ test("getCandidates() ranks a superboosted candidate ahead of a boosted one", ()
   const boostLevel = (candidate: string) => (candidate === "bob" ? 1 : candidate === "carol" ? 2 : 0);
   assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, boostLevel)), ["carol", "bob"]);
 });
+
+test("hasLiked() is false before any swipe", () => {
+  const store = new SwipeStore();
+  assert.equal(store.hasLiked("alice", "bob"), false);
+});
+
+test("hasLiked() is true after a like", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "like");
+  assert.equal(store.hasLiked("alice", "bob"), true);
+  assert.equal(store.hasLiked("bob", "alice"), false);
+});
+
+test("hasLiked() is true after a superlike", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "superlike");
+  assert.equal(store.hasLiked("alice", "bob"), true);
+});
+
+test("hasLiked() is false after a pass", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "pass");
+  assert.equal(store.hasLiked("alice", "bob"), false);
+});
