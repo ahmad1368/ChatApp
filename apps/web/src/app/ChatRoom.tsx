@@ -25,6 +25,7 @@ import LifestyleInfoEditor from "./LifestyleInfoEditor";
 import FamilyPlansInfoEditor from "./FamilyPlansInfoEditor";
 import ZodiacInfoEditor from "./ZodiacInfoEditor";
 import LanguagesInfoEditor from "./LanguagesInfoEditor";
+import BeliefsInfoEditor from "./BeliefsInfoEditor";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -1104,6 +1105,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       <FamilyPlansInfoEditor author={author} />
       <ZodiacInfoEditor author={author} />
       <LanguagesInfoEditor author={author} />
+      <BeliefsInfoEditor author={author} />
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
         <ReportDialog
