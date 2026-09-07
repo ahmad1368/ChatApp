@@ -32,6 +32,7 @@ import SpotifyConnect from "./SpotifyConnect";
 import InstagramConnect from "./InstagramConnect";
 import InterestsInfoEditor from "./InterestsInfoEditor";
 import ProfileVisibilityEditor from "./ProfileVisibilityEditor";
+import ProfilePreview from "./ProfilePreview";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -1118,6 +1119,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       <InstagramConnect author={author} />
       <InterestsInfoEditor author={author} />
       <ProfileVisibilityEditor author={author} />
+      <ProfilePreview author={author} />
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
         <ReportDialog

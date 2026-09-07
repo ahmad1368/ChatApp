@@ -4050,3 +4050,42 @@ test("PUT /api/profile-visibility/:author sets the flags, then GET returns them"
     server.close();
   }
 });
+
+test("GET /api/profile-preview/:author returns an empty preview when nothing is set", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-preview/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { preview: {} });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/profile-preview/:author combines visible fields and omits hidden ones", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/bio/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "Loves hiking" }),
+    });
+    await fetch(`${baseUrl}/api/job-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobTitle: "Engineer", company: "Acme", hideCompany: true }),
+    });
+    await fetch(`${baseUrl}/api/height-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heightCm: 170, hideHeight: false }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/profile-preview/alice`);
+    assert.deepEqual(await res.json(), {
+      preview: { bio: "Loves hiking", jobTitle: "Engineer", heightCm: 170 },
+    });
+  } finally {
+    server.close();
+  }
+});
