@@ -3000,3 +3000,60 @@ test("DELETE /api/voice-intro/:author removes the clip", async () => {
     server.close();
   }
 });
+
+test("GET /api/bio/:author returns an empty bio before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/bio/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { bio: "" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/bio/:author sets the bio, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/bio/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "Loves hiking and coffee" }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { bio: "Loves hiking and coffee" });
+
+    const getRes = await fetch(`${baseUrl}/api/bio/alice`);
+    assert.deepEqual(await getRes.json(), { bio: "Loves hiking and coffee" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/bio/:author rejects a bio over the character limit", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/bio/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "a".repeat(281) }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/bio/:author rejects a bio containing a phone number", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/bio/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "text me at 555-123-4567" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
