@@ -1,5 +1,7 @@
-export const SWIPE_DIRECTIONS = ["like", "pass"] as const;
+export const SWIPE_DIRECTIONS = ["like", "pass", "superlike"] as const;
 export type SwipeDirection = (typeof SWIPE_DIRECTIONS)[number];
+
+export const DAILY_SUPER_LIKE_LIMIT = 1;
 
 export type RecordSwipeResult = { success: true; matched: boolean } | { success: false; error: string };
 export type JoinDiscoveryResult = { success: true } | { success: false; error: string };
@@ -7,6 +9,16 @@ export type UndoLastSwipeResult = { success: true; swiped: string } | { success:
 
 function isSwipeDirection(value: unknown): value is SwipeDirection {
   return typeof value === "string" && (SWIPE_DIRECTIONS as readonly string[]).includes(value);
+}
+
+// A "like" the match check should count, whether it's an ordinary like or a
+// Super Like — both create a match the moment the other side likes back.
+function isLikeOrSuperLike(direction: SwipeDirection | undefined): boolean {
+  return direction === "like" || direction === "superlike";
+}
+
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 /**
@@ -34,12 +46,23 @@ function isSwipeDirection(value: unknown): value is SwipeDirection {
  * anymore. Gated behind Tinder Gold there; this app has no
  * premium/paywall system, so it's free here, same as every other feature
  * in this backlog that's a paid tier upstream.
+ *
+ * A "superlike" direction (#93) is Tinder's real Super Like: it counts as
+ * a like for match purposes (mutual like-or-superlike from both sides
+ * matches, same as two ordinary likes), and candidates who superliked this
+ * author but haven't been swiped back yet are surfaced first in
+ * `getCandidates` — the actual "special attention" the feature name
+ * promises, not just a cosmetic swipe-up gesture. Rate-limited to
+ * DAILY_SUPER_LIKE_LIMIT per author per UTC day: real Tinder rate-limits
+ * this too (1/day free, more on paid tiers we don't model), and an
+ * unlimited "make yourself stand out" signal would just be spam.
  */
 export class SwipeStore {
   private candidates = new Set<string>();
   private swipesBySwiper = new Map<string, Map<string, SwipeDirection>>();
   private matchesByAuthor = new Map<string, Set<string>>();
   private lastSwipeBySwiper = new Map<string, string>();
+  private superLikesUsedToday = new Map<string, { date: string; count: number }>();
 
   joinDiscovery(author: unknown): JoinDiscoveryResult {
     const authorName = typeof author === "string" ? author.trim() : "";
@@ -56,15 +79,20 @@ export class SwipeStore {
 
   getCandidates(author: string, isBlockedEitherWay: (a: string, b: string) => boolean, limit = 10): string[] {
     const swiped = this.swipesBySwiper.get(author);
-    const result: string[] = [];
+    const eligible: string[] = [];
     for (const candidate of this.candidates) {
       if (candidate === author) continue;
       if (swiped?.has(candidate)) continue;
       if (isBlockedEitherWay(author, candidate)) continue;
-      result.push(candidate);
-      if (result.length >= limit) break;
+      eligible.push(candidate);
     }
-    return result;
+
+    // Surface anyone who's already superliked this author first — the
+    // "special attention" a Super Like (#93) is actually for.
+    const superlikedBy = (candidate: string) => this.swipesBySwiper.get(candidate)?.get(author) === "superlike";
+    eligible.sort((a, b) => Number(superlikedBy(b)) - Number(superlikedBy(a)));
+
+    return eligible.slice(0, limit);
   }
 
   recordSwipe(swiper: unknown, swiped: unknown, direction: unknown): RecordSwipeResult {
@@ -84,12 +112,23 @@ export class SwipeStore {
     if (swiperMap.has(swipedName)) {
       return { success: false, error: "Already swiped on this profile" };
     }
+
+    if (direction === "superlike") {
+      const usage = this.superLikesUsedToday.get(swiperName);
+      const today = todayKey();
+      const usedToday = usage?.date === today ? usage.count : 0;
+      if (usedToday >= DAILY_SUPER_LIKE_LIMIT) {
+        return { success: false, error: "You've used all your Super Likes for today" };
+      }
+      this.superLikesUsedToday.set(swiperName, { date: today, count: usedToday + 1 });
+    }
+
     swiperMap.set(swipedName, direction);
     this.swipesBySwiper.set(swiperName, swiperMap);
     this.lastSwipeBySwiper.set(swiperName, swipedName);
 
     let matched = false;
-    if (direction === "like" && this.swipesBySwiper.get(swipedName)?.get(swiperName) === "like") {
+    if (isLikeOrSuperLike(direction) && isLikeOrSuperLike(this.swipesBySwiper.get(swipedName)?.get(swiperName))) {
       matched = true;
       this.recordMatch(swiperName, swipedName);
     }
@@ -108,9 +147,20 @@ export class SwipeStore {
       return { success: false, error: "Nothing to undo" };
     }
 
+    const undoneDirection = this.swipesBySwiper.get(authorName)?.get(swiped);
     this.swipesBySwiper.get(authorName)?.delete(swiped);
     this.lastSwipeBySwiper.delete(authorName);
     this.revokeMatch(authorName, swiped);
+
+    // Refund the daily Super Like if that's what's being undone, so a
+    // rewind doesn't cost the user their one-per-day allowance.
+    if (undoneDirection === "superlike") {
+      const usage = this.superLikesUsedToday.get(authorName);
+      const today = todayKey();
+      if (usage?.date === today && usage.count > 0) {
+        this.superLikesUsedToday.set(authorName, { date: today, count: usage.count - 1 });
+      }
+    }
 
     return { success: true, swiped };
   }
@@ -132,5 +182,11 @@ export class SwipeStore {
 
   getMatches(author: string): string[] {
     return [...(this.matchesByAuthor.get(author) ?? new Set<string>())];
+  }
+
+  getSuperLikesRemainingToday(author: string): number {
+    const usage = this.superLikesUsedToday.get(author);
+    const usedToday = usage?.date === todayKey() ? usage.count : 0;
+    return Math.max(0, DAILY_SUPER_LIKE_LIMIT - usedToday);
   }
 }

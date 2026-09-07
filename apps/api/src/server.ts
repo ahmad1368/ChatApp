@@ -1072,6 +1072,12 @@ export function createApp(deps?: {
     res.json({ swiped: result.swiped });
   });
 
+  // Tinder's Super Like (#93): shows special attention by counting toward
+  // a match same as an ordinary like, but rate-limited per day.
+  app.get("/api/super-likes-remaining/:author", (req, res) => {
+    res.json({ remaining: swipeStore.getSuperLikesRemainingToday(req.params.author) });
+  });
+
   // "Share My Date": its own high-priority, dependency-free safety path,
   // same as Report/Block. Each trusted contact gets a distinct share code,
   // and the sharer can push a live status update or revoke access. This is

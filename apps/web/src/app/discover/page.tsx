@@ -11,8 +11,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
  * draggable gesture card: this app has no gesture-physics library
  * (react-native-reanimated/Framer Motion), and adding one is a bigger,
  * separate dependency decision than this issue's actual scope (the
- * decision engine in swipes.ts). Left and right arrow keys work as a
- * lightweight swipe stand-in.
+ * decision engine in swipes.ts). Left/right/down arrow keys work as a
+ * lightweight swipe stand-in (down = Super Like, #93), up rewinds (#92).
  */
 export default function DiscoverPage() {
   const [author] = useState(() => getOrCreateGuestIdentity());
@@ -21,11 +21,19 @@ export default function DiscoverPage() {
   const [lastSwiped, setLastSwiped] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [superLikesRemaining, setSuperLikesRemaining] = useState(0);
 
   const loadCandidates = () => {
     fetch(`${API_URL}/api/swipe-candidates/${encodeURIComponent(author)}`)
       .then((res) => res.json())
       .then((body) => setCandidates(body.candidates ?? []))
+      .catch(() => {});
+  };
+
+  const loadSuperLikesRemaining = () => {
+    fetch(`${API_URL}/api/super-likes-remaining/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setSuperLikesRemaining(body.remaining ?? 0))
       .catch(() => {});
   };
 
@@ -35,10 +43,11 @@ export default function DiscoverPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ author }),
     }).then(loadCandidates);
+    loadSuperLikesRemaining();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [author]);
 
-  const swipe = async (direction: "like" | "pass") => {
+  const swipe = async (direction: "like" | "pass" | "superlike") => {
     const candidate = candidates[0];
     if (!candidate || busy) return;
     setBusy(true);
@@ -60,6 +69,9 @@ export default function DiscoverPage() {
       }
       setLastSwiped(candidate);
       setCandidates((prev) => prev.slice(1));
+      if (direction === "superlike") {
+        loadSuperLikesRemaining();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to swipe");
     } finally {
@@ -86,6 +98,7 @@ export default function DiscoverPage() {
       setCandidates((prev) => [body.swiped, ...prev]);
       setLastSwiped(null);
       setMatchNotice(null);
+      loadSuperLikesRemaining();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to undo");
     } finally {
@@ -97,6 +110,7 @@ export default function DiscoverPage() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") swipe("like");
       if (e.key === "ArrowLeft") swipe("pass");
+      if (e.key === "ArrowDown") swipe("superlike");
       if (e.key === "ArrowUp") undo();
     };
     window.addEventListener("keydown", onKeyDown);
@@ -129,10 +143,21 @@ export default function DiscoverPage() {
             <button onClick={() => swipe("pass")} disabled={busy} style={{ fontSize: 24 }}>
               ✕
             </button>
+            <button
+              onClick={() => swipe("superlike")}
+              disabled={busy || superLikesRemaining <= 0}
+              style={{ fontSize: 24 }}
+              title={superLikesRemaining > 0 ? "Super Like" : "No Super Likes left today"}
+            >
+              ⭐
+            </button>
             <button onClick={() => swipe("like")} disabled={busy} style={{ fontSize: 24 }}>
               ♥
             </button>
           </div>
+          <p style={{ color: "var(--color-muted)", fontSize: 12, marginTop: 8 }}>
+            {superLikesRemaining} Super Like{superLikesRemaining === 1 ? "" : "s"} left today
+          </p>
         </div>
       ) : (
         <p style={{ color: "var(--color-muted)", marginTop: 16 }}>No more profiles right now — check back later.</p>
