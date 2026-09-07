@@ -48,6 +48,7 @@ import { FamilyPlansInfoStore } from "./familyPlansInfo";
 import { ZodiacInfoStore } from "./zodiacInfo";
 import { LanguagesInfoStore, LANGUAGE_CATALOG } from "./languagesInfo";
 import { BeliefsInfoStore } from "./beliefsInfo";
+import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -98,6 +99,7 @@ export function createApp(deps?: {
   zodiacInfoStore: ZodiacInfoStore;
   languagesInfoStore: LanguagesInfoStore;
   beliefsInfoStore: BeliefsInfoStore;
+  petsInfoStore: PetsInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -153,6 +155,7 @@ export function createApp(deps?: {
   const zodiacInfoStore = new ZodiacInfoStore();
   const languagesInfoStore = new LanguagesInfoStore();
   const beliefsInfoStore = new BeliefsInfoStore();
+  const petsInfoStore = new PetsInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -630,6 +633,25 @@ export function createApp(deps?: {
 
   app.get("/api/beliefs-info/:author", (req, res) => {
     res.json({ beliefsInfo: beliefsInfoStore.get(req.params.author) });
+  });
+
+  // Editable-anytime pet status (#75), same one-value-per-author,
+  // replace-on-update shape as this app's other standalone profile fields.
+  app.get("/api/pets-info/catalog", (_req, res) => {
+    res.json({ pets: PET_CATALOG });
+  });
+
+  app.put("/api/pets-info/:author", (req, res) => {
+    const result = petsInfoStore.update(req.params.author, req.body?.pets, req.body?.hidePets);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ petsInfo: result.petsInfo });
+  });
+
+  app.get("/api/pets-info/:author", (req, res) => {
+    res.json({ petsInfo: petsInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1428,6 +1450,7 @@ export function createApp(deps?: {
     zodiacInfoStore,
     languagesInfoStore,
     beliefsInfoStore,
+    petsInfoStore,
   };
 }
 

@@ -3626,3 +3626,74 @@ test("PUT /api/beliefs-info/:author rejects an invalid political view option", a
     server.close();
   }
 });
+
+test("GET /api/pets-info/catalog returns the fixed pet catalog", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/pets-info/catalog`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.pets) && body.pets.length > 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/pets-info/:author returns an empty list before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/pets-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { petsInfo: { pets: [], hidePets: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/pets-info/:author sets pets, then GET returns them", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/pets-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pets: ["dog", "cat"], hidePets: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { petsInfo: { pets: ["dog", "cat"], hidePets: true } });
+
+    const getRes = await fetch(`${baseUrl}/api/pets-info/alice`);
+    assert.deepEqual(await getRes.json(), { petsInfo: { pets: ["dog", "cat"], hidePets: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/pets-info/:author rejects an unknown pet option", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/pets-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pets: ["dragon"], hidePets: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/pets-info/:author rejects more than the max number of pet options", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const catalogRes = await fetch(`${baseUrl}/api/pets-info/catalog`);
+    const { pets } = await catalogRes.json();
+    const res = await fetch(`${baseUrl}/api/pets-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pets: pets.slice(0, 4), hidePets: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
