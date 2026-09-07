@@ -60,6 +60,7 @@ import { SocialLinksInfoStore, SOCIAL_PLATFORMS } from "./socialLinksInfo";
 import { TravelModeInfoStore } from "./travelModeInfo";
 import { ProfileColorThemeStore, PROFILE_COLOR_THEMES } from "./profileColorTheme";
 import { buildProfilePreview } from "./profilePreview";
+import { computeProfileCompletion } from "./profileCompletion";
 import { optimizePhoto } from "./photoOptimization";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
@@ -925,6 +926,31 @@ export function createApp(deps?: {
 
   app.get("/api/profile-color-theme/:author", (req, res) => {
     res.json({ theme: profileColorThemeStore.get(req.params.author) });
+  });
+
+  // "Measure profile completion percentage" (#86) — Hinge/LinkedIn's real
+  // "profile strength" nudge. Reuses the same per-field getters as #81's
+  // profile-preview, but asks whether a section was filled in at all, not
+  // whether it's currently visible — hide flags (#67-#85) don't matter here.
+  app.get("/api/profile-completion/:author", (req, res) => {
+    const author = req.params.author;
+    const completion = computeProfileCompletion({
+      hasPhoto: photoAlbumStore.listPhotos(author).length > 0,
+      bio: bioStore.get(author),
+      jobInfo: jobInfoStore.get(author),
+      educationInfo: educationInfoStore.get(author),
+      heightInfo: heightInfoStore.get(author),
+      lifestyleInfo: lifestyleInfoStore.get(author),
+      familyPlansInfo: familyPlansInfoStore.get(author),
+      zodiacInfo: zodiacInfoStore.get(author),
+      languagesInfo: languagesInfoStore.get(author),
+      beliefsInfo: beliefsInfoStore.get(author),
+      petsInfo: petsInfoStore.get(author),
+      personalityInfo: personalityInfoStore.get(author),
+      interestsInfo: interestsInfoStore.get(author),
+      promptAnswerCount: profilePromptsStore.getAnswers(author).length,
+    });
+    res.json({ completion });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,

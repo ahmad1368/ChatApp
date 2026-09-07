@@ -36,6 +36,7 @@ import ProfilePreview from "./ProfilePreview";
 import SocialLinksEditor from "./SocialLinksEditor";
 import TravelModeEditor from "./TravelModeEditor";
 import ProfileColorThemeEditor from "./ProfileColorThemeEditor";
+import ProfileCompletion from "./ProfileCompletion";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -1125,6 +1126,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       <SocialLinksEditor author={author} />
       <TravelModeEditor author={author} />
       <ProfileColorThemeEditor author={author} />
+      <ProfileCompletion author={author} />
       <ProfilePreview author={author} />
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
