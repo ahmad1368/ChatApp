@@ -4746,3 +4746,54 @@ test("GET /api/swipe-candidates/:author includes a real interest-compatibility s
     server.close();
   }
 });
+
+test("GET /api/smart-score/:author returns the default rating and zero activity before any swipes", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/smart-score/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { score: { desirabilityRating: 1500, activityCount: 0 } });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes updates the swiped author's smart score and the swiper's activity count", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+
+    const bobScoreRes = await fetch(`${baseUrl}/api/smart-score/bob`);
+    const bobScore = (await bobScoreRes.json()).score;
+    assert.ok(bobScore.desirabilityRating > 1500);
+    assert.equal(bobScore.activityCount, 0);
+
+    const aliceScoreRes = await fetch(`${baseUrl}/api/smart-score/alice`);
+    const aliceScore = (await aliceScoreRes.json()).score;
+    assert.equal(aliceScore.desirabilityRating, 1500);
+    assert.equal(aliceScore.activityCount, 1);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes with direction pass lowers the swiped author's smart score", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "pass" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/smart-score/bob`);
+    const score = (await res.json()).score;
+    assert.ok(score.desirabilityRating < 1500);
+  } finally {
+    server.close();
+  }
+});

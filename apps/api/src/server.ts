@@ -63,6 +63,7 @@ import { AchievementsInfoStore } from "./achievementsInfo";
 import { DisplayNameModeStore, DISPLAY_NAME_MODES } from "./displayNameMode";
 import { StylizedAvatarStore, AVATAR_STYLES } from "./stylizedAvatar";
 import { SwipeStore } from "./swipes";
+import { SmartScoreStore } from "./smartScore";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -132,6 +133,7 @@ export function createApp(deps?: {
   displayNameModeStore: DisplayNameModeStore;
   stylizedAvatarStore: StylizedAvatarStore;
   swipeStore: SwipeStore;
+  smartScoreStore: SmartScoreStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -200,6 +202,7 @@ export function createApp(deps?: {
   const displayNameModeStore = new DisplayNameModeStore();
   const stylizedAvatarStore = new StylizedAvatarStore();
   const swipeStore = new SwipeStore();
+  const smartScoreStore = new SmartScoreStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -1059,6 +1062,13 @@ export function createApp(deps?: {
       res.status(400).json({ error: result.error });
       return;
     }
+    // Tinder's real "Elo Score"/"Smart Score" (#95): every swipe outcome
+    // feeds the swiped author's desirability rating and the swiper's own
+    // activity count — see smartScore.ts.
+    const liked = req.body?.direction === "like" || req.body?.direction === "superlike";
+    const swiperName = typeof req.body?.swiper === "string" ? req.body.swiper.trim() : "";
+    const swipedName = typeof req.body?.swiped === "string" ? req.body.swiped.trim() : "";
+    smartScoreStore.recordSwipeOutcome(swiperName, swipedName, liked);
     res.status(201).json({ matched: result.matched });
   });
 
@@ -1082,6 +1092,13 @@ export function createApp(deps?: {
   // a match same as an ordinary like, but rate-limited per day.
   app.get("/api/super-likes-remaining/:author", (req, res) => {
     res.json({ remaining: swipeStore.getSuperLikesRemainingToday(req.params.author) });
+  });
+
+  // Tinder's "Elo Score"/"Smart Score" (#95): a desirability rating built
+  // from swipe outcomes, plus a separate activity count — see
+  // smartScore.ts for why they're not blended into one number.
+  app.get("/api/smart-score/:author", (req, res) => {
+    res.json({ score: smartScoreStore.getScore(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1893,6 +1910,7 @@ export function createApp(deps?: {
     displayNameModeStore,
     stylizedAvatarStore,
     swipeStore,
+    smartScoreStore,
   };
 }
 
