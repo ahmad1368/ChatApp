@@ -56,6 +56,7 @@ import { InstagramService } from "./instagramAuth";
 import { InstagramInfoStore } from "./instagramInfo";
 import { InterestsInfoStore, INTEREST_CATALOG } from "./interestsInfo";
 import { ProfileVisibilityStore } from "./profileVisibility";
+import { SocialLinksInfoStore, SOCIAL_PLATFORMS } from "./socialLinksInfo";
 import { buildProfilePreview } from "./profilePreview";
 import { optimizePhoto } from "./photoOptimization";
 
@@ -116,6 +117,7 @@ export function createApp(deps?: {
   instagramInfoStore: InstagramInfoStore;
   interestsInfoStore: InterestsInfoStore;
   profileVisibilityStore: ProfileVisibilityStore;
+  socialLinksInfoStore: SocialLinksInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -177,6 +179,7 @@ export function createApp(deps?: {
   const instagramInfoStore = new InstagramInfoStore();
   const interestsInfoStore = new InterestsInfoStore();
   const profileVisibilityStore = new ProfileVisibilityStore();
+  const socialLinksInfoStore = new SocialLinksInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -859,6 +862,26 @@ export function createApp(deps?: {
       interestsInfo: interestsInfoStore.get(author),
     });
     res.json({ preview });
+  });
+
+  // Editable-anytime social media links (#83), same one-value-per-author,
+  // replace-on-update shape as this app's other standalone profile fields.
+  // Not yet folded into #81's profile-preview aggregator above.
+  app.get("/api/social-links-info/platforms", (_req, res) => {
+    res.json({ platforms: SOCIAL_PLATFORMS });
+  });
+
+  app.put("/api/social-links-info/:author", (req, res) => {
+    const result = socialLinksInfoStore.update(req.params.author, req.body?.links, req.body?.hideSocialLinks);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ socialLinksInfo: result.socialLinksInfo });
+  });
+
+  app.get("/api/social-links-info/:author", (req, res) => {
+    res.json({ socialLinksInfo: socialLinksInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1663,6 +1686,7 @@ export function createApp(deps?: {
     instagramInfoStore,
     interestsInfoStore,
     profileVisibilityStore,
+    socialLinksInfoStore,
   };
 }
 

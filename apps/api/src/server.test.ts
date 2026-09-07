@@ -4107,3 +4107,67 @@ test("POST /api/photos re-encodes an uploaded photo as JPEG (smart optimization)
     server.close();
   }
 });
+
+test("GET /api/social-links-info/platforms returns the fixed platform list", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/social-links-info/platforms`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.platforms) && body.platforms.length > 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/social-links-info/:author returns empty links before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/social-links-info/alice`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.socialLinksInfo.links.twitter, "");
+    assert.equal(body.socialLinksInfo.hideSocialLinks, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/social-links-info/:author sets links, then GET returns them", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/social-links-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        links: { twitter: "https://twitter.com/alice", website: "https://alice.dev" },
+        hideSocialLinks: true,
+      }),
+    });
+    assert.equal(putRes.status, 200);
+    const putBody = await putRes.json();
+    assert.equal(putBody.socialLinksInfo.links.twitter, "https://twitter.com/alice");
+    assert.equal(putBody.socialLinksInfo.links.website, "https://alice.dev");
+    assert.equal(putBody.socialLinksInfo.hideSocialLinks, true);
+
+    const getRes = await fetch(`${baseUrl}/api/social-links-info/alice`);
+    const getBody = await getRes.json();
+    assert.equal(getBody.socialLinksInfo.links.twitter, "https://twitter.com/alice");
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/social-links-info/:author rejects a non-https URL", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/social-links-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ links: { website: "http://example.com" }, hideSocialLinks: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
