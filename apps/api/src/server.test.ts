@@ -4483,3 +4483,107 @@ test("PUT /api/stylized-avatar/:author rejects activating with no style chosen",
     server.close();
   }
 });
+
+test("POST /api/discovery/join rejects a missing author", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author returns other joined authors, excluding self and blocked", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+    await fetch(`${baseUrl}/api/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockerAuthor: "alice", blockedAuthor: "bob" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.candidates, ["carol"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes records a swipe and reports no match for a one-sided like", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(await res.json(), { matched: false });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes reports a match on mutual likes, and GET /api/matches reflects it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    const res = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(await res.json(), { matched: true });
+
+    const matchesRes = await fetch(`${baseUrl}/api/matches/alice`);
+    assert.deepEqual(await matchesRes.json(), { matches: ["bob"] });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes rejects swiping on the same profile twice", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "pass" }),
+    });
+    const res = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
