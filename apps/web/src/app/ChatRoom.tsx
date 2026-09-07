@@ -22,6 +22,7 @@ import JobInfoEditor from "./JobInfoEditor";
 import EducationInfoEditor from "./EducationInfoEditor";
 import HeightInfoEditor from "./HeightInfoEditor";
 import LifestyleInfoEditor from "./LifestyleInfoEditor";
+import FamilyPlansInfoEditor from "./FamilyPlansInfoEditor";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -1098,6 +1099,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       <EducationInfoEditor author={author} />
       <HeightInfoEditor author={author} />
       <LifestyleInfoEditor author={author} />
+      <FamilyPlansInfoEditor author={author} />
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
         <ReportDialog
