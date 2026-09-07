@@ -3199,3 +3199,60 @@ test("PUT /api/job-info/:author rejects a company containing a phone number", as
     server.close();
   }
 });
+
+test("GET /api/education-info/:author returns empty fields before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/education-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { educationInfo: { school: "", hideSchool: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/education-info/:author sets education info, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/education-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ school: "State University", hideSchool: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { educationInfo: { school: "State University", hideSchool: true } });
+
+    const getRes = await fetch(`${baseUrl}/api/education-info/alice`);
+    assert.deepEqual(await getRes.json(), { educationInfo: { school: "State University", hideSchool: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/education-info/:author rejects a school over the character limit", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/education-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ school: "a".repeat(101), hideSchool: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/education-info/:author rejects a school containing a phone number", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/education-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ school: "call 555-123-4567", hideSchool: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
