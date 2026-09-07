@@ -4656,3 +4656,45 @@ test("POST /api/swipes/undo revokes a match that swipe had just created", async 
     server.close();
   }
 });
+
+test("GET /api/super-likes-remaining/:author starts at the daily limit", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/super-likes-remaining/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { remaining: 1 });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes with direction superlike counts toward a match and decrements the daily allowance", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const swipeRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "superlike" }),
+    });
+    assert.equal(swipeRes.status, 201);
+
+    const remainingRes = await fetch(`${baseUrl}/api/super-likes-remaining/alice`);
+    assert.deepEqual(await remainingRes.json(), { remaining: 0 });
+
+    const secondSuperlikeRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "carol", direction: "superlike" }),
+    });
+    assert.equal(secondSuperlikeRes.status, 400);
+
+    const matchRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+    assert.deepEqual(await matchRes.json(), { matched: true });
+  } finally {
+    server.close();
+  }
+});

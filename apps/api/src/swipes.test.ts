@@ -62,7 +62,7 @@ test("recordSwipe() rejects swiping on yourself", () => {
 
 test("recordSwipe() rejects an invalid direction", () => {
   const store = new SwipeStore();
-  const result = store.recordSwipe("alice", "bob", "superlike");
+  const result = store.recordSwipe("alice", "bob", "superduperlike");
   assert.equal(result.success, false);
 });
 
@@ -168,4 +168,75 @@ test("undoLastSwipe() only undoes the swiper's own last swipe, not the other sid
   // Bob's own swipe on alice is untouched.
   const result = store.recordSwipe("bob", "alice", "pass");
   assert.equal(result.success, false);
+});
+
+test("recordSwipe() accepts a superlike direction", () => {
+  const store = new SwipeStore();
+  const result = store.recordSwipe("alice", "bob", "superlike");
+  assert.equal(result.success, true);
+});
+
+test("recordSwipe() rejects a second superlike beyond the daily limit", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "superlike");
+  const result = store.recordSwipe("alice", "carol", "superlike");
+  assert.equal(result.success, false);
+});
+
+test("recordSwipe() still allows an ordinary like after using today's superlike", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "superlike");
+  const result = store.recordSwipe("alice", "carol", "like");
+  assert.equal(result.success, true);
+});
+
+test("recordSwipe() matches a superlike against a mutual ordinary like", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "superlike");
+  const result = store.recordSwipe("bob", "alice", "like");
+  assert.equal(result.success, true);
+  assert.equal(result.success && result.matched, true);
+});
+
+test("recordSwipe() matches mutual superlikes", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "superlike");
+  const result = store.recordSwipe("bob", "alice", "superlike");
+  assert.equal(result.success, true);
+  assert.equal(result.success && result.matched, true);
+});
+
+test("getSuperLikesRemainingToday() starts at the daily limit and decreases after use", () => {
+  const store = new SwipeStore();
+  assert.equal(store.getSuperLikesRemainingToday("alice"), 1);
+  store.recordSwipe("alice", "bob", "superlike");
+  assert.equal(store.getSuperLikesRemainingToday("alice"), 0);
+});
+
+test("undoLastSwipe() refunds a superlike so it can be used again", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "superlike");
+  assert.equal(store.getSuperLikesRemainingToday("alice"), 0);
+  store.undoLastSwipe("alice");
+  assert.equal(store.getSuperLikesRemainingToday("alice"), 1);
+
+  const result = store.recordSwipe("alice", "carol", "superlike");
+  assert.equal(result.success, true);
+});
+
+test("undoLastSwipe() does not refund anything for a non-superlike undo", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "superlike");
+  store.recordSwipe("alice", "carol", "pass");
+  store.undoLastSwipe("alice");
+  assert.equal(store.getSuperLikesRemainingToday("alice"), 0);
+});
+
+test("getCandidates() surfaces authors who superliked this author first", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.joinDiscovery("carol");
+  store.recordSwipe("carol", "alice", "superlike");
+  assert.deepEqual(store.getCandidates("alice", NEVER_BLOCKED), ["carol", "bob"]);
 });
