@@ -4797,3 +4797,133 @@ test("POST /api/swipes with direction pass lowers the swiped author's smart scor
     server.close();
   }
 });
+
+test("GET /api/discovery-filters/:author returns empty filters before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/discovery-filters/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      filters: { minHeightCm: null, maxHeightCm: null, requireEducation: false, requiredLanguages: [] },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/discovery-filters/:author saves filters and GET returns them", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/discovery-filters/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minHeightCm: 160, maxHeightCm: 190, requireEducation: true, requiredLanguages: ["english"] }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), {
+      filters: { minHeightCm: 160, maxHeightCm: 190, requireEducation: true, requiredLanguages: ["english"] },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/discovery-filters/alice`);
+    assert.deepEqual(await getRes.json(), {
+      filters: { minHeightCm: 160, maxHeightCm: 190, requireEducation: true, requiredLanguages: ["english"] },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/discovery-filters/:author rejects an invalid language", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/discovery-filters/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minHeightCm: null, maxHeightCm: null, requireEducation: false, requiredLanguages: ["klingon"] }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author excludes candidates that fail the swiper's height filter", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/height-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heightCm: 160, hideHeight: false }),
+    });
+    await fetch(`${baseUrl}/api/height-info/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heightCm: 185, hideHeight: false }),
+    });
+
+    await fetch(`${baseUrl}/api/discovery-filters/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minHeightCm: 170, maxHeightCm: null, requireEducation: false, requiredLanguages: [] }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["carol"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author excludes candidates missing a required language", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    await fetch(`${baseUrl}/api/languages-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ languages: ["spanish"], hideLanguages: false }),
+    });
+
+    await fetch(`${baseUrl}/api/discovery-filters/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minHeightCm: null, maxHeightCm: null, requireEducation: false, requiredLanguages: ["french"] }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(body.candidates, []);
+  } finally {
+    server.close();
+  }
+});
