@@ -39,6 +39,7 @@ import { PhotoAlbumStore } from "./photoAlbums";
 import { IntroVideoStore } from "./introVideo";
 import { VoiceIntroStore } from "./voiceIntro";
 import { BioStore } from "./bio";
+import { ProfilePromptsStore, PROFILE_PROMPT_CATALOG } from "./profilePrompts";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -80,6 +81,7 @@ export function createApp(deps?: {
   introVideoStore: IntroVideoStore;
   voiceIntroStore: VoiceIntroStore;
   bioStore: BioStore;
+  profilePromptsStore: ProfilePromptsStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -126,6 +128,7 @@ export function createApp(deps?: {
   const introVideoStore = new IntroVideoStore();
   const voiceIntroStore = new VoiceIntroStore();
   const bioStore = new BioStore();
+  const profilePromptsStore = new ProfilePromptsStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -444,6 +447,26 @@ export function createApp(deps?: {
 
   app.get("/api/bio/:author", (req, res) => {
     res.json({ bio: bioStore.get(req.params.author) });
+  });
+
+  // Hinge-style ready-made profile prompts (#66): pick up to 3 from a fixed
+  // catalog and answer each — same one-set-per-author, replace-on-update
+  // shape as other standalone profile fields in this app.
+  app.get("/api/profile-prompts/catalog", (_req, res) => {
+    res.json({ prompts: PROFILE_PROMPT_CATALOG });
+  });
+
+  app.put("/api/profile-prompts/:author", (req, res) => {
+    const result = profilePromptsStore.setAnswers(req.params.author, req.body?.answers);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ answers: result.answers });
+  });
+
+  app.get("/api/profile-prompts/:author", (req, res) => {
+    res.json({ answers: profilePromptsStore.getAnswers(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1233,6 +1256,7 @@ export function createApp(deps?: {
     introVideoStore,
     voiceIntroStore,
     bioStore,
+    profilePromptsStore,
   };
 }
 

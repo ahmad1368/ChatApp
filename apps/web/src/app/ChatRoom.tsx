@@ -17,6 +17,7 @@ import { getOrCreateGuestIdentity } from "./guestIdentity";
 import IntroVideoUpload from "./IntroVideoUpload";
 import VoiceIntroRecorder from "./VoiceIntroRecorder";
 import BioEditor from "./BioEditor";
+import ProfilePromptsEditor from "./ProfilePromptsEditor";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -1088,6 +1089,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       <BioEditor author={author} />
       <IntroVideoUpload author={author} />
       <VoiceIntroRecorder author={author} />
+      <ProfilePromptsEditor author={author} />
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
         <ReportDialog

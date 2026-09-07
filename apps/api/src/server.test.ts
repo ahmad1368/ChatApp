@@ -3057,3 +3057,84 @@ test("PUT /api/bio/:author rejects a bio containing a phone number", async () =>
     server.close();
   }
 });
+
+test("GET /api/profile-prompts/catalog returns the fixed prompt catalog", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-prompts/catalog`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.prompts) && body.prompts.length > 0);
+    assert.ok(typeof body.prompts[0].id === "string" && typeof body.prompts[0].text === "string");
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/profile-prompts/:author returns an empty list before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-prompts/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { answers: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/profile-prompts/:author sets answers, then GET returns them resolved", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const catalogRes = await fetch(`${baseUrl}/api/profile-prompts/catalog`);
+    const { prompts } = await catalogRes.json();
+    const promptId = prompts[0].id;
+
+    const putRes = await fetch(`${baseUrl}/api/profile-prompts/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers: [{ promptId, answer: "Loves hiking" }] }),
+    });
+    assert.equal(putRes.status, 200);
+
+    const getRes = await fetch(`${baseUrl}/api/profile-prompts/alice`);
+    const body = await getRes.json();
+    assert.equal(body.answers.length, 1);
+    assert.equal(body.answers[0].promptId, promptId);
+    assert.equal(body.answers[0].answer, "Loves hiking");
+    assert.equal(body.answers[0].prompt, prompts[0].text);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/profile-prompts/:author rejects more than 3 selected prompts", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const catalogRes = await fetch(`${baseUrl}/api/profile-prompts/catalog`);
+    const { prompts } = await catalogRes.json();
+    const answers = prompts.slice(0, 4).map((p: { id: string }) => ({ promptId: p.id, answer: "An answer" }));
+
+    const res = await fetch(`${baseUrl}/api/profile-prompts/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/profile-prompts/:author rejects an unknown prompt id", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-prompts/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers: [{ promptId: "not-a-real-prompt", answer: "Hello" }] }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
