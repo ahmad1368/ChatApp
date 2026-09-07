@@ -34,6 +34,7 @@ import InterestsInfoEditor from "./InterestsInfoEditor";
 import ProfileVisibilityEditor from "./ProfileVisibilityEditor";
 import ProfilePreview from "./ProfilePreview";
 import SocialLinksEditor from "./SocialLinksEditor";
+import TravelModeEditor from "./TravelModeEditor";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -1121,6 +1122,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       <InterestsInfoEditor author={author} />
       <ProfileVisibilityEditor author={author} />
       <SocialLinksEditor author={author} />
+      <TravelModeEditor author={author} />
       <ProfilePreview author={author} />
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (

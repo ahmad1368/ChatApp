@@ -4171,3 +4171,46 @@ test("PUT /api/social-links-info/:author rejects a non-https URL", async () => {
     server.close();
   }
 });
+
+test("GET /api/travel-mode-info/:author returns inactive before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/travel-mode-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { travelModeInfo: { active: false, destination: "" } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/travel-mode-info/:author sets active travel mode, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/travel-mode-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: true, destination: "Tokyo, Japan" }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { travelModeInfo: { active: true, destination: "Tokyo, Japan" } });
+
+    const getRes = await fetch(`${baseUrl}/api/travel-mode-info/alice`);
+    assert.deepEqual(await getRes.json(), { travelModeInfo: { active: true, destination: "Tokyo, Japan" } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/travel-mode-info/:author rejects a destination containing a phone number", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/travel-mode-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: true, destination: "call 555-123-4567" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
