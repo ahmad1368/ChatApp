@@ -1060,6 +1060,18 @@ export function createApp(deps?: {
     res.json({ matches: swipeStore.getMatches(req.params.author) });
   });
 
+  // Tinder's "Rewind" feature (#92): undo only the single most recent
+  // swipe, re-opening that candidate and revoking the match if that swipe
+  // had just created one.
+  app.post("/api/swipes/undo", (req, res) => {
+    const result = swipeStore.undoLastSwipe(req.body?.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ swiped: result.swiped });
+  });
+
   // "Share My Date": its own high-priority, dependency-free safety path,
   // same as Report/Block. Each trusted contact gets a distinct share code,
   // and the sharer can push a live status update or revoke access. This is

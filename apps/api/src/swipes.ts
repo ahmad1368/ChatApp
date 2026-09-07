@@ -3,6 +3,7 @@ export type SwipeDirection = (typeof SWIPE_DIRECTIONS)[number];
 
 export type RecordSwipeResult = { success: true; matched: boolean } | { success: false; error: string };
 export type JoinDiscoveryResult = { success: true } | { success: false; error: string };
+export type UndoLastSwipeResult = { success: true; swiped: string } | { success: false; error: string };
 
 function isSwipeDirection(value: unknown): value is SwipeDirection {
   return typeof value === "string" && (SWIPE_DIRECTIONS as readonly string[]).includes(value);
@@ -23,11 +24,22 @@ function isSwipeDirection(value: unknown): value is SwipeDirection {
  * appear in each other's queues — the caller wires that to #16's
  * BlockStore rather than this module importing it directly, keeping this
  * store testable without the rest of the app's safety stores.
+ *
+ * `undoLastSwipe` (#92) is Tinder's real "Rewind" feature: undoes only the
+ * single most recent swipe (matching the issue's literal "undo the LAST
+ * like or dislike", not a full history you can step back through
+ * repeatedly), makes that candidate swipeable again, and revokes the match
+ * too if that swipe was the one that created it — real Tinder does the
+ * same rather than leaving a "ghost" match neither side actually confirmed
+ * anymore. Gated behind Tinder Gold there; this app has no
+ * premium/paywall system, so it's free here, same as every other feature
+ * in this backlog that's a paid tier upstream.
  */
 export class SwipeStore {
   private candidates = new Set<string>();
   private swipesBySwiper = new Map<string, Map<string, SwipeDirection>>();
   private matchesByAuthor = new Map<string, Set<string>>();
+  private lastSwipeBySwiper = new Map<string, string>();
 
   joinDiscovery(author: unknown): JoinDiscoveryResult {
     const authorName = typeof author === "string" ? author.trim() : "";
@@ -74,6 +86,7 @@ export class SwipeStore {
     }
     swiperMap.set(swipedName, direction);
     this.swipesBySwiper.set(swiperName, swiperMap);
+    this.lastSwipeBySwiper.set(swiperName, swipedName);
 
     let matched = false;
     if (direction === "like" && this.swipesBySwiper.get(swipedName)?.get(swiperName) === "like") {
@@ -84,6 +97,24 @@ export class SwipeStore {
     return { success: true, matched };
   }
 
+  undoLastSwipe(author: unknown): UndoLastSwipeResult {
+    const authorName = typeof author === "string" ? author.trim() : "";
+    if (!authorName) {
+      return { success: false, error: "author is required" };
+    }
+
+    const swiped = this.lastSwipeBySwiper.get(authorName);
+    if (!swiped) {
+      return { success: false, error: "Nothing to undo" };
+    }
+
+    this.swipesBySwiper.get(authorName)?.delete(swiped);
+    this.lastSwipeBySwiper.delete(authorName);
+    this.revokeMatch(authorName, swiped);
+
+    return { success: true, swiped };
+  }
+
   private recordMatch(a: string, b: string): void {
     const setA = this.matchesByAuthor.get(a) ?? new Set<string>();
     setA.add(b);
@@ -92,6 +123,11 @@ export class SwipeStore {
     const setB = this.matchesByAuthor.get(b) ?? new Set<string>();
     setB.add(a);
     this.matchesByAuthor.set(b, setB);
+  }
+
+  private revokeMatch(a: string, b: string): void {
+    this.matchesByAuthor.get(a)?.delete(b);
+    this.matchesByAuthor.get(b)?.delete(a);
   }
 
   getMatches(author: string): string[] {

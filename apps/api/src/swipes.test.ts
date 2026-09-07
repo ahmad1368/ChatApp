@@ -105,3 +105,67 @@ test("getMatches() returns an empty list for an author with no matches", () => {
   const store = new SwipeStore();
   assert.deepEqual(store.getMatches("alice"), []);
 });
+
+test("undoLastSwipe() rejects a missing author", () => {
+  const store = new SwipeStore();
+  const result = store.undoLastSwipe("");
+  assert.equal(result.success, false);
+});
+
+test("undoLastSwipe() rejects when there's nothing to undo", () => {
+  const store = new SwipeStore();
+  const result = store.undoLastSwipe("alice");
+  assert.equal(result.success, false);
+});
+
+test("undoLastSwipe() undoes a pass and makes the candidate swipeable again", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.recordSwipe("alice", "bob", "pass");
+  assert.deepEqual(store.getCandidates("alice", NEVER_BLOCKED), []);
+
+  const result = store.undoLastSwipe("alice");
+  assert.equal(result.success, true);
+  assert.equal(result.success && result.swiped, "bob");
+  assert.deepEqual(store.getCandidates("alice", NEVER_BLOCKED), ["bob"]);
+});
+
+test("undoLastSwipe() lets the swiper swipe on that candidate again afterward", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "pass");
+  store.undoLastSwipe("alice");
+  const result = store.recordSwipe("alice", "bob", "like");
+  assert.equal(result.success, true);
+});
+
+test("undoLastSwipe() revokes a match that swipe had just created, on both sides", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "like");
+  store.recordSwipe("bob", "alice", "like");
+  assert.deepEqual(store.getMatches("alice"), ["bob"]);
+  assert.deepEqual(store.getMatches("bob"), ["alice"]);
+
+  const result = store.undoLastSwipe("bob");
+  assert.equal(result.success, true);
+  assert.deepEqual(store.getMatches("alice"), []);
+  assert.deepEqual(store.getMatches("bob"), []);
+});
+
+test("undoLastSwipe() can only undo once in a row (not a full history)", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "pass");
+  store.undoLastSwipe("alice");
+  const result = store.undoLastSwipe("alice");
+  assert.equal(result.success, false);
+});
+
+test("undoLastSwipe() only undoes the swiper's own last swipe, not the other side's", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "like");
+  store.recordSwipe("bob", "alice", "like");
+  store.undoLastSwipe("alice");
+  // Bob's own swipe on alice is untouched.
+  const result = store.recordSwipe("bob", "alice", "pass");
+  assert.equal(result.success, false);
+});

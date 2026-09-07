@@ -4587,3 +4587,72 @@ test("POST /api/swipes rejects swiping on the same profile twice", async () => {
     server.close();
   }
 });
+
+test("POST /api/swipes/undo rejects when there's nothing to undo", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/swipes/undo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes/undo undoes the last swipe and lets it be swiped again", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "pass" }),
+    });
+
+    const undoRes = await fetch(`${baseUrl}/api/swipes/undo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(undoRes.status, 200);
+    assert.deepEqual(await undoRes.json(), { swiped: "bob" });
+
+    const reSwipeRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    assert.equal(reSwipeRes.status, 201);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes/undo revokes a match that swipe had just created", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    await fetch(`${baseUrl}/api/swipes/undo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    const matchesRes = await fetch(`${baseUrl}/api/matches/alice`);
+    assert.deepEqual(await matchesRes.json(), { matches: [] });
+  } finally {
+    server.close();
+  }
+});
