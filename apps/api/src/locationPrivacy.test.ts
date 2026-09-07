@@ -51,3 +51,70 @@ test("LocationStore round-trips an exact location into an approximate one", () =
   assert.ok(approx);
   assert.ok(haversineDistanceKm(exact, approx!) <= 5);
 });
+
+test("setPassportLocation() rejects a missing author", () => {
+  const store = new LocationStore();
+  const result = store.setPassportLocation("", "Tokyo", { lat: 35.6762, lng: 139.6503 });
+  assert.equal(result.success, false);
+});
+
+test("setPassportLocation() rejects a missing city name", () => {
+  const store = new LocationStore();
+  const result = store.setPassportLocation("alice", "", { lat: 35.6762, lng: 139.6503 });
+  assert.equal(result.success, false);
+});
+
+test("setPassportLocation() rejects invalid coordinates", () => {
+  const store = new LocationStore();
+  const result = store.setPassportLocation("alice", "Tokyo", { lat: 200, lng: 0 });
+  assert.equal(result.success, false);
+});
+
+test("isPassportActive() is false before any Passport location is set", () => {
+  const store = new LocationStore();
+  assert.equal(store.isPassportActive("alice"), false);
+  assert.equal(store.getPassportCityName("alice"), null);
+});
+
+test("setPassportLocation() activates Passport mode and getEffectiveLocation() overrides the real GPS location", () => {
+  const store = new LocationStore();
+  store.setLocation("alice", { lat: 48.8566, lng: 2.3522 }); // real GPS: Paris
+  const result = store.setPassportLocation("alice", "Tokyo", { lat: 35.6762, lng: 139.6503 });
+  assert.equal(result.success, true);
+
+  assert.equal(store.isPassportActive("alice"), true);
+  assert.equal(store.getPassportCityName("alice"), "Tokyo");
+
+  const effective = store.getEffectiveLocation("alice", 5);
+  assert.ok(effective);
+  assert.ok(haversineDistanceKm({ lat: 35.6762, lng: 139.6503 }, effective!) <= 5);
+});
+
+test("getEffectiveLocation() falls back to the real GPS location when Passport mode is inactive", () => {
+  const store = new LocationStore();
+  const exact = { lat: 48.8566, lng: 2.3522 };
+  store.setLocation("alice", exact);
+  const effective = store.getEffectiveLocation("alice", 5);
+  assert.ok(effective);
+  assert.ok(haversineDistanceKm(exact, effective!) <= 5);
+});
+
+test("clearPassportLocation() deactivates Passport mode and reverts to the real GPS location", () => {
+  const store = new LocationStore();
+  const exact = { lat: 48.8566, lng: 2.3522 };
+  store.setLocation("alice", exact);
+  store.setPassportLocation("alice", "Tokyo", { lat: 35.6762, lng: 139.6503 });
+
+  store.clearPassportLocation("alice");
+
+  assert.equal(store.isPassportActive("alice"), false);
+  const effective = store.getEffectiveLocation("alice", 5);
+  assert.ok(effective);
+  assert.ok(haversineDistanceKm(exact, effective!) <= 5);
+});
+
+test("Passport mode is independent per author", () => {
+  const store = new LocationStore();
+  store.setPassportLocation("alice", "Tokyo", { lat: 35.6762, lng: 139.6503 });
+  assert.equal(store.isPassportActive("bob"), false);
+});

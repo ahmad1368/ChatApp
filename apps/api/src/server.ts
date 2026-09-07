@@ -1496,18 +1496,59 @@ export function createApp(deps?: {
     res.json({ approximate: locations.getApproximateLocation(author) });
   });
 
+  // Tinder's real Passport (#102) means this now returns the active
+  // Passport override when one is set, not just the real GPS location —
+  // see locationPrivacy.ts for why this is the one method discovery
+  // logic should read.
   app.get("/api/users/:author/location", (req, res) => {
     const author = req.params.author?.trim();
     if (!author) {
       res.status(400).json({ error: "author is required" });
       return;
     }
-    const approximate = locations.getApproximateLocation(author);
+    const approximate = locations.getEffectiveLocation(author);
     if (!approximate) {
       res.status(404).json({ error: "no location on file for this user" });
       return;
     }
     res.json({ approximate });
+  });
+
+  // Tinder's real Passport (#102): manually set discovery location to a
+  // different city, overriding the real GPS location above until
+  // cleared — distinct from #84's TravelModeInfo, which is only a
+  // cosmetic profile badge with no effect on actual discovery location.
+  app.put("/api/users/:author/passport-location", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    const result = locations.setPassportLocation(author, req.body?.cityName, req.body?.coordinates);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ passportLocation: result.location });
+  });
+
+  app.delete("/api/users/:author/passport-location", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    locations.clearPassportLocation(author);
+    res.status(204).send();
+  });
+
+  app.get("/api/users/:author/passport-location", (req, res) => {
+    const author = req.params.author?.trim();
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    res.json({ active: locations.isPassportActive(author), cityName: locations.getPassportCityName(author) });
   });
 
   // Web Push: delivers new-message alerts even when the tab is fully closed
