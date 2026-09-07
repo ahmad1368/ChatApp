@@ -44,6 +44,7 @@ import { JobInfoStore } from "./jobInfo";
 import { EducationInfoStore } from "./educationInfo";
 import { HeightInfoStore } from "./heightInfo";
 import { LifestyleInfoStore } from "./lifestyleInfo";
+import { FamilyPlansInfoStore } from "./familyPlansInfo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -90,6 +91,7 @@ export function createApp(deps?: {
   educationInfoStore: EducationInfoStore;
   heightInfoStore: HeightInfoStore;
   lifestyleInfoStore: LifestyleInfoStore;
+  familyPlansInfoStore: FamilyPlansInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -141,6 +143,7 @@ export function createApp(deps?: {
   const educationInfoStore = new EducationInfoStore();
   const heightInfoStore = new HeightInfoStore();
   const lifestyleInfoStore = new LifestyleInfoStore();
+  const familyPlansInfoStore = new FamilyPlansInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -545,6 +548,21 @@ export function createApp(deps?: {
 
   app.get("/api/lifestyle-info/:author", (req, res) => {
     res.json({ lifestyleInfo: lifestyleInfoStore.get(req.params.author) });
+  });
+
+  // Editable-anytime family/children plans (#71), same one-value-per-author,
+  // replace-on-update shape as this app's other standalone profile fields.
+  app.put("/api/family-plans-info/:author", (req, res) => {
+    const result = familyPlansInfoStore.update(req.params.author, req.body?.familyPlans, req.body?.hideFamilyPlans);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ familyPlansInfo: result.familyPlansInfo });
+  });
+
+  app.get("/api/family-plans-info/:author", (req, res) => {
+    res.json({ familyPlansInfo: familyPlansInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1339,6 +1357,7 @@ export function createApp(deps?: {
     educationInfoStore,
     heightInfoStore,
     lifestyleInfoStore,
+    familyPlansInfoStore,
   };
 }
 

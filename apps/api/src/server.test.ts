@@ -3382,3 +3382,46 @@ test("PUT /api/lifestyle-info/:author rejects an invalid drinking option", async
     server.close();
   }
 });
+
+test("GET /api/family-plans-info/:author returns empty fields before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/family-plans-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { familyPlansInfo: { familyPlans: null, hideFamilyPlans: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/family-plans-info/:author sets the value, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/family-plans-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ familyPlans: "openToChildren", hideFamilyPlans: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { familyPlansInfo: { familyPlans: "openToChildren", hideFamilyPlans: true } });
+
+    const getRes = await fetch(`${baseUrl}/api/family-plans-info/alice`);
+    assert.deepEqual(await getRes.json(), { familyPlansInfo: { familyPlans: "openToChildren", hideFamilyPlans: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/family-plans-info/:author rejects an invalid option", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/family-plans-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ familyPlans: "maybe", hideFamilyPlans: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
