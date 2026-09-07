@@ -4805,6 +4805,7 @@ const EMPTY_DISCOVERY_FILTERS = {
   requiredLanguages: [],
   requireNonSmoking: false,
   allowedDrinking: [],
+  requireVerifiedOnly: false,
 };
 
 test("GET /api/discovery-filters/:author returns empty filters before any update", async () => {
@@ -4831,6 +4832,7 @@ test("PUT /api/discovery-filters/:author saves filters and GET returns them", as
         requiredLanguages: ["english"],
         requireNonSmoking: true,
         allowedDrinking: ["no", "sometimes"],
+        requireVerifiedOnly: true,
       }),
     });
     assert.equal(putRes.status, 200);
@@ -4841,6 +4843,7 @@ test("PUT /api/discovery-filters/:author saves filters and GET returns them", as
       requiredLanguages: ["english"],
       requireNonSmoking: true,
       allowedDrinking: ["no", "sometimes"],
+      requireVerifiedOnly: true,
     };
     assert.deepEqual(await putRes.json(), { filters: expected });
 
@@ -5078,6 +5081,61 @@ test("GET /api/swipe-candidates/:author excludes candidates outside allowedDrink
     const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
     const body = await res.json();
     assert.deepEqual(body.candidates, []);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author excludes unverified candidates when requireVerifiedOnly is set", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    // A candidate whose "author" happens to be their own real, selfie-verified
+    // userId (#35) — see discoveryFilters.ts for why requireVerifiedOnly only
+    // reflects real verification once a guest author is this account's id.
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110099");
+    const verifiedAuthor = JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString()).sub;
+    await fetch(`${baseUrl}/api/verification/selfie`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: verifiedAuthor }),
+    });
+
+    await fetch(`${baseUrl}/api/discovery-filters/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        minHeightCm: null,
+        maxHeightCm: null,
+        requireEducation: false,
+        requiredLanguages: [],
+        requireNonSmoking: false,
+        allowedDrinking: [],
+        requireVerifiedOnly: true,
+      }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      [verifiedAuthor]
+    );
   } finally {
     server.close();
   }
