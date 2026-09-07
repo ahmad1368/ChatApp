@@ -70,6 +70,7 @@ import { TopPicksStore } from "./topPicks";
 import { ProfileVisitsStore } from "./profileVisits";
 import { ProfileBoostStore } from "./profileBoost";
 import { PeakHoursStore } from "./peakHours";
+import { scanCandidateForFakeProfile } from "./fakeProfileDetector";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -1101,6 +1102,18 @@ export function createApp(deps?: {
   // — so it only reuses the block check above.
   const isExcludedCandidate = (a: string, b: string) => {
     if (isBlockedEitherWay(a, b)) {
+      return true;
+    }
+    // Bumble's real "remove spam and fake profiles from the like queue"
+    // (#107): a candidate flagged by fakeProfileDetector.ts's heuristic
+    // scan (report threshold + spam-bio pattern match) never reaches the
+    // like queue at all — see that file for why these two signals rather
+    // than an invented model.
+    const fakeProfileScan = scanCandidateForFakeProfile({
+      bio: bioStore.get(b),
+      reportCount: reportStore.countFor(b),
+    });
+    if (fakeProfileScan.flagged) {
       return true;
     }
     const filters = discoveryFiltersStore.get(a);
