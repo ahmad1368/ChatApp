@@ -4731,7 +4731,26 @@ test("GET /api/matches/:author includes each match's real interest-compatibility
   }
 });
 
-test("POST /api/swipes rejects swiping on the same profile twice", async () => {
+test("POST /api/swipes rejects re-swiping someone already liked", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    const res = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "pass" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes allows overwriting a previous pass with a new direction (#117)", async () => {
   const { server, baseUrl } = listen();
   try {
     await fetch(`${baseUrl}/api/swipes`, {
@@ -4744,7 +4763,7 @@ test("POST /api/swipes rejects swiping on the same profile twice", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
     });
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 201);
   } finally {
     server.close();
   }

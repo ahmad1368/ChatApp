@@ -89,11 +89,18 @@ test("recordSwipe() rejects an invalid direction", () => {
   assert.equal(result.success, false);
 });
 
-test("recordSwipe() rejects swiping on the same profile twice", () => {
+test("recordSwipe() rejects re-swiping someone already liked", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "like");
+  const result = store.recordSwipe("alice", "bob", "pass");
+  assert.equal(result.success, false);
+});
+
+test("recordSwipe() allows overwriting a previous pass with a new direction (#117)", () => {
   const store = new SwipeStore();
   store.recordSwipe("alice", "bob", "pass");
   const result = store.recordSwipe("alice", "bob", "like");
-  assert.equal(result.success, false);
+  assert.equal(result.success, true);
 });
 
 test("recordSwipe() with a one-sided like does not create a match", () => {
@@ -141,11 +148,11 @@ test("undoLastSwipe() rejects when there's nothing to undo", () => {
   assert.equal(result.success, false);
 });
 
-test("undoLastSwipe() undoes a pass and makes the candidate swipeable again", () => {
+test("undoLastSwipe() undoes a like and makes the candidate swipeable again", () => {
   const store = new SwipeStore();
   store.joinDiscovery("alice");
   store.joinDiscovery("bob");
-  store.recordSwipe("alice", "bob", "pass");
+  store.recordSwipe("alice", "bob", "like");
   assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), []);
 
   const result = store.undoLastSwipe("alice");
@@ -391,6 +398,61 @@ test("getCandidates() ranks a superboosted candidate ahead of a boosted one", ()
   store.joinDiscovery("carol");
   const boostLevel = (candidate: string) => (candidate === "bob" ? 1 : candidate === "carol" ? 2 : 0);
   assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, boostLevel)), ["carol", "bob"]);
+});
+
+test("getCandidates() recycles a previously-passed profile once the queue is exhausted (#117)", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.recordSwipe("alice", "bob", "pass");
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), ["bob"]);
+});
+
+test("getCandidates() does not recycle a liked candidate", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.recordSwipe("alice", "bob", "like");
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), []);
+});
+
+test("getCandidates() does not recycle a superliked candidate", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.recordSwipe("alice", "bob", "superlike");
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), []);
+});
+
+test("getCandidates() does not recycle a blocked candidate even after passing on them", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.recordSwipe("alice", "bob", "pass");
+  const alwaysBlocked = () => true;
+  assert.deepEqual(names(store.getCandidates("alice", alwaysBlocked)), []);
+});
+
+test("getCandidates() prefers never-swiped candidates over recycled passes", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.joinDiscovery("carol");
+  store.recordSwipe("alice", "bob", "pass");
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), ["carol"]);
+});
+
+test("recycling a pass lets a later like create a match if the other side already liked", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.recordSwipe("alice", "bob", "pass");
+  store.recordSwipe("bob", "alice", "like");
+
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), ["bob"]);
+  const result = store.recordSwipe("alice", "bob", "like");
+  assert.equal(result.success, true);
+  assert.equal(result.success && result.matched, true);
 });
 
 test("hasLiked() is false before any swipe", () => {
