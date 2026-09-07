@@ -40,6 +40,7 @@ import { IntroVideoStore } from "./introVideo";
 import { VoiceIntroStore } from "./voiceIntro";
 import { BioStore } from "./bio";
 import { ProfilePromptsStore, PROFILE_PROMPT_CATALOG } from "./profilePrompts";
+import { JobInfoStore } from "./jobInfo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -82,6 +83,7 @@ export function createApp(deps?: {
   voiceIntroStore: VoiceIntroStore;
   bioStore: BioStore;
   profilePromptsStore: ProfilePromptsStore;
+  jobInfoStore: JobInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -129,6 +131,7 @@ export function createApp(deps?: {
   const voiceIntroStore = new VoiceIntroStore();
   const bioStore = new BioStore();
   const profilePromptsStore = new ProfilePromptsStore();
+  const jobInfoStore = new JobInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -467,6 +470,21 @@ export function createApp(deps?: {
 
   app.get("/api/profile-prompts/:author", (req, res) => {
     res.json({ answers: profilePromptsStore.getAnswers(req.params.author) });
+  });
+
+  // Editable-anytime job title + workplace (#67), same one-value-per-author,
+  // replace-on-update shape as this app's other standalone profile fields.
+  app.put("/api/job-info/:author", (req, res) => {
+    const result = jobInfoStore.update(req.params.author, req.body?.jobTitle, req.body?.company, req.body?.hideCompany);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ jobInfo: result.jobInfo });
+  });
+
+  app.get("/api/job-info/:author", (req, res) => {
+    res.json({ jobInfo: jobInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1257,6 +1275,7 @@ export function createApp(deps?: {
     voiceIntroStore,
     bioStore,
     profilePromptsStore,
+    jobInfoStore,
   };
 }
 
