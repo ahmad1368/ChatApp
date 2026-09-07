@@ -3950,3 +3950,74 @@ test("PUT /api/instagram-info/:author updates the hide flag", async () => {
     server.close();
   }
 });
+
+test("GET /api/interests-info/catalog returns the fixed interest catalog", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/interests-info/catalog`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.interests) && body.interests.length > 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/interests-info/:author returns an empty list before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/interests-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { interestsInfo: { interests: [], hideInterests: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/interests-info/:author sets interests, then GET returns them", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/interests-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking", "yoga"], hideInterests: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { interestsInfo: { interests: ["hiking", "yoga"], hideInterests: true } });
+
+    const getRes = await fetch(`${baseUrl}/api/interests-info/alice`);
+    assert.deepEqual(await getRes.json(), { interestsInfo: { interests: ["hiking", "yoga"], hideInterests: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/interests-info/:author rejects an unknown interest", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/interests-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["timetravel"], hideInterests: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/interests-info/:author rejects more than the max number of interests", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const catalogRes = await fetch(`${baseUrl}/api/interests-info/catalog`);
+    const { interests } = await catalogRes.json();
+    const res = await fetch(`${baseUrl}/api/interests-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: interests.slice(0, 11), hideInterests: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});

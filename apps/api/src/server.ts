@@ -54,6 +54,7 @@ import { SpotifyService } from "./spotifyAuth";
 import { SpotifyInfoStore } from "./spotifyInfo";
 import { InstagramService } from "./instagramAuth";
 import { InstagramInfoStore } from "./instagramInfo";
+import { InterestsInfoStore, INTEREST_CATALOG } from "./interestsInfo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -110,6 +111,7 @@ export function createApp(deps?: {
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
+  interestsInfoStore: InterestsInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -169,6 +171,7 @@ export function createApp(deps?: {
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
+  const interestsInfoStore = new InterestsInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -774,6 +777,26 @@ export function createApp(deps?: {
 
   app.get("/api/instagram-info/:author", (req, res) => {
     res.json({ instagramInfo: instagramInfoStore.get(req.params.author) });
+  });
+
+  // Editable-anytime interests/lifestyle tags (#79), same
+  // one-value-per-author, replace-on-update shape as this app's other
+  // standalone profile fields.
+  app.get("/api/interests-info/catalog", (_req, res) => {
+    res.json({ interests: INTEREST_CATALOG });
+  });
+
+  app.put("/api/interests-info/:author", (req, res) => {
+    const result = interestsInfoStore.update(req.params.author, req.body?.interests, req.body?.hideInterests);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ interestsInfo: result.interestsInfo });
+  });
+
+  app.get("/api/interests-info/:author", (req, res) => {
+    res.json({ interestsInfo: interestsInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1576,6 +1599,7 @@ export function createApp(deps?: {
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,
+    interestsInfoStore,
   };
 }
 
