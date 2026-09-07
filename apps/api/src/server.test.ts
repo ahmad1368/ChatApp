@@ -4308,3 +4308,68 @@ test("GET /api/profile-completion/:author increases as sections are filled in", 
     server.close();
   }
 });
+
+test("GET /api/achievements-info/:author returns an empty list before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/achievements-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { achievementsInfo: { achievements: [], hideAchievements: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/achievements-info/:author sets achievements, then GET returns them", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/achievements-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        achievements: [{ title: "MBA", issuer: "State University", year: 2020 }],
+        hideAchievements: true,
+      }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), {
+      achievementsInfo: { achievements: [{ title: "MBA", issuer: "State University", year: 2020 }], hideAchievements: true },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/achievements-info/alice`);
+    assert.deepEqual(await getRes.json(), {
+      achievementsInfo: { achievements: [{ title: "MBA", issuer: "State University", year: 2020 }], hideAchievements: true },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/achievements-info/:author rejects more than the max number of achievements", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const achievements = Array.from({ length: 6 }, (_, i) => ({ title: `Award ${i}` }));
+    const res = await fetch(`${baseUrl}/api/achievements-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ achievements, hideAchievements: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/achievements-info/:author rejects a title containing a phone number", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/achievements-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ achievements: [{ title: "call 555-123-4567" }], hideAchievements: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
