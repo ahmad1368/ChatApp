@@ -1049,20 +1049,23 @@ export function createApp(deps?: {
   });
 
   app.get("/api/swipe-candidates/:author", (req, res) => {
-    // OkCupid's real advanced discovery filters (#96): a candidate who
-    // fails the swiper's own height/education/language filters is excluded
-    // the same way a blocked candidate is — see discoveryFilters.ts for why
-    // this reads raw profile data regardless of the candidate's own hide
-    // flags.
+    // OkCupid's real advanced discovery filters (#96, extended by #97 with
+    // non-smoking/lifestyle): a candidate who fails the swiper's own
+    // filters is excluded the same way a blocked candidate is — see
+    // discoveryFilters.ts for why this reads raw profile data regardless
+    // of the candidate's own hide flags.
     const isExcluded = (a: string, b: string) => {
       if (blockStore.getBlockedAuthors(a).includes(b) || blockStore.getBlockedAuthors(b).includes(a)) {
         return true;
       }
       const filters = discoveryFiltersStore.get(a);
+      const candidateLifestyle = lifestyleInfoStore.get(b);
       const candidateData = {
         heightCm: heightInfoStore.get(b).heightCm,
         hasEducation: educationInfoStore.get(b).school !== "",
         languages: languagesInfoStore.get(b).languages,
+        smoking: candidateLifestyle.smoking,
+        drinking: candidateLifestyle.drinking,
       };
       return !candidateMatchesFilters(filters, candidateData);
     };
@@ -1074,15 +1077,18 @@ export function createApp(deps?: {
     res.json({ candidates: swipeStore.getCandidates(req.params.author, isExcluded, getCompatibility) });
   });
 
-  // OkCupid's advanced discovery filters (#96): height range, education
-  // requirement, and required languages — narrows /api/swipe-candidates.
+  // OkCupid's advanced discovery filters (#96, extended by #97): height
+  // range, education requirement, required languages, non-smoking, and
+  // allowed drinking — narrows /api/swipe-candidates.
   app.put("/api/discovery-filters/:author", (req, res) => {
     const result = discoveryFiltersStore.update(
       req.params.author,
       req.body?.minHeightCm,
       req.body?.maxHeightCm,
       req.body?.requireEducation,
-      req.body?.requiredLanguages
+      req.body?.requiredLanguages,
+      req.body?.requireNonSmoking,
+      req.body?.allowedDrinking
     );
     if (!result.success) {
       res.status(400).json({ error: result.error });
