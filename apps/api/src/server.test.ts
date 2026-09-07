@@ -4107,6 +4107,58 @@ test("PUT /api/interests-info/:author rejects more than the max number of intere
   }
 });
 
+test("PUT /api/weekend-plans/:author sets weekend plans, then GET returns them (#119)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/weekend-plans/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekendPlans: ["brunch", "hiking"], hideWeekendPlans: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), {
+      weekendPlansInfo: { weekendPlans: ["brunch", "hiking"], hideWeekendPlans: true },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/weekend-plans/alice`);
+    assert.deepEqual(await getRes.json(), {
+      weekendPlansInfo: { weekendPlans: ["brunch", "hiking"], hideWeekendPlans: true },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/weekend-plans/:author rejects an unknown weekend plan", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/weekend-plans/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekendPlans: ["time travel"], hideWeekendPlans: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/weekend-plans/:author rejects more than the max number of weekend plans", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const catalogRes = await fetch(`${baseUrl}/api/weekend-plans/catalog`);
+    const { weekendPlans } = await catalogRes.json();
+    const res = await fetch(`${baseUrl}/api/weekend-plans/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekendPlans: weekendPlans.slice(0, 6), hideWeekendPlans: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/profile-visibility/:author returns defaults before any update", async () => {
   const { server, baseUrl } = listen();
   try {
@@ -6459,6 +6511,81 @@ test("GET /api/music-matches/:author excludes a candidate hiding their Spotify i
     });
 
     const res = await fetch(`${baseUrl}/api/music-matches/alice`);
+    assert.deepEqual(await res.json(), { candidates: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/weekend-plan-matches/:author returns candidates sharing at least one weekend plan (#119)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/weekend-plans/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekendPlans: ["brunch", "hiking"], hideWeekendPlans: false }),
+    });
+    await fetch(`${baseUrl}/api/weekend-plans/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekendPlans: ["brunch", "beach day"], hideWeekendPlans: false }),
+    });
+    await fetch(`${baseUrl}/api/weekend-plans/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekendPlans: ["gym session"], hideWeekendPlans: false }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/weekend-plan-matches/alice`);
+    const body = await res.json();
+    assert.deepEqual(body.candidates, [{ author: "bob", sharedPlans: ["brunch"], compatibility: 50 }]);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/weekend-plan-matches/:author excludes a candidate hiding their weekend plans", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    await fetch(`${baseUrl}/api/weekend-plans/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekendPlans: ["brunch"], hideWeekendPlans: false }),
+    });
+    await fetch(`${baseUrl}/api/weekend-plans/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekendPlans: ["brunch"], hideWeekendPlans: true }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/weekend-plan-matches/alice`);
     assert.deepEqual(await res.json(), { candidates: [] });
   } finally {
     server.close();

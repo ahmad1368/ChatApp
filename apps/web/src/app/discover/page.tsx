@@ -9,6 +9,7 @@ import ProfileBoost from "../ProfileBoost";
 import CrossedPaths from "../CrossedPaths";
 import SharedContacts from "../SharedContacts";
 import MusicMatches from "../MusicMatches";
+import WeekendPlanMatches from "../WeekendPlanMatches";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -217,6 +218,7 @@ export default function DiscoverPage() {
       <CrossedPaths author={author} />
       <SharedContacts author={author} />
       <MusicMatches author={author} />
+      <WeekendPlanMatches author={author} />
       {/* Web-only "grid or list" browsing (#115) — an alternative to the
           one-at-a-time swipe card, its own persisted preference. */}
       <div style={{ display: "flex", gap: 6, justifyContent: "center", margin: "8px 0" }} role="radiogroup" aria-label="Discovery view">

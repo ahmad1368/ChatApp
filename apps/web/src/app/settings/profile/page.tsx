@@ -20,6 +20,7 @@ import PersonalityInfoEditor from "../../PersonalityInfoEditor";
 import SpotifyConnect from "../../SpotifyConnect";
 import InstagramConnect from "../../InstagramConnect";
 import InterestsInfoEditor from "../../InterestsInfoEditor";
+import WeekendPlansEditor from "../../WeekendPlansEditor";
 import ProfileVisibilityEditor from "../../ProfileVisibilityEditor";
 import VanishModeEditor from "../../VanishModeEditor";
 import SocialLinksEditor from "../../SocialLinksEditor";
@@ -70,6 +71,7 @@ export default function ProfileSettingsPage() {
       <SpotifyConnect author={author} />
       <InstagramConnect author={author} />
       <InterestsInfoEditor author={author} />
+      <WeekendPlansEditor author={author} />
       <SocialLinksEditor author={author} />
       <TravelModeEditor author={author} />
       <PassportModeEditor author={author} />
