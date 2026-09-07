@@ -18,6 +18,7 @@ export default function DiscoverPage() {
   const [author] = useState(() => getOrCreateGuestIdentity());
   const [candidates, setCandidates] = useState<string[]>([]);
   const [matchNotice, setMatchNotice] = useState<string | null>(null);
+  const [lastSwiped, setLastSwiped] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,10 +55,39 @@ export default function DiscoverPage() {
       }
       if (body.matched) {
         setMatchNotice(candidate);
+      } else {
+        setMatchNotice(null);
       }
+      setLastSwiped(candidate);
       setCandidates((prev) => prev.slice(1));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to swipe");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Tinder's "Rewind" feature (#92) — undo only the single most recent
+  // swipe, matching the server's own one-step-only rule.
+  const undo = async () => {
+    if (!lastSwiped || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/swipes/undo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ author }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error ?? "Failed to undo");
+      }
+      setCandidates((prev) => [body.swiped, ...prev]);
+      setLastSwiped(null);
+      setMatchNotice(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to undo");
     } finally {
       setBusy(false);
     }
@@ -67,6 +97,7 @@ export default function DiscoverPage() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") swipe("like");
       if (e.key === "ArrowLeft") swipe("pass");
+      if (e.key === "ArrowUp") undo();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -85,6 +116,11 @@ export default function DiscoverPage() {
         <div style={{ background: "#fef3c7", padding: 12, borderRadius: 8, marginBottom: 12 }}>
           🎉 It&apos;s a match with {matchNotice}!
         </div>
+      )}
+      {lastSwiped && (
+        <button onClick={undo} disabled={busy} style={{ marginBottom: 8 }}>
+          ↺ Rewind
+        </button>
       )}
       {current ? (
         <div style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 32, marginTop: 16 }}>
