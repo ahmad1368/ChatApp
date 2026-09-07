@@ -29,6 +29,7 @@ import BeliefsInfoEditor from "./BeliefsInfoEditor";
 import PetsInfoEditor from "./PetsInfoEditor";
 import PersonalityInfoEditor from "./PersonalityInfoEditor";
 import SpotifyConnect from "./SpotifyConnect";
+import InstagramConnect from "./InstagramConnect";
 import {
   loadCachedMessages,
   loadQueuedMessages,
@@ -1112,6 +1113,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       <PetsInfoEditor author={author} />
       <PersonalityInfoEditor author={author} />
       <SpotifyConnect author={author} />
+      <InstagramConnect author={author} />
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
         <ReportDialog

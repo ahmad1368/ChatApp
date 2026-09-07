@@ -10,6 +10,7 @@ import { FacebookAuthService } from "./facebookAuth";
 import { OtpService } from "./auth";
 import { RecaptchaService } from "./recaptcha";
 import { SpotifyService } from "./spotifyAuth";
+import { InstagramService } from "./instagramAuth";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -74,6 +75,13 @@ function listenWithFacebookAuth(facebookAuthService: FacebookAuthService) {
 
 function listenWithSpotify(spotifyService: SpotifyService) {
   const { app } = createApp({ spotifyService });
+  const server = app.listen(0);
+  const { port } = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+function listenWithInstagram(instagramService: InstagramService) {
+  const { app } = createApp({ instagramService });
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}` };
@@ -3850,6 +3858,94 @@ test("PUT /api/spotify-info/:author updates the hide flag", async () => {
     });
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { spotifyInfo: { connected: false, topTracks: [], hideSpotify: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/instagram/connect 503s when Instagram isn't configured", async () => {
+  const { server, baseUrl } = listenWithInstagram(new InstagramService(undefined, undefined, async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/instagram/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", code: "abc", redirectUri: "https://example.com/callback" }),
+    });
+    assert.equal(res.status, 503);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/instagram/connect rejects a missing author", async () => {
+  const { server, baseUrl } = listenWithInstagram(
+    new InstagramService("client-id", "client-secret", async () => ({ posts: ["https://instagram.com/p/1"] }))
+  );
+  try {
+    const res = await fetch(`${baseUrl}/api/instagram/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "abc", redirectUri: "https://example.com/callback" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/instagram/connect returns 401 when the fetcher fails", async () => {
+  const { server, baseUrl } = listenWithInstagram(new InstagramService("client-id", "client-secret", async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/instagram/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", code: "bad-code", redirectUri: "https://example.com/callback" }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/instagram/connect connects and stores posts, then GET/DELETE reflect it", async () => {
+  const { server, baseUrl } = listenWithInstagram(
+    new InstagramService("client-id", "client-secret", async () => ({ posts: ["https://instagram.com/p/1"] }))
+  );
+  try {
+    const connectRes = await fetch(`${baseUrl}/api/instagram/connect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", code: "good-code", redirectUri: "https://example.com/callback" }),
+    });
+    assert.equal(connectRes.status, 200);
+    assert.deepEqual(await connectRes.json(), {
+      instagramInfo: { connected: true, posts: ["https://instagram.com/p/1"], hideInstagram: false },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/instagram-info/alice`);
+    assert.deepEqual(await getRes.json(), {
+      instagramInfo: { connected: true, posts: ["https://instagram.com/p/1"], hideInstagram: false },
+    });
+
+    const deleteRes = await fetch(`${baseUrl}/api/instagram/alice`, { method: "DELETE" });
+    assert.deepEqual(await deleteRes.json(), {
+      instagramInfo: { connected: false, posts: [], hideInstagram: false },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/instagram-info/:author updates the hide flag", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/instagram-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hideInstagram: true }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { instagramInfo: { connected: false, posts: [], hideInstagram: true } });
   } finally {
     server.close();
   }
