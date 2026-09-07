@@ -1055,6 +1055,13 @@ export function createApp(deps?: {
     res.status(204).send();
   });
 
+  // Shared by every route that must never surface a blocked author to the
+  // other side — discovery, top picks, and #103's liked-you list all read
+  // this, so the block relationship stays enforced everywhere a candidate
+  // could otherwise appear.
+  const isBlockedEitherWay = (a: string, b: string) =>
+    blockStore.getBlockedAuthors(a).includes(b) || blockStore.getBlockedAuthors(b).includes(a);
+
   // OkCupid's real advanced discovery filters (#96, extended by #97 with
   // non-smoking/lifestyle and #98 with verified-only): a candidate who
   // fails the swiper's own filters is excluded the same way a blocked
@@ -1063,9 +1070,12 @@ export function createApp(deps?: {
   // documented gap between guest "author" identities and the
   // verifiedOnly signal's real-account VerificationStore. Shared between
   // /api/swipe-candidates and #101's /api/top-picks, which both draw from
-  // the same eligible-candidate pool.
+  // the same eligible-candidate pool. #103's liked-you list deliberately
+  // does NOT apply these — a discovery filter narrows who you go looking
+  // for, it shouldn't hide someone who already expressed interest in you
+  // — so it only reuses the block check above.
   const isExcludedCandidate = (a: string, b: string) => {
-    if (blockStore.getBlockedAuthors(a).includes(b) || blockStore.getBlockedAuthors(b).includes(a)) {
+    if (isBlockedEitherWay(a, b)) {
       return true;
     }
     const filters = discoveryFiltersStore.get(a);
@@ -1099,6 +1109,15 @@ export function createApp(deps?: {
   app.get("/api/swipe-candidates/:author", (req, res) => {
     res.json({
       candidates: swipeStore.getCandidates(req.params.author, isExcludedCandidate, getCandidateCompatibility),
+    });
+  });
+
+  // Tinder's real "Likes You" (#103): free here since this app has no
+  // premium tier to gate it behind — see swipes.ts for why it only
+  // applies the block check, not the swiper's own discovery filters.
+  app.get("/api/liked-you/:author", (req, res) => {
+    res.json({
+      likedBy: swipeStore.getLikedBy(req.params.author, isBlockedEitherWay, getCandidateCompatibility),
     });
   });
 

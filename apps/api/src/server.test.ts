@@ -5438,3 +5438,72 @@ test("GET /api/top-picks/:author ranks candidates by real desirability rating, e
     server.close();
   }
 });
+
+test("GET /api/liked-you/:author returns an empty list when nobody has liked this author", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/liked-you/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { likedBy: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/liked-you/:author lists a real interest-compatibility score for someone who liked but wasn't swiped back, and excludes a blocked liker", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/interests-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking", "yoga"], hideInterests: false }),
+    });
+    await fetch(`${baseUrl}/api/interests-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking", "yoga"], hideInterests: false }),
+    });
+
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "carol", swiped: "alice", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockerAuthor: "alice", blockedAuthor: "carol" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/liked-you/alice`);
+    assert.deepEqual(await res.json(), { likedBy: [{ author: "bob", compatibility: 100 }] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/liked-you/:author excludes someone once the author swipes back on them", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/liked-you/alice`);
+    assert.deepEqual(await res.json(), { likedBy: [] });
+  } finally {
+    server.close();
+  }
+});

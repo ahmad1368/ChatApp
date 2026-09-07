@@ -136,7 +136,8 @@ export default function DiscoverPage() {
     <main style={{ maxWidth: 480, margin: "48px auto", padding: 16, fontFamily: "sans-serif", textAlign: "center" }}>
       <h1>Discover</h1>
       <p>
-        <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/matches">Your matches</Link>
+        <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/matches">Your matches</Link> &middot;{" "}
+        <Link href="/liked-you">Who liked you</Link>
       </p>
       <ExploreModeSelector author={author} onChange={loadCandidates} />
       <TopPicks author={author} />
