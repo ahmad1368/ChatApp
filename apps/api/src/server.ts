@@ -52,6 +52,8 @@ import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { SpotifyInfoStore } from "./spotifyInfo";
+import { InstagramService } from "./instagramAuth";
+import { InstagramInfoStore } from "./instagramInfo";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -69,6 +71,7 @@ export function createApp(deps?: {
   facebookAuthService?: FacebookAuthService;
   recaptchaService?: RecaptchaService;
   spotifyService?: SpotifyService;
+  instagramService?: InstagramService;
 }): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
@@ -106,6 +109,7 @@ export function createApp(deps?: {
   petsInfoStore: PetsInfoStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
+  instagramInfoStore: InstagramInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -164,6 +168,7 @@ export function createApp(deps?: {
   const petsInfoStore = new PetsInfoStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
+  const instagramInfoStore = new InstagramInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -171,6 +176,7 @@ export function createApp(deps?: {
   const facebookAuthService = deps?.facebookAuthService ?? new FacebookAuthService();
   const recaptchaService = deps?.recaptchaService ?? new RecaptchaService();
   const spotifyService = deps?.spotifyService ?? new SpotifyService();
+  const instagramService = deps?.instagramService ?? new InstagramService();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -727,6 +733,47 @@ export function createApp(deps?: {
 
   app.get("/api/spotify-info/:author", (req, res) => {
     res.json({ spotifyInfo: spotifyInfoStore.get(req.params.author) });
+  });
+
+  // Connect Instagram to show latest posts (#78), same shape as #77's
+  // Spotify connect.
+  app.post("/api/instagram/connect", async (req, res) => {
+    if (!instagramService.isConfigured()) {
+      res.status(503).json({ error: "Instagram integration is not configured on this server" });
+      return;
+    }
+
+    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
+    const code = typeof req.body?.code === "string" ? req.body.code : "";
+    const redirectUri = typeof req.body?.redirectUri === "string" ? req.body.redirectUri : "";
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    if (!code || !redirectUri) {
+      res.status(400).json({ error: "code and redirectUri are required" });
+      return;
+    }
+
+    const profile = await instagramService.fetchLatestPosts(code, redirectUri);
+    if (!profile) {
+      res.status(401).json({ error: "Failed to connect Instagram account" });
+      return;
+    }
+
+    res.json({ instagramInfo: instagramInfoStore.connect(author, profile.posts) });
+  });
+
+  app.delete("/api/instagram/:author", (req, res) => {
+    res.json({ instagramInfo: instagramInfoStore.disconnect(req.params.author) });
+  });
+
+  app.put("/api/instagram-info/:author", (req, res) => {
+    res.json({ instagramInfo: instagramInfoStore.setHideInstagram(req.params.author, req.body?.hideInstagram === true) });
+  });
+
+  app.get("/api/instagram-info/:author", (req, res) => {
+    res.json({ instagramInfo: instagramInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1528,6 +1575,7 @@ export function createApp(deps?: {
     petsInfoStore,
     personalityInfoStore,
     spotifyInfoStore,
+    instagramInfoStore,
   };
 }
 
