@@ -4525,7 +4525,7 @@ test("GET /api/swipe-candidates/:author returns other joined authors, excluding 
     const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.deepEqual(body.candidates, ["carol"]);
+    assert.deepEqual(body.candidates, [{ author: "carol", compatibility: 0 }]);
   } finally {
     server.close();
   }
@@ -4694,6 +4694,54 @@ test("POST /api/swipes with direction superlike counts toward a match and decrem
       body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
     });
     assert.deepEqual(await matchRes.json(), { matched: true });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author includes a real interest-compatibility score and ranks by it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/interests-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking", "yoga"], hideInterests: false }),
+    });
+    // bob shares no interests with alice.
+    await fetch(`${baseUrl}/api/interests-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["gaming"], hideInterests: false }),
+    });
+    // carol shares both of alice's interests.
+    await fetch(`${baseUrl}/api/interests-info/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking", "yoga"], hideInterests: false }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(body.candidates, [
+      { author: "carol", compatibility: 100 },
+      { author: "bob", compatibility: 0 },
+    ]);
   } finally {
     server.close();
   }

@@ -7,6 +7,13 @@ export type RecordSwipeResult = { success: true; matched: boolean } | { success:
 export type JoinDiscoveryResult = { success: true } | { success: false; error: string };
 export type UndoLastSwipeResult = { success: true; swiped: string } | { success: false; error: string };
 
+export interface SwipeCandidate {
+  author: string;
+  compatibility: number;
+}
+
+export type CompatibilityScorer = (a: string, b: string) => number;
+
 function isSwipeDirection(value: unknown): value is SwipeDirection {
   return typeof value === "string" && (SWIPE_DIRECTIONS as readonly string[]).includes(value);
 }
@@ -56,6 +63,12 @@ function todayKey(): string {
  * DAILY_SUPER_LIKE_LIMIT per author per UTC day: real Tinder rate-limits
  * this too (1/day free, more on paid tiers we don't model), and an
  * unlimited "make yourself stand out" signal would just be spam.
+ *
+ * `getCandidates`'s optional `getCompatibility` scorer (#94) is where
+ * OkCupid's real percentage-match algorithm plugs in — see
+ * interestCompatibility.ts. `SwipeStore` itself stays decoupled from what
+ * the score is computed from (interests, in the current caller), same DI
+ * seam as the block check.
  */
 export class SwipeStore {
   private candidates = new Set<string>();
@@ -77,7 +90,12 @@ export class SwipeStore {
     this.candidates.delete(author);
   }
 
-  getCandidates(author: string, isBlockedEitherWay: (a: string, b: string) => boolean, limit = 10): string[] {
+  getCandidates(
+    author: string,
+    isBlockedEitherWay: (a: string, b: string) => boolean,
+    getCompatibility: CompatibilityScorer = () => 0,
+    limit = 10
+  ): SwipeCandidate[] {
     const swiped = this.swipesBySwiper.get(author);
     const eligible: string[] = [];
     for (const candidate of this.candidates) {
@@ -88,11 +106,17 @@ export class SwipeStore {
     }
 
     // Surface anyone who's already superliked this author first — the
-    // "special attention" a Super Like (#93) is actually for.
+    // "special attention" a Super Like (#93) is actually for. Within that,
+    // rank by #94's interest-vector compatibility score, highest first —
+    // OkCupid's real percentage-match ordering.
     const superlikedBy = (candidate: string) => this.swipesBySwiper.get(candidate)?.get(author) === "superlike";
-    eligible.sort((a, b) => Number(superlikedBy(b)) - Number(superlikedBy(a)));
+    eligible.sort((a, b) => {
+      const superlikeDiff = Number(superlikedBy(b)) - Number(superlikedBy(a));
+      if (superlikeDiff !== 0) return superlikeDiff;
+      return getCompatibility(author, b) - getCompatibility(author, a);
+    });
 
-    return eligible.slice(0, limit);
+    return eligible.slice(0, limit).map((candidate) => ({ author: candidate, compatibility: getCompatibility(author, candidate) }));
   }
 
   recordSwipe(swiper: unknown, swiped: unknown, direction: unknown): RecordSwipeResult {
