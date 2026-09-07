@@ -82,6 +82,7 @@ import { ViewModeStore } from "./viewMode";
 import { computeMusicMatch } from "./musicMatch";
 import { WeekendPlansStore, WEEKEND_PLAN_CATALOG } from "./weekendPlans";
 import { computeWeekendPlanMatch } from "./weekendPlanMatch";
+import { computeBioMatch } from "./bioAnalysis";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -1366,6 +1367,32 @@ export function createApp(deps?: {
       .filter((entry): entry is { author: string; sharedPlans: string[]; compatibility: number } => entry !== null)
       .sort((a, b) => b.sharedPlans.length - a.sharedPlans.length);
     res.json({ candidates: planMatches });
+  });
+
+  // "Use AI to analyze bio text and improve matching" (#120) — an honest
+  // keyword-extraction heuristic over #65's bio field rather than an
+  // invented LLM/NLP integration this app has no model or inference
+  // infrastructure for; see bioAnalysis.ts's doc comment for why, same
+  // scoping call as #95's Elo-style Smart Score and #107's fake-profile
+  // heuristic. Same drawn-from-the-same-pool shape as #118/#119 above.
+  app.get("/api/bio-matches/:author", (req, res) => {
+    const author = req.params.author;
+    const authorBio = bioStore.get(author);
+    if (!authorBio) {
+      res.json({ candidates: [] });
+      return;
+    }
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .map((c) => c.author);
+    const bioMatches = pool
+      .map((candidate) => {
+        const match = computeBioMatch(authorBio, bioStore.get(candidate));
+        return match.sharedKeywords.length > 0 ? { author: candidate, ...match } : null;
+      })
+      .filter((entry): entry is { author: string; sharedKeywords: string[]; compatibility: number } => entry !== null)
+      .sort((a, b) => b.sharedKeywords.length - a.sharedKeywords.length);
+    res.json({ candidates: bioMatches });
   });
 
   // Match.com/Tinder's real "Double Date" (#109): a small group of
