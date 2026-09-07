@@ -57,6 +57,7 @@ import { InstagramInfoStore } from "./instagramInfo";
 import { InterestsInfoStore, INTEREST_CATALOG } from "./interestsInfo";
 import { ProfileVisibilityStore } from "./profileVisibility";
 import { SocialLinksInfoStore, SOCIAL_PLATFORMS } from "./socialLinksInfo";
+import { TravelModeInfoStore } from "./travelModeInfo";
 import { buildProfilePreview } from "./profilePreview";
 import { optimizePhoto } from "./photoOptimization";
 
@@ -118,6 +119,7 @@ export function createApp(deps?: {
   interestsInfoStore: InterestsInfoStore;
   profileVisibilityStore: ProfileVisibilityStore;
   socialLinksInfoStore: SocialLinksInfoStore;
+  travelModeInfoStore: TravelModeInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -180,6 +182,7 @@ export function createApp(deps?: {
   const interestsInfoStore = new InterestsInfoStore();
   const profileVisibilityStore = new ProfileVisibilityStore();
   const socialLinksInfoStore = new SocialLinksInfoStore();
+  const travelModeInfoStore = new TravelModeInfoStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -882,6 +885,23 @@ export function createApp(deps?: {
 
   app.get("/api/social-links-info/:author", (req, res) => {
     res.json({ socialLinksInfo: socialLinksInfoStore.get(req.params.author) });
+  });
+
+  // Editable-anytime work/travel mode (#84) — Tinder Passport/Bumble Travel
+  // Mode's "I'm temporarily somewhere else" status, same one-value-per-
+  // author, replace-on-update shape as this app's other standalone profile
+  // fields.
+  app.put("/api/travel-mode-info/:author", (req, res) => {
+    const result = travelModeInfoStore.update(req.params.author, req.body?.active, req.body?.destination);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ travelModeInfo: result.travelModeInfo });
+  });
+
+  app.get("/api/travel-mode-info/:author", (req, res) => {
+    res.json({ travelModeInfo: travelModeInfoStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1687,6 +1707,7 @@ export function createApp(deps?: {
     interestsInfoStore,
     profileVisibilityStore,
     socialLinksInfoStore,
+    travelModeInfoStore,
   };
 }
 
