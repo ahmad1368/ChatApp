@@ -70,11 +70,13 @@ function todayKey(): string {
  * the score is computed from (interests, in the current caller), same DI
  * seam as the block check.
  *
- * `getCandidates`'s optional `isBoosted` predicate (#105) is Tinder's
- * real Boost: a boosted candidate is ranked ahead of everyone else
- * *except* someone who's already superliked this author (that's a
- * direct, personal signal to this specific viewer; Boost is a general
- * visibility signal to every viewer) — see profileBoost.ts.
+ * `getCandidates`'s optional `getBoostLevel` scorer (#105, extended by
+ * #106's Super Boost) is Tinder's real Boost tiers: a higher boost level
+ * ranks ahead of a lower one, and any active boost ranks ahead of an
+ * unboosted candidate — ahead of everyone else *except* someone who's
+ * already superliked this author (that's a direct, personal signal to
+ * this specific viewer; Boost is a general visibility signal to every
+ * viewer) — see profileBoost.ts.
  */
 export class SwipeStore {
   private candidates = new Set<string>();
@@ -100,7 +102,7 @@ export class SwipeStore {
     author: string,
     isBlockedEitherWay: (a: string, b: string) => boolean,
     getCompatibility: CompatibilityScorer = () => 0,
-    isBoosted: (candidate: string) => boolean = () => false,
+    getBoostLevel: (candidate: string) => number = () => 0,
     limit = 10
   ): SwipeCandidate[] {
     const swiped = this.swipesBySwiper.get(author);
@@ -114,14 +116,15 @@ export class SwipeStore {
 
     // Surface anyone who's already superliked this author first — the
     // "special attention" a Super Like (#93) is actually for. Within
-    // that, a boosted candidate (#105) ranks next. Within that, rank by
-    // #94's interest-vector compatibility score, highest first —
-    // OkCupid's real percentage-match ordering.
+    // that, a higher boost level (#105, #106's Super Boost outranking a
+    // plain Boost) ranks next. Within that, rank by #94's interest-vector
+    // compatibility score, highest first — OkCupid's real percentage-
+    // match ordering.
     const superlikedBy = (candidate: string) => this.swipesBySwiper.get(candidate)?.get(author) === "superlike";
     eligible.sort((a, b) => {
       const superlikeDiff = Number(superlikedBy(b)) - Number(superlikedBy(a));
       if (superlikeDiff !== 0) return superlikeDiff;
-      const boostDiff = Number(isBoosted(b)) - Number(isBoosted(a));
+      const boostDiff = getBoostLevel(b) - getBoostLevel(a);
       if (boostDiff !== 0) return boostDiff;
       return getCompatibility(author, b) - getCompatibility(author, a);
     });

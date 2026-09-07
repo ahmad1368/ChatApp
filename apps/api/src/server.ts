@@ -69,6 +69,7 @@ import { ExploreModeStore, candidateMatchesExploreMode, EXPLORE_MODES } from "./
 import { TopPicksStore } from "./topPicks";
 import { ProfileVisitsStore } from "./profileVisits";
 import { ProfileBoostStore } from "./profileBoost";
+import { PeakHoursStore } from "./peakHours";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -144,6 +145,7 @@ export function createApp(deps?: {
   topPicksStore: TopPicksStore;
   profileVisitsStore: ProfileVisitsStore;
   profileBoostStore: ProfileBoostStore;
+  peakHoursStore: PeakHoursStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -218,6 +220,7 @@ export function createApp(deps?: {
   const topPicksStore = new TopPicksStore();
   const profileVisitsStore = new ProfileVisitsStore();
   const profileBoostStore = new ProfileBoostStore();
+  const peakHoursStore = new PeakHoursStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1127,30 +1130,41 @@ export function createApp(deps?: {
   // than a full questionnaire.
   const getCandidateCompatibility = (a: string, b: string) =>
     computeInterestCompatibility(interestsInfoStore.get(a).interests, interestsInfoStore.get(b).interests);
-  // Tinder's real Boost (#105): a boosted candidate ranks ahead of
-  // everyone except someone who's superliked this viewer — see
-  // swipes.ts's getCandidates doc comment for the exact priority order.
-  const isCandidateBoosted = (candidate: string) => profileBoostStore.isBoosted(candidate);
+  // Tinder's real Boost/Super Boost (#105, #106): a higher boost level
+  // ranks ahead of a lower one and both rank ahead of everyone except
+  // someone who's superliked this viewer — see swipes.ts's getCandidates
+  // doc comment for the exact priority order.
+  const getCandidateBoostLevel = (candidate: string) => profileBoostStore.getBoostLevel(candidate);
 
   app.get("/api/swipe-candidates/:author", (req, res) => {
     res.json({
-      candidates: swipeStore.getCandidates(req.params.author, isExcludedCandidate, getCandidateCompatibility, isCandidateBoosted),
+      candidates: swipeStore.getCandidates(req.params.author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel),
     });
   });
 
-  // Tinder's real Boost (#105): free here since this app has no premium
-  // tier to gate it behind, same call as #92's free Rewind.
+  // Tinder's real Boost/Super Boost (#105, #106): free here since this
+  // app has no premium tier to gate it behind, same call as #92's free
+  // Rewind. tier defaults to "boost" when omitted.
   app.post("/api/profile-boost/:author", (req, res) => {
-    const result = profileBoostStore.activateBoost(req.params.author);
+    const result = profileBoostStore.activateBoost(req.params.author, req.body?.tier);
     if (!result.success) {
       res.status(400).json({ error: result.error });
       return;
     }
-    res.status(201).json({ expiresAt: result.expiresAt });
+    res.status(201).json({ tier: result.tier, expiresAt: result.expiresAt });
   });
 
   app.get("/api/profile-boost/:author", (req, res) => {
     res.json(profileBoostStore.getStatus(req.params.author));
+  });
+
+  // #106's "smart" half of Super Boost: the hours (UTC) with the most
+  // real swipe activity, plus whether right now is one of them — a hint
+  // for when boosting will actually reach the most people, rather than
+  // leaving the user to guess. See peakHours.ts for the honesty note on
+  // what this is (and isn't) modeling.
+  app.get("/api/peak-hours", (_req, res) => {
+    res.json(peakHoursStore.getStatus());
   });
 
   // Tinder's real "Likes You" (#103): free here since this app has no
@@ -1171,7 +1185,7 @@ export function createApp(deps?: {
   app.get("/api/top-picks/:author", (req, res) => {
     const author = req.params.author;
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, isCandidateBoosted, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
       .map((c) => c.author);
     const picks = topPicksStore.getTopPicks(author, pool, (candidate) => smartScoreStore.getRating(candidate));
     res.json({ picks });
@@ -1234,6 +1248,10 @@ export function createApp(deps?: {
     const swiperName = typeof req.body?.swiper === "string" ? req.body.swiper.trim() : "";
     const swipedName = typeof req.body?.swiped === "string" ? req.body.swiped.trim() : "";
     smartScoreStore.recordSwipeOutcome(swiperName, swipedName, liked);
+    // #106's "peak network hours": each swipe counts as one unit of
+    // real network activity for the hour it happened in — see
+    // peakHours.ts.
+    peakHoursStore.recordActivity();
     res.status(201).json({ matched: result.matched });
   });
 
@@ -2134,6 +2152,7 @@ export function createApp(deps?: {
     topPicksStore,
     profileVisitsStore,
     profileBoostStore,
+    peakHoursStore,
   };
 }
 
