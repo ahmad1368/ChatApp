@@ -10,6 +10,7 @@ const EMPTY_FILTERS_JSON = {
   requiredLanguages: [],
   requireNonSmoking: false,
   allowedDrinking: [],
+  requireVerifiedOnly: false,
 };
 
 test("get() returns empty filters before any update", () => {
@@ -19,37 +20,37 @@ test("get() returns empty filters before any update", () => {
 
 test("update() rejects a missing author", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("", 160, 190, false, [], false, []);
+  const result = store.update("", 160, 190, false, [], false, [], false);
   assert.equal(result.success, false);
 });
 
 test("update() rejects an out-of-range minHeightCm", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("alice", 50, null, false, [], false, []);
+  const result = store.update("alice", 50, null, false, [], false, [], false);
   assert.equal(result.success, false);
 });
 
 test("update() rejects minHeightCm greater than maxHeightCm", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("alice", 190, 160, false, [], false, []);
+  const result = store.update("alice", 190, 160, false, [], false, [], false);
   assert.equal(result.success, false);
 });
 
 test("update() rejects an invalid language in requiredLanguages", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("alice", null, null, false, ["klingon"], false, []);
+  const result = store.update("alice", null, null, false, ["klingon"], false, [], false);
   assert.equal(result.success, false);
 });
 
 test("update() rejects an invalid drinking option in allowedDrinking", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("alice", null, null, false, [], false, ["a-lot"]);
+  const result = store.update("alice", null, null, false, [], false, ["a-lot"], false);
   assert.equal(result.success, false);
 });
 
 test("update() accepts valid filters, then get() returns them", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("alice", 160, 190, true, ["english"], true, ["no", "sometimes"]);
+  const result = store.update("alice", 160, 190, true, ["english"], true, ["no", "sometimes"], true);
   assert.equal(result.success, true);
   assert.deepEqual(store.get("alice"), {
     minHeightCm: 160,
@@ -58,12 +59,13 @@ test("update() accepts valid filters, then get() returns them", () => {
     requiredLanguages: ["english"],
     requireNonSmoking: true,
     allowedDrinking: ["no", "sometimes"],
+    requireVerifiedOnly: true,
   });
 });
 
 test("each author's filters are independent", () => {
   const store = new DiscoveryFiltersStore();
-  store.update("alice", 160, 190, true, ["english"], true, ["no"]);
+  store.update("alice", 160, 190, true, ["english"], true, ["no"], true);
   assert.deepEqual(store.get("bob"), EMPTY_FILTERS_JSON);
 });
 
@@ -74,9 +76,17 @@ const NO_FILTERS: DiscoveryFilters = {
   requiredLanguages: [],
   requireNonSmoking: false,
   allowedDrinking: [],
+  requireVerifiedOnly: false,
 };
 
-const NO_DATA: CandidateProfileData = { heightCm: null, hasEducation: false, languages: [], smoking: null, drinking: null };
+const NO_DATA: CandidateProfileData = {
+  heightCm: null,
+  hasEducation: false,
+  languages: [],
+  smoking: null,
+  drinking: null,
+  isVerified: false,
+};
 
 test("candidateMatchesFilters() matches everyone when no filters are set", () => {
   assert.equal(candidateMatchesFilters(NO_FILTERS, NO_DATA), true);
@@ -150,4 +160,14 @@ test("candidateMatchesFilters() excludes a candidate with no drinking status set
 test("candidateMatchesFilters() includes a candidate whose drinking is in allowedDrinking", () => {
   const filters: DiscoveryFilters = { ...NO_FILTERS, allowedDrinking: ["no", "sometimes"] };
   assert.equal(candidateMatchesFilters(filters, { ...NO_DATA, drinking: "sometimes" }), true);
+});
+
+test("candidateMatchesFilters() excludes an unverified candidate when requireVerifiedOnly is set", () => {
+  const filters = { ...NO_FILTERS, requireVerifiedOnly: true };
+  assert.equal(candidateMatchesFilters(filters, { ...NO_DATA, isVerified: false }), false);
+});
+
+test("candidateMatchesFilters() includes a verified candidate when requireVerifiedOnly is set", () => {
+  const filters = { ...NO_FILTERS, requireVerifiedOnly: true };
+  assert.equal(candidateMatchesFilters(filters, { ...NO_DATA, isVerified: true }), true);
 });

@@ -9,6 +9,7 @@ export interface DiscoveryFilters {
   requiredLanguages: Language[];
   requireNonSmoking: boolean;
   allowedDrinking: DrinkingOption[];
+  requireVerifiedOnly: boolean;
 }
 
 export type UpdateDiscoveryFiltersResult =
@@ -21,6 +22,7 @@ export interface CandidateProfileData {
   languages: string[];
   smoking: SmokingOption | null;
   drinking: DrinkingOption | null;
+  isVerified: boolean;
 }
 
 const EMPTY_FILTERS: DiscoveryFilters = {
@@ -30,6 +32,7 @@ const EMPTY_FILTERS: DiscoveryFilters = {
   requiredLanguages: [],
   requireNonSmoking: false,
   allowedDrinking: [],
+  requireVerifiedOnly: false,
 };
 
 function isLanguage(value: unknown): value is Language {
@@ -42,10 +45,11 @@ function isDrinkingOption(value: unknown): value is DrinkingOption {
 
 /**
  * OkCupid's real advanced discovery filters (#96, extended by #97 with
- * non-smoking/lifestyle), scoped to the fields the issues name — height,
- * education, language, smoking, drinking — from the profile data
- * #68/#69/#70/#73 already collect. Filtering reads that data regardless
- * of each candidate's own hide-on-my-profile flag (hideHeight, etc.): same
+ * non-smoking/lifestyle and #98 with a verified-only toggle), scoped to
+ * the fields the issues name — height, education, language, smoking,
+ * drinking, identity verification — from the profile data #68/#69/#70/#73
+ * already collect. Filtering reads that data regardless of each
+ * candidate's own hide-on-my-profile flag (hideHeight, etc.): same
  * precedent as #94's interest-compatibility scorer reading interests
  * regardless of hideInterests — a "don't show this on my profile" choice
  * governs display (see profilePreview.ts), not whether it's usable as a
@@ -55,6 +59,18 @@ function isDrinkingOption(value: unknown): value is DrinkingOption {
  * range filter excludes that candidate, rather than including them by
  * default) — the safer default for what the user explicitly asked to
  * filter on.
+ *
+ * requireVerifiedOnly (#98) is a narrower signal than the rest: it reads
+ * VerificationStore.isVerified(), which is keyed by a real authenticated
+ * userId (#35's selfie verification), while every candidate here is keyed
+ * by the guest "author" identity the discovery/swipe subsystem actually
+ * runs on (#61+ — accounts and guest identities aren't unified yet). The
+ * filter is wired correctly today (it will start reflecting real
+ * verifications once a guest author is linked to its account), but until
+ * that link exists this will exclude guest-only candidates from
+ * "verified only" results — the same kind of documented gap as
+ * verification.ts's own liveness-detection disclosure, not silently
+ * pretended to be complete.
  */
 export class DiscoveryFiltersStore {
   private filtersByAuthor = new Map<string, DiscoveryFilters>();
@@ -66,7 +82,8 @@ export class DiscoveryFiltersStore {
     requireEducation: unknown,
     requiredLanguages: unknown,
     requireNonSmoking: unknown,
-    allowedDrinking: unknown
+    allowedDrinking: unknown,
+    requireVerifiedOnly: unknown
   ): UpdateDiscoveryFiltersResult {
     const authorName = typeof author === "string" ? author.trim() : "";
     if (!authorName) {
@@ -122,6 +139,7 @@ export class DiscoveryFiltersStore {
       requiredLanguages: languages,
       requireNonSmoking: requireNonSmoking === true,
       allowedDrinking: drinkingOptions,
+      requireVerifiedOnly: requireVerifiedOnly === true,
     };
     this.filtersByAuthor.set(authorName, filters);
     return { success: true, filters };
@@ -150,6 +168,9 @@ export function candidateMatchesFilters(filters: DiscoveryFilters, candidate: Ca
     return false;
   }
   if (filters.allowedDrinking.length > 0 && (candidate.drinking === null || !filters.allowedDrinking.includes(candidate.drinking))) {
+    return false;
+  }
+  if (filters.requireVerifiedOnly && !candidate.isVerified) {
     return false;
   }
   return true;

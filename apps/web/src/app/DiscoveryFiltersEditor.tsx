@@ -12,10 +12,12 @@ const DRINKING_LABELS: Record<string, string> = {
 };
 
 /**
- * OkCupid's advanced discovery filters (#96, extended by #97): height
- * range, education requirement, required languages, non-smoking, and
- * allowed drinking. Narrows /api/swipe-candidates for this author — see
- * discoveryFilters.ts for the matching logic.
+ * OkCupid's advanced discovery filters (#96, extended by #97 and #98):
+ * height range, education requirement, required languages, non-smoking,
+ * allowed drinking, and verified-only. Narrows /api/swipe-candidates for
+ * this author — see discoveryFilters.ts for the matching logic and for
+ * the documented gap between this app's guest identities and real,
+ * selfie-verified accounts that "verified only" relies on.
  */
 export default function DiscoveryFiltersEditor({ author }: { author: string }) {
   const [catalog, setCatalog] = useState<string[]>([]);
@@ -25,6 +27,7 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
   const [requiredLanguages, setRequiredLanguages] = useState<string[]>([]);
   const [requireNonSmoking, setRequireNonSmoking] = useState(false);
   const [allowedDrinking, setAllowedDrinking] = useState<string[]>([]);
+  const [requireVerifiedOnly, setRequireVerifiedOnly] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -42,6 +45,7 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
         setRequiredLanguages(filters?.requiredLanguages ?? []);
         setRequireNonSmoking(filters?.requireNonSmoking ?? false);
         setAllowedDrinking(filters?.allowedDrinking ?? []);
+        setRequireVerifiedOnly(filters?.requireVerifiedOnly ?? false);
       })
       .catch(() => {});
   }, [author]);
@@ -70,6 +74,7 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
           requiredLanguages,
           requireNonSmoking,
           allowedDrinking,
+          requireVerifiedOnly,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -156,6 +161,15 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
           );
         })}
       </div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+        <input
+          type="checkbox"
+          checked={requireVerifiedOnly}
+          onChange={(e) => setRequireVerifiedOnly(e.target.checked)}
+        />
+        Only show verified profiles
+      </label>
 
       <button onClick={save} disabled={busy} style={{ marginTop: 8 }}>
         Save
