@@ -1,4 +1,4 @@
-const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+export const ALLOWED_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 export interface StoredPhoto {
@@ -23,7 +23,7 @@ export class PhotoStore {
     if (!authorName) {
       return { success: false, error: "author is required" };
     }
-    if (!ALLOWED_MIME_TYPES.has(mime)) {
+    if (!ALLOWED_PHOTO_MIME_TYPES.has(mime)) {
       return { success: false, error: "mimeType must be image/jpeg, image/png, or image/webp" };
     }
     if (!base64) {

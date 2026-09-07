@@ -26,7 +26,7 @@ import { ReportStore } from "./reports";
 import { BlockStore } from "./blocks";
 import { ContactBlockStore } from "./contactBlocks";
 import { WatermarkStore } from "./watermark";
-import { PhotoStore } from "./photos";
+import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
 import { SharedDateStore } from "./sharedDates";
 import { SOSStore } from "./sos";
 import { applyWatermark } from "./watermarkImage";
@@ -57,6 +57,7 @@ import { InstagramInfoStore } from "./instagramInfo";
 import { InterestsInfoStore, INTEREST_CATALOG } from "./interestsInfo";
 import { ProfileVisibilityStore } from "./profileVisibility";
 import { buildProfilePreview } from "./profilePreview";
+import { optimizePhoto } from "./photoOptimization";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -310,8 +311,25 @@ export function createApp(deps?: {
 
   // Photo theft deterrence: this is its own high-priority, dependency-free
   // safety path, independent of any matching/discovery service.
-  app.post("/api/photos", (req, res) => {
-    const result = photoStore.upload(req.body?.author, req.body?.mimeType, req.body?.data);
+  app.post("/api/photos", async (req, res) => {
+    // Smart photo optimization (#82): downscale oversized photos and strip
+    // EXIF metadata (including any GPS location tag) before storing. Runs
+    // best-effort — if the bytes aren't a decodable image, fall through
+    // unmodified and let photoStore.upload's own validation reject them
+    // with its usual error message, same as before this existed.
+    let mimeType = req.body?.mimeType;
+    let data = req.body?.data;
+    if (typeof data === "string" && typeof mimeType === "string" && ALLOWED_PHOTO_MIME_TYPES.has(mimeType)) {
+      try {
+        const optimized = await optimizePhoto(Buffer.from(data, "base64"));
+        mimeType = optimized.mimeType;
+        data = optimized.data.toString("base64");
+      } catch {
+        // Not a decodable image — leave mimeType/data as received.
+      }
+    }
+
+    const result = photoStore.upload(req.body?.author, mimeType, data);
     if (!result.success) {
       res.status(400).json({ error: result.error });
       return;

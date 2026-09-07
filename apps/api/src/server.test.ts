@@ -4089,3 +4089,21 @@ test("GET /api/profile-preview/:author combines visible fields and omits hidden 
     server.close();
   }
 });
+
+test("POST /api/photos re-encodes an uploaded photo as JPEG (smart optimization)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    assert.equal(res.status, 201);
+    const { id } = await res.json();
+    const stored = photoStore.get(id);
+    assert.equal(stored?.mimeType, "image/jpeg");
+    assert.deepEqual(stored?.data.subarray(0, 3), Buffer.from([0xff, 0xd8, 0xff]));
+  } finally {
+    server.close();
+  }
+});
