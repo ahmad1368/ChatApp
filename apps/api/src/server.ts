@@ -61,6 +61,7 @@ import { TravelModeInfoStore } from "./travelModeInfo";
 import { ProfileColorThemeStore, PROFILE_COLOR_THEMES } from "./profileColorTheme";
 import { AchievementsInfoStore } from "./achievementsInfo";
 import { DisplayNameModeStore, DISPLAY_NAME_MODES } from "./displayNameMode";
+import { StylizedAvatarStore, AVATAR_STYLES } from "./stylizedAvatar";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
 import { optimizePhoto } from "./photoOptimization";
@@ -127,6 +128,7 @@ export function createApp(deps?: {
   profileColorThemeStore: ProfileColorThemeStore;
   achievementsInfoStore: AchievementsInfoStore;
   displayNameModeStore: DisplayNameModeStore;
+  stylizedAvatarStore: StylizedAvatarStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -193,6 +195,7 @@ export function createApp(deps?: {
   const profileColorThemeStore = new ProfileColorThemeStore();
   const achievementsInfoStore = new AchievementsInfoStore();
   const displayNameModeStore = new DisplayNameModeStore();
+  const stylizedAvatarStore = new StylizedAvatarStore();
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
   const googleAuthService = deps?.googleAuthService ?? new GoogleAuthService();
@@ -994,6 +997,27 @@ export function createApp(deps?: {
 
   app.get("/api/display-name-mode/:author", (req, res) => {
     res.json({ preference: displayNameModeStore.get(req.params.author) });
+  });
+
+  // Stylized (3D/cartoon) avatar selection (#89), same one-value-per-author,
+  // replace-on-update shape as this app's other standalone profile fields —
+  // see stylizedAvatar.ts for why this is a fixed preset catalog rather
+  // than real 3D rendering.
+  app.get("/api/stylized-avatar/styles", (_req, res) => {
+    res.json({ styles: AVATAR_STYLES });
+  });
+
+  app.put("/api/stylized-avatar/:author", (req, res) => {
+    const result = stylizedAvatarStore.update(req.params.author, req.body?.style, req.body?.active);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ stylizedAvatarInfo: result.stylizedAvatarInfo });
+  });
+
+  app.get("/api/stylized-avatar/:author", (req, res) => {
+    res.json({ stylizedAvatarInfo: stylizedAvatarStore.get(req.params.author) });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
@@ -1803,6 +1827,7 @@ export function createApp(deps?: {
     profileColorThemeStore,
     achievementsInfoStore,
     displayNameModeStore,
+    stylizedAvatarStore,
   };
 }
 
