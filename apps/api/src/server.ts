@@ -1539,6 +1539,15 @@ export function createApp(deps?: {
     res.json({ remaining: swipeStore.getSuperLikesRemainingToday(req.params.author) });
   });
 
+  // Coffee Meets Bagel/Tinder's real free-tier daily like limit (#116) —
+  // see swipes.ts's DAILY_LIKE_LIMIT; this app has no premium tier to sell
+  // an unlimited-likes upgrade behind, so the cap is just the free
+  // allowance with no paid bypass, same scoping call as every other
+  // paywalled-upstream feature in this backlog.
+  app.get("/api/likes-remaining/:author", (req, res) => {
+    res.json({ remaining: swipeStore.getLikesRemainingToday(req.params.author) });
+  });
+
   // Tinder's "Elo Score"/"Smart Score" (#95): a desirability rating built
   // from swipe outcomes, plus a separate activity count — see
   // smartScore.ts for why they're not blended into one number.

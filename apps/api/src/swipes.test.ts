@@ -255,6 +255,55 @@ test("undoLastSwipe() does not refund anything for a non-superlike undo", () => 
   assert.equal(store.getSuperLikesRemainingToday("alice"), 0);
 });
 
+test("getLikesRemainingToday() starts at the daily limit and decreases after use (#116)", () => {
+  const store = new SwipeStore();
+  const before = store.getLikesRemainingToday("alice");
+  store.recordSwipe("alice", "bob", "like");
+  assert.equal(store.getLikesRemainingToday("alice"), before - 1);
+});
+
+test("recordSwipe() rejects a like once the daily limit is used up", () => {
+  const store = new SwipeStore();
+  const remaining = store.getLikesRemainingToday("alice");
+  for (let i = 0; i < remaining; i++) {
+    const result = store.recordSwipe("alice", `candidate-${i}`, "like");
+    assert.equal(result.success, true);
+  }
+  assert.equal(store.getLikesRemainingToday("alice"), 0);
+  const result = store.recordSwipe("alice", "one-too-many", "like");
+  assert.deepEqual(result, { success: false, error: "You've used all your Likes for today" });
+});
+
+test("a superlike never counts against the daily like limit", () => {
+  const store = new SwipeStore();
+  const before = store.getLikesRemainingToday("alice");
+  store.recordSwipe("alice", "bob", "superlike");
+  assert.equal(store.getLikesRemainingToday("alice"), before);
+});
+
+test("a pass never counts against the daily like limit", () => {
+  const store = new SwipeStore();
+  const before = store.getLikesRemainingToday("alice");
+  store.recordSwipe("alice", "bob", "pass");
+  assert.equal(store.getLikesRemainingToday("alice"), before);
+});
+
+test("undoLastSwipe() refunds a like so it can be used again", () => {
+  const store = new SwipeStore();
+  const before = store.getLikesRemainingToday("alice");
+  store.recordSwipe("alice", "bob", "like");
+  assert.equal(store.getLikesRemainingToday("alice"), before - 1);
+  store.undoLastSwipe("alice");
+  assert.equal(store.getLikesRemainingToday("alice"), before);
+});
+
+test("the daily like limit is tracked independently per author", () => {
+  const store = new SwipeStore();
+  const before = store.getLikesRemainingToday("bob");
+  store.recordSwipe("alice", "bob", "like");
+  assert.equal(store.getLikesRemainingToday("bob"), before);
+});
+
 test("getCandidates() surfaces authors who superliked this author first", () => {
   const store = new SwipeStore();
   store.joinDiscovery("alice");

@@ -36,6 +36,7 @@ export default function DiscoverPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [superLikesRemaining, setSuperLikesRemaining] = useState(0);
+  const [likesRemaining, setLikesRemaining] = useState(0);
   const [bioKeyword, setBioKeyword] = useState("");
   const [viewMode, setViewModeState] = useState<ViewMode>("card");
 
@@ -58,6 +59,14 @@ export default function DiscoverPage() {
       .catch(() => {});
   };
 
+  // Coffee Meets Bagel/Tinder's real free-tier daily like limit (#116).
+  const loadLikesRemaining = () => {
+    fetch(`${API_URL}/api/likes-remaining/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setLikesRemaining(body.remaining ?? 0))
+      .catch(() => {});
+  };
+
   useEffect(() => {
     fetch(`${API_URL}/api/discovery/join`, {
       method: "POST",
@@ -65,6 +74,7 @@ export default function DiscoverPage() {
       body: JSON.stringify({ author }),
     }).then(() => loadCandidates());
     loadSuperLikesRemaining();
+    loadLikesRemaining();
     fetch(`${API_URL}/api/view-mode/${encodeURIComponent(author)}`)
       .then((res) => res.json())
       .then((body) => setViewModeState(body.mode ?? "card"))
@@ -110,6 +120,9 @@ export default function DiscoverPage() {
       if (direction === "superlike") {
         loadSuperLikesRemaining();
       }
+      if (direction === "like") {
+        loadLikesRemaining();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to swipe");
     } finally {
@@ -140,6 +153,7 @@ export default function DiscoverPage() {
       setLastSwiped(null);
       setMatchNotice(null);
       loadSuperLikesRemaining();
+      loadLikesRemaining();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to undo");
     } finally {
@@ -244,12 +258,18 @@ export default function DiscoverPage() {
               >
                 ⭐
               </button>
-              <button onClick={() => swipe("like")} disabled={busy} style={{ fontSize: 24 }}>
+              <button
+                onClick={() => swipe("like")}
+                disabled={busy || likesRemaining <= 0}
+                style={{ fontSize: 24 }}
+                title={likesRemaining > 0 ? "Like" : "No Likes left today"}
+              >
                 ♥
               </button>
             </div>
             <p style={{ color: "var(--color-muted)", fontSize: 12, marginTop: 8 }}>
-              {superLikesRemaining} Super Like{superLikesRemaining === 1 ? "" : "s"} left today
+              {superLikesRemaining} Super Like{superLikesRemaining === 1 ? "" : "s"} &middot; {likesRemaining} Like
+              {likesRemaining === 1 ? "" : "s"} left today
             </p>
           </div>
         ) : (
@@ -287,7 +307,11 @@ export default function DiscoverPage() {
                 <button onClick={() => swipe("pass", candidate.author)} disabled={busy}>
                   ✕
                 </button>
-                <button onClick={() => swipe("like", candidate.author)} disabled={busy}>
+                <button
+                  onClick={() => swipe("like", candidate.author)}
+                  disabled={busy || likesRemaining <= 0}
+                  title={likesRemaining > 0 ? "Like" : "No Likes left today"}
+                >
                   ♥
                 </button>
               </div>
