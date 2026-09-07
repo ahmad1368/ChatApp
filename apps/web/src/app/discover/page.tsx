@@ -7,6 +7,7 @@ import ExploreModeSelector from "../ExploreModeSelector";
 import TopPicks from "../TopPicks";
 import ProfileBoost from "../ProfileBoost";
 import CrossedPaths from "../CrossedPaths";
+import SharedContacts from "../SharedContacts";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -179,6 +180,7 @@ export default function DiscoverPage() {
       <ExploreModeSelector author={author} onChange={loadCandidates} />
       <TopPicks author={author} />
       <CrossedPaths author={author} />
+      <SharedContacts author={author} />
       {matchNotice && (
         <div style={{ background: "#fef3c7", padding: 12, borderRadius: 8, marginBottom: 12 }}>
           🎉 It&apos;s a match with {matchNotice}!

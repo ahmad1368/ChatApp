@@ -6189,6 +6189,111 @@ test("GET /api/crossed-paths/:author excludes a blocked candidate even if paths 
   }
 });
 
+test("POST /api/contact-graph/:author rejects a non-array phoneNumbers", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/contact-graph/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumbers: "555-1111" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/contact-graph/:author reports the uploaded contact count", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/contact-graph/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumbers: ["555-1111", "555-2222"] }),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(await res.json(), { contactCount: 2 });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/shared-contacts/:author returns candidates sharing at least one contact (#114)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/contact-graph/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumbers: ["555-1111", "555-2222"] }),
+    });
+    await fetch(`${baseUrl}/api/contact-graph/bob`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumbers: ["555-1111"] }),
+    });
+    await fetch(`${baseUrl}/api/contact-graph/carol`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumbers: ["555-9999"] }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/shared-contacts/alice`);
+    const body = await res.json();
+    assert.deepEqual(body.candidates, [{ author: "bob", sharedContacts: 1 }]);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/shared-contacts/:author excludes a blocked candidate even with shared contacts", async () => {
+  const { server, baseUrl, blockStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    await fetch(`${baseUrl}/api/contact-graph/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumbers: ["555-1111"] }),
+    });
+    await fetch(`${baseUrl}/api/contact-graph/bob`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumbers: ["555-1111"] }),
+    });
+    blockStore.block("alice", "bob");
+
+    const res = await fetch(`${baseUrl}/api/shared-contacts/alice`);
+    assert.deepEqual(await res.json(), { candidates: [] });
+  } finally {
+    server.close();
+  }
+});
+
 test("POST /api/squads creates a squad and GET /api/squads/:author returns it", async () => {
   const { server, baseUrl } = listen();
   try {

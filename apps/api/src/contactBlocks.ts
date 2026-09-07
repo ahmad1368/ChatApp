@@ -6,7 +6,11 @@ function normalizePhone(raw: string): string {
   return raw.replace(/[^0-9]/g, "");
 }
 
-function hashPhone(raw: string): string {
+// Exported for contactsGraph.ts's #114 "shared contacts" feature — same
+// privacy-preserving hash-only representation of a phone number, reused
+// rather than reimplemented so the two features agree on what counts as
+// "the same contact."
+export function hashPhone(raw: string): string {
   return createHash("sha256").update(normalizePhone(raw)).digest("hex");
 }
 

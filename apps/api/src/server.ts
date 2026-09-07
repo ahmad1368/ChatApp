@@ -77,6 +77,7 @@ import { PresenceStore } from "./presence";
 import { VanishModeStore } from "./vanishMode";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
+import { ContactsGraphStore } from "./contactsGraph";
 import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
@@ -158,6 +159,7 @@ export function createApp(deps?: {
   presenceStore: PresenceStore;
   vanishModeStore: VanishModeStore;
   photoInteractionStore: PhotoInteractionStore;
+  contactsGraphStore: ContactsGraphStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -238,6 +240,7 @@ export function createApp(deps?: {
   const presenceStore = new PresenceStore();
   const vanishModeStore = new VanishModeStore();
   const photoInteractionStore = new PhotoInteractionStore();
+  const contactsGraphStore = new ContactsGraphStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1253,6 +1256,36 @@ export function createApp(deps?: {
         compatibility: getCandidateCompatibility(author, candidate),
       })),
     });
+  });
+
+  // Tinder's real Facebook-friends "mutual friends" signal (#114), built
+  // on #17's phone-contact hashing instead — see contactsGraph.ts. An
+  // author uploads their phone contacts once; POST replaces (not merges)
+  // their previous list, same "resubmit the current state" semantics as
+  // #17's own contact-block upload.
+  app.post("/api/contact-graph/:author", (req, res) => {
+    const result = contactsGraphStore.uploadContacts(req.params.author, req.body?.phoneNumbers);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ contactCount: result.contactCount });
+  });
+
+  // Candidates from the same eligible pool as /api/swipe-candidates who
+  // share at least one contact with this author — the actual "matching
+  // based on shared contacts" this issue asks for, same drawn-from-the-
+  // same-pool shape as #108's Crossed Paths above.
+  app.get("/api/shared-contacts/:author", (req, res) => {
+    const author = req.params.author;
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .map((c) => c.author);
+    const withSharedContacts = pool
+      .map((candidate) => ({ author: candidate, sharedContacts: contactsGraphStore.getSharedContactCount(author, candidate) }))
+      .filter((entry) => entry.sharedContacts > 0)
+      .sort((a, b) => b.sharedContacts - a.sharedContacts);
+    res.json({ candidates: withSharedContacts });
   });
 
   // Match.com/Tinder's real "Double Date" (#109): a small group of
@@ -2360,6 +2393,7 @@ export function createApp(deps?: {
     presenceStore,
     vanishModeStore,
     photoInteractionStore,
+    contactsGraphStore,
   };
 }
 
