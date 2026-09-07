@@ -3697,3 +3697,66 @@ test("PUT /api/pets-info/:author rejects more than the max number of pet options
     server.close();
   }
 });
+
+test("GET /api/personality-info/:author returns empty fields before any update", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/personality-info/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      personalityInfo: { mbtiType: null, enneagramType: null, hideMbti: false, hideEnneagram: false },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/personality-info/:author sets personality info, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/personality-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mbtiType: "ENTJ", enneagramType: 8, hideMbti: true, hideEnneagram: false }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), {
+      personalityInfo: { mbtiType: "ENTJ", enneagramType: 8, hideMbti: true, hideEnneagram: false },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/personality-info/alice`);
+    assert.deepEqual(await getRes.json(), {
+      personalityInfo: { mbtiType: "ENTJ", enneagramType: 8, hideMbti: true, hideEnneagram: false },
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/personality-info/:author rejects an invalid MBTI type", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/personality-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mbtiType: "XXXX", enneagramType: 4, hideMbti: false, hideEnneagram: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/personality-info/:author rejects an out-of-range enneagram type", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/personality-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mbtiType: "INFP", enneagramType: 10, hideMbti: false, hideEnneagram: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
