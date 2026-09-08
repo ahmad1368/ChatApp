@@ -38,6 +38,7 @@ function listen() {
     presenceStore,
     spotifyInfoStore,
     readReceiptStore,
+    typingStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -56,6 +57,7 @@ function listen() {
     presenceStore,
     spotifyInfoStore,
     readReceiptStore,
+    typingStore,
   };
 }
 
@@ -211,6 +213,28 @@ test("GET /api/rooms/:roomId/messages/:messageId/status 404s for an unknown mess
   try {
     const res = await fetch(`${baseUrl}/api/rooms/room-a/messages/does-not-exist/status`);
     assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/typing is empty before anyone is typing (#126)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/room-a/typing`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { authors: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/typing reflects the live TypingStore", async () => {
+  const { server, baseUrl, typingStore } = listen();
+  try {
+    typingStore.startTyping("room-a", "alice");
+    const res = await fetch(`${baseUrl}/api/rooms/room-a/typing`);
+    assert.deepEqual(await res.json(), { authors: ["alice"] });
   } finally {
     server.close();
   }

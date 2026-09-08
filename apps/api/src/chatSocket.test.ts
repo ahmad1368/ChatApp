@@ -246,3 +246,75 @@ test("message:delivered from the message's own author is ignored", async () => {
     httpServer.close();
   }
 });
+
+test("typing:start broadcasts typing:update to others in the room, but not back to the typer (#126)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const typer = await connectClient(baseUrl);
+  const listener = await connectClient(baseUrl);
+  try {
+    typer.emit("join", "room-1");
+    listener.emit("join", "room-1");
+    await settle();
+
+    let typerReceived = false;
+    typer.on("typing:update", () => {
+      typerReceived = true;
+    });
+    const received = waitFor<{ roomId: string; authors: string[] }>(listener, "typing:update");
+    typer.emit("typing:start", { roomId: "room-1", author: "alice" });
+    const update = await received;
+
+    assert.equal(update.roomId, "room-1");
+    assert.deepEqual(update.authors, ["alice"]);
+    assert.equal(typerReceived, false);
+  } finally {
+    typer.close();
+    listener.close();
+    httpServer.close();
+  }
+});
+
+test("typing:stop removes the author from the broadcast typing:update", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const typer = await connectClient(baseUrl);
+  const listener = await connectClient(baseUrl);
+  try {
+    typer.emit("join", "room-1");
+    listener.emit("join", "room-1");
+    await settle();
+
+    const startUpdate = waitFor<{ authors: string[] }>(listener, "typing:update");
+    typer.emit("typing:start", { roomId: "room-1", author: "alice" });
+    await startUpdate;
+
+    const stopUpdate = waitFor<{ authors: string[] }>(listener, "typing:update");
+    typer.emit("typing:stop", { roomId: "room-1", author: "alice" });
+    assert.deepEqual((await stopUpdate).authors, []);
+  } finally {
+    typer.close();
+    listener.close();
+    httpServer.close();
+  }
+});
+
+test("disconnecting while typing clears the indicator for everyone else in the room", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const typer = await connectClient(baseUrl);
+  const listener = await connectClient(baseUrl);
+  try {
+    typer.emit("join", "room-1");
+    listener.emit("join", "room-1");
+    await settle();
+
+    const startUpdate = waitFor<{ authors: string[] }>(listener, "typing:update");
+    typer.emit("typing:start", { roomId: "room-1", author: "alice" });
+    await startUpdate;
+
+    const clearedUpdate = waitFor<{ authors: string[] }>(listener, "typing:update");
+    typer.close();
+    assert.deepEqual((await clearedUpdate).authors, []);
+  } finally {
+    listener.close();
+    httpServer.close();
+  }
+});

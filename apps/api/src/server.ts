@@ -23,6 +23,7 @@ import { UploadStore } from "./uploads";
 import { VoiceNoteStore } from "./voiceNotes";
 import { SelfDestructPhotoStore } from "./selfDestructPhotos";
 import { ReadReceiptStore } from "./readReceipts";
+import { TypingStore } from "./typing";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -173,6 +174,7 @@ export function createApp(deps?: {
   viewModeStore: ViewModeStore;
   weekendPlansStore: WeekendPlansStore;
   readReceiptStore: ReadReceiptStore;
+  typingStore: TypingStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -259,6 +261,7 @@ export function createApp(deps?: {
   const viewModeStore = new ViewModeStore();
   const weekendPlansStore = new WeekendPlansStore();
   const readReceiptStore = new ReadReceiptStore();
+  const typingStore = new TypingStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1951,6 +1954,13 @@ export function createApp(deps?: {
     res.json({ status: readReceiptStore.getStatus(message.id, message.author) });
   });
 
+  // Bumble's real typing indicator (#126) — a REST snapshot of the same
+  // state the typing:update socket event pushes live, for a surface that
+  // isn't already holding a socket connection.
+  app.get("/api/rooms/:roomId/typing", (req, res) => {
+    res.json({ authors: typingStore.getTypingAuthors(req.params.roomId) });
+  });
+
   // GDPR data portability: its own high-priority, dependency-free path,
   // same as Report/Block/SOS. Streams the requester's own data back as a
   // downloadable JSON backup rather than requiring a separate export job.
@@ -2644,11 +2654,12 @@ export function createApp(deps?: {
     viewModeStore,
     weekendPlansStore,
     readReceiptStore,
+    typingStore,
   };
 }
 
 export async function createChatServer() {
-  const { app, messagesByRoom, pushService, reportStore, presenceStore, readReceiptStore } = createApp();
+  const { app, messagesByRoom, pushService, reportStore, presenceStore, readReceiptStore, typingStore } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
@@ -2753,6 +2764,49 @@ export async function createChatServer() {
     };
     socket.on("message:delivered", (payload) => reportReceipt("message:delivered", payload));
     socket.on("message:read", (payload) => reportReceipt("message:read", payload));
+
+    // Bumble's real typing indicator (#126) — client-driven start/stop
+    // (the client debounces its own "stopped typing" after a pause in
+    // keystrokes; see typing.ts for why there's no reliable server-side
+    // signal otherwise). Broadcast to the room excluding the typer, who
+    // has no need to see their own indicator reflected back.
+    const broadcastTyping = (roomId: string) => {
+      socket.to(roomId).emit("typing:update", { roomId, authors: typingStore.getTypingAuthors(roomId) });
+    };
+    socket.on("typing:start", (payload: { roomId?: string; author?: string }) => {
+      const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+      const author = typeof payload?.author === "string" ? payload.author : "";
+      if (!roomId || !author) return;
+      // Same disconnect-cleanup attribution presence:online sets up — a
+      // client could start typing before ever announcing presence.
+      socket.data.author = author;
+      typingStore.startTyping(roomId, author);
+      broadcastTyping(roomId);
+    });
+    socket.on("typing:stop", (payload: { roomId?: string; author?: string }) => {
+      const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+      const author = typeof payload?.author === "string" ? payload.author : "";
+      if (!roomId || !author) return;
+      typingStore.stopTyping(roomId, author);
+      broadcastTyping(roomId);
+    });
+
+    // "disconnecting" (not "disconnect") fires while socket.rooms is still
+    // populated — Socket.io removes the socket from every room right
+    // after this event, before "disconnect" fires — so this is the only
+    // place a room-scoped disconnect broadcast can still reach anyone.
+    socket.on("disconnecting", () => {
+      const author = socket.data.author as string | undefined;
+      if (!author) return;
+      // Safety net for an unclean disconnect (dropped connection, closed
+      // tab) so a typing indicator never gets stuck on for other
+      // participants — see typing.ts.
+      typingStore.stopTypingEverywhere(author);
+      for (const roomId of socket.rooms) {
+        if (roomId === socket.id) continue;
+        io.to(roomId).emit("typing:update", { roomId, authors: typingStore.getTypingAuthors(roomId) });
+      }
+    });
 
     socket.on("disconnect", () => {
       messageRateLimiter.clear(socket.id);

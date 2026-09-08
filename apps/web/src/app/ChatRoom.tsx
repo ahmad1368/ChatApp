@@ -310,6 +310,11 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   // Bumble's real sent/delivered/read message status (#125) — keyed by
   // message id, populated from the live message:status broadcast.
   const [messageStatuses, setMessageStatuses] = useState<Record<string, string>>({});
+  // Bumble's real typing indicator (#126) — who else is typing in this
+  // room right now, from the live typing:update broadcast.
+  const [typingAuthors, setTypingAuthors] = useState<string[]>([]);
+  const isTypingRef = useRef(false);
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Tracks the newest message timestamp we've seen locally so that on
   // reconnect (dropped wifi, backgrounded tab, another device catching up)
   // we only fetch what we missed instead of the whole history again.
@@ -715,6 +720,10 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     socket.on("message:status", ({ messageId, status }: { messageId: string; status: string }) => {
       setMessageStatuses((prev) => ({ ...prev, [messageId]: status }));
     });
+    socket.on("typing:update", ({ roomId: updatedRoomId, authors }: { roomId: string; authors: string[] }) => {
+      if (updatedRoomId !== roomId) return;
+      setTypingAuthors(authors.filter((a) => a !== authorRef.current));
+    });
     socket.on("message:rejected", (payload: { reason?: string }) => {
       if (payload?.reason === "scam_content") {
         setImageError("That message looks like it violates ChatApp's policy against financial and crypto scams, so it wasn't sent.");
@@ -762,6 +771,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
 
     return () => {
       clearHiddenTimer();
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("online", handleOnline);
       socket.disconnect();
@@ -786,11 +796,39 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     setNotificationPermission(result as NotificationPermissionState);
   };
 
+  // Bumble's real typing indicator (#126): client-driven start/stop —
+  // this client, not the server, is the one that knows when the user
+  // stopped typing (a pause in keystrokes), so it debounces its own stop
+  // signal rather than the server guessing from a timeout.
+  const TYPING_STOP_DELAY_MS = 2000;
+  const stopTyping = () => {
+    if (typingStopTimerRef.current) {
+      clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      socketRef.current?.emit("typing:stop", { roomId, author });
+    }
+  };
+
+  const handleComposerChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value);
+    if (isGuest) return;
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      socketRef.current?.emit("typing:start", { roomId, author });
+    }
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+    typingStopTimerRef.current = setTimeout(stopTyping, TYPING_STOP_DELAY_MS);
+  };
+
   const sendMessage = () => {
     if (isGuest) return;
     const trimmed = text.trim();
     if (!trimmed) return;
     setText("");
+    stopTyping();
 
     if (socketRef.current?.connected) {
       socketRef.current.emit("message:send", {
@@ -1128,6 +1166,13 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             <em className="chat-app__queued-tag">(queued)</em>
           </div>
         ))}
+        {typingAuthors.length > 0 && (
+          <p className="chat-app__typing-indicator">
+            {typingAuthors.length === 1
+              ? `${typingAuthors[0]} is typing…`
+              : `${typingAuthors.join(", ")} are typing…`}
+          </p>
+        )}
         {isSendingImage && <p className="chat-app__status">Compressing and sending image…</p>}
         {isRecording && <p className="chat-app__status">Recording voice note…</p>}
         {isSendingVoiceNote && <p className="chat-app__status">Sending voice note…</p>}
@@ -1156,7 +1201,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           ref={composerRef}
           className="chat-app__input chat-app__input--textarea"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={handleComposerChange}
           onKeyDown={handleComposerKeyDown}
           placeholder={isGuest ? "Sign up to send a message" : t("placeholder")}
           disabled={isGuest || !liveUpdatesEnabled}
