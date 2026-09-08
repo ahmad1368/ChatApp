@@ -9,6 +9,7 @@ import { loadDataSaverPreference, saveDataSaverPreference } from "./dataSaverSto
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { compressImage, blobToBase64 } from "./imageCompression";
 import { computeWaveform } from "./voiceNoteWaveform";
+import GifPicker from "./GifPicker";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
 import ReportDialog from "./ReportDialog";
@@ -267,6 +268,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [isSendingSelfDestructPhoto, setIsSendingSelfDestructPhoto] = useState(false);
   const [selfDestructError, setSelfDestructError] = useState<string | null>(null);
   const selfDestructFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [showGifPicker, setShowGifPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isSendingVoiceNote, setIsSendingVoiceNote] = useState(false);
   const [voiceNoteError, setVoiceNoteError] = useState<string | null>(null);
@@ -857,6 +859,15 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     if (file) sendSelfDestructPhoto(file);
   };
 
+  // Tinder's real "send a GIF/sticker" (#124) — a picked Giphy result's
+  // URL points at Giphy's own CDN, so this is just a regular chat image
+  // message (imageUrl), no upload/storage of our own needed.
+  const sendGif = (url: string) => {
+    if (isGuest) return;
+    socketRef.current?.emit("message:send", { roomId, author, text: "", imageUrl: url, asGuest: isGuest });
+    setShowGifPicker(false);
+  };
+
   // Badoo's real voice-note messages with a waveform (#122): record via
   // MediaRecorder, compute the waveform client-side (see
   // voiceNoteWaveform.ts — this server has no audio-decoding capability
@@ -1149,10 +1160,19 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         >
           🔥📷
         </button>
+        <button
+          className="chat-app__image-button"
+          onClick={() => setShowGifPicker((v) => !v)}
+          disabled={isGuest || !liveUpdatesEnabled}
+          title="Send a GIF or sticker"
+        >
+          GIF
+        </button>
         <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}
         </button>
       </div>
+      {showGifPicker && <GifPicker onPick={sendGif} onClose={() => setShowGifPicker(false)} />}
       {blockedAuthors.length > 0 && (
         <div className="chat-app__guest-banner">
           <strong>Blocked users:</strong>

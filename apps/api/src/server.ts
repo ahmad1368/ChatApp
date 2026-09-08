@@ -53,6 +53,7 @@ import { BeliefsInfoStore } from "./beliefsInfo";
 import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
+import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
 import { SpotifyInfoStore } from "./spotifyInfo";
 import { InstagramService } from "./instagramAuth";
 import { InstagramInfoStore } from "./instagramInfo";
@@ -106,6 +107,7 @@ export function createApp(deps?: {
   facebookAuthService?: FacebookAuthService;
   recaptchaService?: RecaptchaService;
   spotifyService?: SpotifyService;
+  giphyService?: GiphyService;
   instagramService?: InstagramService;
 }): {
   app: Express;
@@ -262,6 +264,7 @@ export function createApp(deps?: {
   const facebookAuthService = deps?.facebookAuthService ?? new FacebookAuthService();
   const recaptchaService = deps?.recaptchaService ?? new RecaptchaService();
   const spotifyService = deps?.spotifyService ?? new SpotifyService();
+  const giphyService = deps?.giphyService ?? new GiphyService();
   const instagramService = deps?.instagramService ?? new InstagramService();
 
   const accountDeletion = new AccountDeletionCoordinator();
@@ -836,6 +839,38 @@ export function createApp(deps?: {
 
   app.get("/api/spotify-info/:author", (req, res) => {
     res.json({ spotifyInfo: spotifyInfoStore.get(req.params.author) });
+  });
+
+  // Tinder's real "send a GIF/sticker" (#124) via an actual Giphy
+  // integration — the server proxies the search so GIPHY_API_KEY never
+  // reaches the browser, same "server-only credential" shape as Spotify's
+  // token exchange above. A result's `url` points at Giphy's own CDN, so
+  // sending one is just a regular chat image message (imageUrl) — no
+  // upload/storage of our own needed, unlike #122/#123's self-hosted media.
+  app.get("/api/giphy/search", async (req, res) => {
+    if (!giphyService.isConfigured()) {
+      res.status(503).json({ error: "GIF/sticker search is not configured on this server" });
+      return;
+    }
+
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (!query) {
+      res.status(400).json({ error: "q is required" });
+      return;
+    }
+    const type = typeof req.query.type === "string" ? req.query.type : "gifs";
+    if (!(GIPHY_CONTENT_TYPES as readonly string[]).includes(type)) {
+      res.status(400).json({ error: `type must be one of: ${GIPHY_CONTENT_TYPES.join(", ")}` });
+      return;
+    }
+    const limit = Number(req.query.limit);
+
+    const results = await giphyService.search(query, type as GiphyContentType, Number.isFinite(limit) ? limit : undefined);
+    if (!results) {
+      res.status(502).json({ error: "Failed to fetch results from Giphy" });
+      return;
+    }
+    res.json({ results });
   });
 
   // Connect Instagram to show latest posts (#78), same shape as #77's
