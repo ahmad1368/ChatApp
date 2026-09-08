@@ -8,6 +8,8 @@ export function buildChatMessage(payload: SendMessagePayload): ChatMessage {
     text: payload.text,
     createdAt: new Date().toISOString(),
     imageUrl: payload.imageUrl,
+    audioUrl: payload.audioUrl,
+    waveform: payload.waveform,
     replyToId: payload.replyToId,
     replyToAuthor: payload.replyToAuthor,
     replyToText: payload.replyToText,

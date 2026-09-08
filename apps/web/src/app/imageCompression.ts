@@ -28,7 +28,9 @@ export async function compressImage(file: File): Promise<CompressedImage> {
   return { mimeType: blob.type, base64: await blobToBase64(blob) };
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
+// Exported for voiceNoteWaveform.ts's #122 voice-note upload — same
+// blob-to-base64 conversion, reused rather than reimplemented.
+export function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {

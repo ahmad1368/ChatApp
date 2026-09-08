@@ -140,3 +140,31 @@ test("message:send is rejected with rate_limited after exceeding the per-connect
     httpServer.close();
   }
 });
+
+test("message:send carries a voice note's audioUrl and waveform through to message:new (#122)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  const listener = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    listener.emit("join", "room-1");
+    await settle();
+
+    const received = waitFor<{ audioUrl?: string; waveform?: number[] }>(listener, "message:new");
+    sender.emit("message:send", {
+      roomId: "room-1",
+      author: "alice",
+      text: "",
+      audioUrl: "/api/voice-notes/abc123",
+      waveform: [0.1, 0.5, 0.9],
+    });
+    const message = await received;
+
+    assert.equal(message.audioUrl, "/api/voice-notes/abc123");
+    assert.deepEqual(message.waveform, [0.1, 0.5, 0.9]);
+  } finally {
+    sender.close();
+    listener.close();
+    httpServer.close();
+  }
+});

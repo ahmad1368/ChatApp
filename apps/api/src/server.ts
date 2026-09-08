@@ -20,6 +20,7 @@ import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDe
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
 import { UploadStore } from "./uploads";
+import { VoiceNoteStore } from "./voiceNotes";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -182,6 +183,7 @@ export function createApp(deps?: {
   const locations = new LocationStore();
   const pushService = new PushService();
   const uploadStore = new UploadStore();
+  const voiceNoteStore = new VoiceNoteStore();
   const errorReportStore = new ErrorReportStore();
   const otpService = new OtpService();
   const recoveryCodeService = new RecoveryCodeService();
@@ -2050,6 +2052,34 @@ export function createApp(deps?: {
     // safe for a CDN or browser to cache aggressively (see #13).
     res.set("Cache-Control", "public, max-age=31536000, immutable");
     res.send(upload.data);
+  });
+
+  // Badoo's real voice-note chat messages with a waveform (#122) — same
+  // upload-then-reference shape as /api/uploads above, but its own store
+  // (see voiceNotes.ts) since a chat voice note also carries a waveform,
+  // which an image upload doesn't. The waveform is computed client-side
+  // (this server has no audio-decoding capability) and only validated/
+  // bounded here before being echoed back for the client to attach to its
+  // message:send payload.
+  app.post("/api/voice-notes", (req, res) => {
+    const { mimeType, data, waveform } = req.body ?? {};
+    const result = voiceNoteStore.save(mimeType, data, waveform);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ url: `/api/voice-notes/${result.id}`, waveform: result.waveform });
+  });
+
+  app.get("/api/voice-notes/:id", (req, res) => {
+    const note = voiceNoteStore.get(req.params.id);
+    if (!note) {
+      res.status(404).end();
+      return;
+    }
+    res.set("Content-Type", note.mimeType);
+    res.set("Cache-Control", "public, max-age=31536000, immutable");
+    res.send(note.data);
   });
 
   // Collects unhandled client-side errors (uncaught exceptions, rejected
