@@ -439,6 +439,11 @@ export default function ChatRoom({
   const lastSyncedAtRef = useRef<string | undefined>(undefined);
   const searchParams = useSearchParams();
   const deepLinkedMessageId = searchParams.get("m");
+  // Bumble's real "Search within conversation text" (#140).
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   // With `since`, fetches only what was missed while disconnected (reconnect
   // catch-up). Without it, fetches just the most recent page — the client
@@ -1034,6 +1039,35 @@ export default function ChatRoom({
     return () => clearTimeout(timeout);
   }, [deepLinkedMessageId, messages]);
 
+  // Bumble's real "Search within conversation text" (#140) — server-side
+  // substring search over the whole room's history (not just the currently
+  // loaded page). Jumping to a result only works if that message is
+  // already loaded into `messages`, same disclosed limitation as the
+  // `?m=` deep link above.
+  const runSearch = () => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    setIsSearching(true);
+    fetch(
+      `${API_URL}/api/rooms/${roomId}/messages/search?q=${encodeURIComponent(searchQuery)}&viewer=${encodeURIComponent(author)}`
+    )
+      .then((res) => res.json())
+      .then((body) => setSearchResults(body.results ?? []))
+      .catch(() => setSearchResults([]))
+      .finally(() => setIsSearching(false));
+  };
+
+  const jumpToMessage = (messageId: string) => {
+    const el = messageRefs.current.get(messageId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedId(messageId);
+    setTimeout(() => setHighlightedId(null), 2500);
+    setShowSearch(false);
+  };
+
   const requestNotificationPermission = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) return;
     const result = await Notification.requestPermission();
@@ -1483,12 +1517,54 @@ export default function ChatRoom({
           <button className="chat-app__theme-toggle" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)">
             ⌨ Shortcuts
           </button>
+          <button
+            className="chat-app__theme-toggle"
+            onClick={() => setShowSearch((prev) => !prev)}
+            title="Search within conversation text"
+          >
+            🔍 Search
+          </button>
           <label className="chat-app__data-saver-toggle">
             <input type="checkbox" checked={dataSaverEnabled} onChange={toggleDataSaver} />
             Data Saver Mode
           </label>
         </div>
       </div>
+      {showSearch && (
+        <div className="chat-app__search-panel">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              runSearch();
+            }}
+          >
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search this conversation..."
+              autoFocus
+            />
+            <button type="submit" disabled={isSearching}>
+              {isSearching ? "Searching…" : "Search"}
+            </button>
+          </form>
+          {searchResults.length > 0 && (
+            <ul className="chat-app__search-results">
+              {searchResults.map((result) => (
+                <li key={result.id}>
+                  <button type="button" onClick={() => jumpToMessage(result.id)}>
+                    <strong>{result.author}:</strong> {result.text}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!isSearching && searchQuery.trim() && searchResults.length === 0 && (
+            <p className="chat-app__search-empty">No messages match &ldquo;{searchQuery}&rdquo;.</p>
+          )}
+        </div>
+      )}
       <SOSButton author={author} />
       {callState === "idle" && callTarget && !isGuest && (
         <div className="chat-app__call-buttons">

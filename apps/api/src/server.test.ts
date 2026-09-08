@@ -2578,6 +2578,59 @@ test("GET /api/rooms/:roomId/messages filters mutually-blocked authors for a vie
   }
 });
 
+test("GET /api/rooms/:roomId/messages/search finds a case-insensitive substring match (#140)", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  try {
+    messagesByRoom.set("general", [
+      { id: "1", roomId: "general", author: "bob", text: "want to grab coffee?", createdAt: new Date().toISOString() },
+      { id: "2", roomId: "general", author: "carol", text: "see you at 5", createdAt: new Date().toISOString() },
+    ]);
+
+    const res = await fetch(`${baseUrl}/api/rooms/general/messages/search?q=COFFEE`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.results.map((m: { id: string }) => m.id),
+      ["1"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages/search excludes deleted messages and mutually-blocked authors (#140)", async () => {
+  const { server, baseUrl, messagesByRoom, blockStore } = listen();
+  try {
+    blockStore.block("alice", "bob");
+    messagesByRoom.set("general", [
+      { id: "1", roomId: "general", author: "bob", text: "coffee at bob's", createdAt: new Date().toISOString() },
+      { id: "2", roomId: "general", author: "carol", text: "coffee at carol's", createdAt: new Date().toISOString(), deleted: true },
+      { id: "3", roomId: "general", author: "dave", text: "coffee at dave's", createdAt: new Date().toISOString() },
+    ]);
+
+    const res = await fetch(`${baseUrl}/api/rooms/general/messages/search?q=coffee&viewer=alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.results.map((m: { id: string }) => m.id),
+      ["3"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages/search returns no results for a blank query (#140)", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  try {
+    messagesByRoom.set("general", [
+      { id: "1", roomId: "general", author: "bob", text: "hello", createdAt: new Date().toISOString() },
+    ]);
+    const res = await fetch(`${baseUrl}/api/rooms/general/messages/search`);
+    assert.deepEqual((await res.json()).results, []);
+  } finally {
+    server.close();
+  }
+});
+
 test("POST /api/profile/phone registers a phone, rejects invalid input", async () => {
   const { server, baseUrl } = listen();
   try {
