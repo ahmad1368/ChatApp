@@ -31,6 +31,8 @@ import { VideoCallEffectsStore } from "./videoCallEffects";
 import { generateIcebreakers } from "./icebreakers";
 import { canEditMessage } from "./messageEditing";
 import { canDeleteMessage } from "./messageDeletion";
+import { canSendFirstMessage } from "./firstMessageRule";
+import { GenderInfoStore } from "./genderInfo";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -185,6 +187,7 @@ export function createApp(deps?: {
   liveLocationShareStore: LiveLocationShareStore;
   callStore: CallStore;
   videoCallEffectsStore: VideoCallEffectsStore;
+  genderInfoStore: GenderInfoStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -275,6 +278,7 @@ export function createApp(deps?: {
   const liveLocationShareStore = new LiveLocationShareStore();
   const callStore = new CallStore();
   const videoCallEffectsStore = new VideoCallEffectsStore();
+  const genderInfoStore = new GenderInfoStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -2078,6 +2082,22 @@ export function createApp(deps?: {
     res.json({ effects: videoCallEffectsStore.get(req.params.author) });
   });
 
+  // Bumble's real "women message first" rule (#135) — a declared gender
+  // per chat author, used only to enforce that rule on a fresh match's
+  // opening message; see genderInfo.ts and message:send below.
+  app.put("/api/gender-info/:author", (req, res) => {
+    const result = genderInfoStore.set(req.params.author, req.body?.gender);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ gender: result.gender });
+  });
+
+  app.get("/api/gender-info/:author", (req, res) => {
+    res.json({ gender: genderInfoStore.get(req.params.author) ?? null });
+  });
+
   // GDPR data portability: its own high-priority, dependency-free path,
   // same as Report/Block/SOS. Streams the requester's own data back as a
   // downloadable JSON backup rather than requiring a separate export job.
@@ -2775,6 +2795,7 @@ export function createApp(deps?: {
     liveLocationShareStore,
     callStore,
     videoCallEffectsStore,
+    genderInfoStore,
   };
 }
 
@@ -2790,6 +2811,7 @@ export async function createChatServer() {
     liveLocationShareStore,
     callStore,
     blockStore,
+    genderInfoStore,
   } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -2839,6 +2861,26 @@ export async function createChatServer() {
       }
 
       const roomId = payload.roomId || DEFAULT_ROOM_ID;
+
+      // Bumble's real "women message first" rule (#135) — only checked
+      // when the client tells us who the first message is for (a fresh
+      // 1:1 match's chat screen; this app's rooms otherwise have no
+      // formal "these two people only" concept to derive it from) and
+      // only for the very first message ever sent in that room. Uses
+      // genderInfo.ts's own per-chat-author store — same "own per-field
+      // store keyed by guest chat author" pattern as #67-89's other
+      // profile info, not #21-28's auth-gated onboarding gender field,
+      // since guest chat identities aren't merged with real accounts yet.
+      if (payload.recipient && (messagesByRoom.get(roomId) ?? []).length === 0) {
+        const senderGender = genderInfoStore.get(payload.author);
+        const recipientGender = genderInfoStore.get(payload.recipient);
+        const check = canSendFirstMessage(senderGender, recipientGender);
+        if (!check.allowed) {
+          socket.emit("message:rejected", { reason: "first_message_gender_rule", error: check.error });
+          return;
+        }
+      }
+
       const message: ChatMessage = buildChatMessage(payload);
 
       // WhatsApp/Bumble's real "share live location" (#127): a static

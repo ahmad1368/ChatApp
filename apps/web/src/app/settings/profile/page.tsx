@@ -27,6 +27,7 @@ import SocialLinksEditor from "../../SocialLinksEditor";
 import TravelModeEditor from "../../TravelModeEditor";
 import PassportModeEditor from "../../PassportModeEditor";
 import ProfileColorThemeEditor from "../../ProfileColorThemeEditor";
+import GenderInfoEditor from "../../GenderInfoEditor";
 import AchievementsInfoEditor from "../../AchievementsInfoEditor";
 import DisplayNameModeEditor from "../../DisplayNameModeEditor";
 import StylizedAvatarEditor from "../../StylizedAvatarEditor";
@@ -76,6 +77,7 @@ export default function ProfileSettingsPage() {
       <TravelModeEditor author={author} />
       <PassportModeEditor author={author} />
       <ProfileColorThemeEditor author={author} />
+      <GenderInfoEditor author={author} />
       <AchievementsInfoEditor author={author} />
       <DisplayNameModeEditor author={author} />
       <StylizedAvatarEditor author={author} />
