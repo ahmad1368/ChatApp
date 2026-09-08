@@ -89,6 +89,38 @@ function useSwipeToReply(onTrigger: () => void) {
   };
 }
 
+/**
+ * Bumble/Snapchat-style "view once, then gone" chat photo (#123): gated
+ * behind an explicit tap rather than loading immediately on message
+ * arrival — auto-loading would consume the one-time view before the
+ * recipient ever chose to look. `viewer` is this browser's own identity;
+ * the server (selfDestructPhotos.ts) never destroys it for the original
+ * sender, so tapping your own sent photo is always safe to repeat.
+ */
+function SelfDestructPhoto({ url, viewer }: { url: string; viewer: string }) {
+  const [revealed, setRevealed] = useState(false);
+  const [gone, setGone] = useState(false);
+
+  if (gone) {
+    return <p className="chat-app__self-destruct-gone">🔥 This photo has disappeared</p>;
+  }
+  if (!revealed) {
+    return (
+      <button className="chat-app__self-destruct-reveal" onClick={() => setRevealed(true)}>
+        🔥 Tap to view — disappears after viewing
+      </button>
+    );
+  }
+  return (
+    <img
+      src={`${url}?viewer=${encodeURIComponent(viewer)}`}
+      alt="Disappearing"
+      className="chat-app__shared-image"
+      onError={() => setGone(true)}
+    />
+  );
+}
+
 function MessageRow({
   message,
   highlighted,
@@ -98,6 +130,7 @@ function MessageRow({
   onReport,
   onBlock,
   isOwnMessage,
+  viewer,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -107,6 +140,7 @@ function MessageRow({
   onReport: (target: { author: string; messageId: string }) => void;
   onBlock: (author: string) => void;
   isOwnMessage: boolean;
+  viewer: string;
 }) {
   const { dragX, handlers } = useSwipeToReply(() =>
     onReply({ id: message.id, author: message.author, text: message.text })
@@ -133,7 +167,9 @@ function MessageRow({
           </div>
         )}
         <strong>{message.author}: </strong>
-        {message.audioUrl ? (
+        {message.selfDestructImageUrl ? (
+          <SelfDestructPhoto url={message.selfDestructImageUrl} viewer={viewer} />
+        ) : message.audioUrl ? (
           <div className="chat-app__voice-note">
             {message.waveform && message.waveform.length > 0 && (
               <div className="chat-app__waveform" aria-hidden>
@@ -228,6 +264,9 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isSendingSelfDestructPhoto, setIsSendingSelfDestructPhoto] = useState(false);
+  const [selfDestructError, setSelfDestructError] = useState<string | null>(null);
+  const selfDestructFileInputRef = useRef<HTMLInputElement | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSendingVoiceNote, setIsSendingVoiceNote] = useState(false);
   const [voiceNoteError, setVoiceNoteError] = useState<string | null>(null);
@@ -778,6 +817,46 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     if (file) sendImage(file);
   };
 
+  // Bumble/Snapchat-style "view once, then gone" chat photo (#123): same
+  // compress-then-upload pipeline as sendImage(), but to the self-
+  // destruct endpoint (see selfDestructPhotos.ts) and carrying `author`
+  // so the server lets the sender keep re-viewing their own sent photo.
+  const sendSelfDestructPhoto = async (file: File) => {
+    if (isGuest) return;
+    setSelfDestructError(null);
+    setIsSendingSelfDestructPhoto(true);
+    try {
+      const { mimeType, base64 } = await compressImage(file);
+      const uploadRes = await fetch(`${API_URL}/api/self-destruct-photos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ author, mimeType, data: base64 }),
+      });
+      if (!uploadRes.ok) {
+        const body = await uploadRes.json().catch(() => ({}));
+        throw new Error(body.error ?? "Upload failed");
+      }
+      const { url } = await uploadRes.json();
+      socketRef.current?.emit("message:send", {
+        roomId,
+        author,
+        text: "",
+        selfDestructImageUrl: `${API_URL}${url}`,
+        asGuest: isGuest,
+      });
+    } catch (err) {
+      setSelfDestructError(err instanceof Error ? err.message : "Failed to send photo");
+    } finally {
+      setIsSendingSelfDestructPhoto(false);
+    }
+  };
+
+  const handleSelfDestructFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) sendSelfDestructPhoto(file);
+  };
+
   // Badoo's real voice-note messages with a waveform (#122): record via
   // MediaRecorder, compute the waveform client-side (see
   // voiceNoteWaveform.ts — this server has no audio-decoding capability
@@ -988,6 +1067,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             onReport={setReportTarget}
             onBlock={blockUser}
             isOwnMessage={m.author === author}
+            viewer={author}
           />
         ))}
         {queue.map((q) => (
@@ -1001,6 +1081,8 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         {isRecording && <p className="chat-app__status">Recording voice note…</p>}
         {isSendingVoiceNote && <p className="chat-app__status">Sending voice note…</p>}
         {voiceNoteError && <p style={{ color: "var(--color-danger)" }}>{voiceNoteError}</p>}
+        {isSendingSelfDestructPhoto && <p className="chat-app__status">Sending disappearing photo…</p>}
+        {selfDestructError && <p style={{ color: "var(--color-danger)" }}>{selfDestructError}</p>}
       </div>
       {replyTarget && (
         <div className="chat-app__reply-banner">
@@ -1051,6 +1133,21 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           title={isRecording ? "Stop recording" : "Record a voice note"}
         >
           {isRecording ? "⏹" : "🎤"}
+        </button>
+        <input
+          ref={selfDestructFileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleSelfDestructFileChange}
+          className="chat-app__file-input"
+        />
+        <button
+          className="chat-app__image-button"
+          onClick={() => selfDestructFileInputRef.current?.click()}
+          disabled={isGuest || isSendingSelfDestructPhoto || !liveUpdatesEnabled}
+          title="Send a disappearing photo"
+        >
+          🔥📷
         </button>
         <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}

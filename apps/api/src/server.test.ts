@@ -620,6 +620,76 @@ test("GET /api/voice-notes/:id returns 404 for an unknown id", async () => {
   }
 });
 
+test("POST /api/self-destruct-photos rejects a missing author (#123)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/self-destruct-photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/self-destruct-photos/:id requires a viewer query param", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const uploadRes = await fetch(`${baseUrl}/api/self-destruct-photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    const { url } = await uploadRes.json();
+
+    const res = await fetch(`${baseUrl}${url}`);
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/self-destruct-photos/:id lets the sender view it repeatedly, but a non-sender only once", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const uploadRes = await fetch(`${baseUrl}/api/self-destruct-photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    const { url } = await uploadRes.json();
+
+    const senderView1 = await fetch(`${baseUrl}${url}?viewer=alice`);
+    assert.equal(senderView1.status, 200);
+    const senderView2 = await fetch(`${baseUrl}${url}?viewer=alice`);
+    assert.equal(senderView2.status, 200);
+
+    const recipientView1 = await fetch(`${baseUrl}${url}?viewer=bob`);
+    assert.equal(recipientView1.status, 200);
+    assert.equal(recipientView1.headers.get("cache-control"), "no-store");
+
+    const recipientView2 = await fetch(`${baseUrl}${url}?viewer=bob`);
+    assert.equal(recipientView2.status, 410);
+
+    const senderViewAfter = await fetch(`${baseUrl}${url}?viewer=alice`);
+    assert.equal(senderViewAfter.status, 410);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/self-destruct-photos/:id returns 404 for an unknown id", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/self-destruct-photos/does-not-exist?viewer=alice`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
 test("POST /api/error-reports rejects a report missing a message", async () => {
   const { server, baseUrl } = listen();
   try {

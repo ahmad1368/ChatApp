@@ -168,3 +168,29 @@ test("message:send carries a voice note's audioUrl and waveform through to messa
     httpServer.close();
   }
 });
+
+test("message:send carries a self-destruct photo's URL through to message:new (#123)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  const listener = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    listener.emit("join", "room-1");
+    await settle();
+
+    const received = waitFor<{ selfDestructImageUrl?: string }>(listener, "message:new");
+    sender.emit("message:send", {
+      roomId: "room-1",
+      author: "alice",
+      text: "",
+      selfDestructImageUrl: "/api/self-destruct-photos/abc123",
+    });
+    const message = await received;
+
+    assert.equal(message.selfDestructImageUrl, "/api/self-destruct-photos/abc123");
+  } finally {
+    sender.close();
+    listener.close();
+    httpServer.close();
+  }
+});

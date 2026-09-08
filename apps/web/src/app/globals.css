@@ -263,6 +263,24 @@ body {
   max-width: 100%;
 }
 
+.chat-app__self-destruct-reveal {
+  display: block;
+  margin-top: 4px;
+  padding: 12px;
+  background: var(--color-panel);
+  color: var(--color-text);
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: inherit;
+}
+
+.chat-app__self-destruct-gone {
+  margin: 4px 0 0;
+  font-style: italic;
+  color: var(--color-muted);
+}
+
 .chat-app__send {
   padding: 8px 16px;
   font-size: inherit;
