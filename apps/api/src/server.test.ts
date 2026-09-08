@@ -37,6 +37,7 @@ function listen() {
     photoStore,
     presenceStore,
     spotifyInfoStore,
+    readReceiptStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -54,6 +55,7 @@ function listen() {
     photoStore,
     presenceStore,
     spotifyInfoStore,
+    readReceiptStore,
   };
 }
 
@@ -167,6 +169,48 @@ test("GET /api/rooms/:roomId/messages?since= returns only messages after that ti
       `${baseUrl}/api/rooms/room-a/messages?since=${encodeURIComponent(older.createdAt)}`
     ).then((r) => r.json());
     assert.deepEqual(sinceOlder, [newer]);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages/:messageId/status defaults to sent (#125)", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  messagesByRoom.set("room-a", [
+    { id: "1", roomId: "room-a", author: "alice", text: "hi", createdAt: "2026-01-01T00:00:00.000Z" },
+  ]);
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/room-a/messages/1/status`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { status: "sent" });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages/:messageId/status reflects delivered/read state", async () => {
+  const { server, baseUrl, messagesByRoom, readReceiptStore } = listen();
+  messagesByRoom.set("room-a", [
+    { id: "1", roomId: "room-a", author: "alice", text: "hi", createdAt: "2026-01-01T00:00:00.000Z" },
+  ]);
+  try {
+    readReceiptStore.markDelivered("1", "bob");
+    const deliveredRes = await fetch(`${baseUrl}/api/rooms/room-a/messages/1/status`);
+    assert.deepEqual(await deliveredRes.json(), { status: "delivered" });
+
+    readReceiptStore.markRead("1", "bob");
+    const readRes = await fetch(`${baseUrl}/api/rooms/room-a/messages/1/status`);
+    assert.deepEqual(await readRes.json(), { status: "read" });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages/:messageId/status 404s for an unknown message", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/room-a/messages/does-not-exist/status`);
+    assert.equal(res.status, 404);
   } finally {
     server.close();
   }

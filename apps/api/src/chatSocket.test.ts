@@ -194,3 +194,55 @@ test("message:send carries a self-destruct photo's URL through to message:new (#
     httpServer.close();
   }
 });
+
+test("message:delivered then message:read broadcast message:status to the room (#125)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  const recipient = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    recipient.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", { roomId: "room-1", author: "alice", text: "hi" });
+    const message = await sent;
+
+    const deliveredStatus = waitFor<{ messageId: string; status: string }>(sender, "message:status");
+    recipient.emit("message:delivered", { roomId: "room-1", messageId: message.id, author: "bob" });
+    assert.deepEqual(await deliveredStatus, { messageId: message.id, status: "delivered" });
+
+    const readStatus = waitFor<{ messageId: string; status: string }>(sender, "message:status");
+    recipient.emit("message:read", { roomId: "room-1", messageId: message.id, author: "bob" });
+    assert.deepEqual(await readStatus, { messageId: message.id, status: "read" });
+  } finally {
+    sender.close();
+    recipient.close();
+    httpServer.close();
+  }
+});
+
+test("message:delivered from the message's own author is ignored", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", { roomId: "room-1", author: "alice", text: "hi" });
+    const message = await sent;
+
+    let statusReceived = false;
+    sender.on("message:status", () => {
+      statusReceived = true;
+    });
+    sender.emit("message:delivered", { roomId: "room-1", messageId: message.id, author: "alice" });
+    await settle();
+
+    assert.equal(statusReceived, false);
+  } finally {
+    sender.close();
+    httpServer.close();
+  }
+});
