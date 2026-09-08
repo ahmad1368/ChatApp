@@ -41,6 +41,7 @@ import { BlockStore } from "./blocks";
 import { ContactBlockStore } from "./contactBlocks";
 import { PinnedChatsStore } from "./pinnedChats";
 import { ArchivedChatsStore } from "./archivedChats";
+import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
 import { SharedDateStore } from "./sharedDates";
@@ -2101,6 +2102,18 @@ export function createApp(deps?: {
 
     res.set("X-Has-More", String(startIndex > 0));
     res.json(all.slice(startIndex, endIndex));
+  });
+
+  // Bumble's real "Search within conversation text" (#140) — same
+  // mutual-block filtering as the plain messages list above, then a
+  // case-insensitive substring match over each message's text.
+  app.get("/api/rooms/:roomId/messages/search", (req, res) => {
+    const { roomId } = req.params;
+    const viewer = typeof req.query.viewer === "string" ? req.query.viewer : undefined;
+    const query = typeof req.query.q === "string" ? req.query.q : "";
+    const unfiltered = messagesByRoom.get(roomId) ?? [];
+    const all = viewer ? unfiltered.filter((m) => !blockStore.isMutuallyBlocked(viewer, m.author)) : unfiltered;
+    res.json({ results: searchMessages(all, query) });
   });
 
   // Bumble's real sent/delivered/read message status (#125) — a REST
