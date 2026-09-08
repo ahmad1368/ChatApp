@@ -628,3 +628,92 @@ test("call:signal relays an opaque WebRTC payload to the room", async () => {
     httpServer.close();
   }
 });
+
+test("message:edit updates the text and broadcasts message:edited (#133)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  const listener = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    listener.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", { roomId: "room-1", author: "alice", text: "hello" });
+    const message = await sent;
+
+    const edited = waitFor<{ messageId: string; text: string; edited: boolean }>(listener, "message:edited");
+    sender.emit("message:edit", { roomId: "room-1", messageId: message.id, author: "alice", text: "hello there" });
+    assert.deepEqual(await edited, { messageId: message.id, text: "hello there", edited: true });
+  } finally {
+    sender.close();
+    listener.close();
+    httpServer.close();
+  }
+});
+
+test("message:edit is rejected for a non-sender", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  const impostor = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    impostor.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", { roomId: "room-1", author: "alice", text: "hello" });
+    const message = await sent;
+
+    const rejected = waitFor<{ messageId: string; error: string }>(impostor, "message:edit-rejected");
+    impostor.emit("message:edit", { roomId: "room-1", messageId: message.id, author: "bob", text: "hacked" });
+    const payload = await rejected;
+    assert.equal(payload.error, "Only the sender can edit this message");
+  } finally {
+    sender.close();
+    impostor.close();
+    httpServer.close();
+  }
+});
+
+test("message:edit is rejected for an image message", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", { roomId: "room-1", author: "alice", text: "", imageUrl: "/api/uploads/abc" });
+    const message = await sent;
+
+    const rejected = waitFor<{ messageId: string; error: string }>(sender, "message:edit-rejected");
+    sender.emit("message:edit", { roomId: "room-1", messageId: message.id, author: "alice", text: "new caption" });
+    const payload = await rejected;
+    assert.equal(payload.error, "Only text messages can be edited");
+  } finally {
+    sender.close();
+    httpServer.close();
+  }
+});
+
+test("message:edit is rejected with a scam phrase, same as a fresh send", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", { roomId: "room-1", author: "alice", text: "hello" });
+    const message = await sent;
+
+    const rejected = waitFor<{ messageId: string; error: string }>(sender, "message:edit-rejected");
+    sender.emit("message:edit", { roomId: "room-1", messageId: message.id, author: "alice", text: "guaranteed return on your investment" });
+    const payload = await rejected;
+    assert.match(payload.error, /scam/i);
+  } finally {
+    sender.close();
+    httpServer.close();
+  }
+});

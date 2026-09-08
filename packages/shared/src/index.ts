@@ -27,6 +27,10 @@ export interface ChatMessage {
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
+  // Bumble's real "edit a sent message" (#133) — set once a message:edit
+  // succeeds; see messageEditing.ts for the sender-only/time-window/
+  // text-only-message rules.
+  edited?: boolean;
 }
 
 export interface ChatLocationShare {

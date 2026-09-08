@@ -415,6 +415,17 @@ body {
   padding-bottom: 4px;
 }
 
+.chat-app__edit-box {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.chat-app__edited-tag {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
 .chat-app__icebreaker {
   flex: 0 0 auto;
   max-width: 240px;
