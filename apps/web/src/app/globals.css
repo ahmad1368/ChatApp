@@ -426,6 +426,10 @@ body {
   color: var(--color-muted);
 }
 
+.chat-app__deleted-message {
+  color: var(--color-muted);
+}
+
 .chat-app__icebreaker {
   flex: 0 0 auto;
   max-width: 240px;

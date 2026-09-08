@@ -30,6 +30,7 @@ import { checkVideoCallEligibility } from "./videoCallGate";
 import { VideoCallEffectsStore } from "./videoCallEffects";
 import { generateIcebreakers } from "./icebreakers";
 import { canEditMessage } from "./messageEditing";
+import { canDeleteMessage } from "./messageDeletion";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -2950,6 +2951,41 @@ export async function createChatServer() {
       message.text = text;
       message.edited = true;
       io.to(roomId).emit("message:edited", { messageId, text: message.text, edited: true });
+    });
+
+    // WhatsApp/Bumble's real "Delete for Everyone" (#134) — see
+    // messageDeletion.ts for the sender-only/time-window rule. Unlike
+    // #133's edit, any message type can be deleted: content fields are
+    // cleared and replaced with a placeholder rather than needing new
+    // content to render. Scoped to the message record itself — this
+    // doesn't chase down and purge an associated stored blob in
+    // voiceNotes.ts/selfDestructPhotos.ts, an acceptable gap since those
+    // are already keyed by an unguessable random id no one else has.
+    socket.on("message:delete", (payload: { roomId?: string; messageId?: string; author?: string }) => {
+      const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+      const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
+      const author = typeof payload?.author === "string" ? payload.author : "";
+      if (!roomId || !messageId || !author) return;
+
+      const message = messagesByRoom.get(roomId)?.find((m) => m.id === messageId);
+      if (!message) {
+        socket.emit("message:delete-rejected", { messageId, error: "Message not found" });
+        return;
+      }
+      const check = canDeleteMessage(message, author);
+      if (!check.allowed) {
+        socket.emit("message:delete-rejected", { messageId, error: check.error });
+        return;
+      }
+
+      message.text = "";
+      message.imageUrl = undefined;
+      message.audioUrl = undefined;
+      message.waveform = undefined;
+      message.selfDestructImageUrl = undefined;
+      message.location = undefined;
+      message.deleted = true;
+      io.to(roomId).emit("message:deleted", { messageId });
     });
 
     // WhatsApp/Bumble's real "share live location" (#127) — periodic

@@ -717,3 +717,75 @@ test("message:edit is rejected with a scam phrase, same as a fresh send", async 
     httpServer.close();
   }
 });
+
+test("message:delete clears the message and broadcasts message:deleted (#134)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  const listener = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    listener.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", { roomId: "room-1", author: "alice", text: "oops" });
+    const message = await sent;
+
+    const deleted = waitFor<{ messageId: string }>(listener, "message:deleted");
+    sender.emit("message:delete", { roomId: "room-1", messageId: message.id, author: "alice" });
+    assert.deepEqual(await deleted, { messageId: message.id });
+  } finally {
+    sender.close();
+    listener.close();
+    httpServer.close();
+  }
+});
+
+test("message:delete clears media fields too", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", { roomId: "room-1", author: "alice", text: "", imageUrl: "/api/uploads/abc" });
+    const message = await sent;
+
+    sender.emit("message:delete", { roomId: "room-1", messageId: message.id, author: "alice" });
+    await settle();
+
+    const historyRes = await fetch(`${baseUrl}/api/rooms/room-1/messages`);
+    const history = await historyRes.json();
+    const stored = history.find((m: { id: string }) => m.id === message.id);
+    assert.equal(stored.imageUrl, undefined);
+    assert.equal(stored.deleted, true);
+  } finally {
+    sender.close();
+    httpServer.close();
+  }
+});
+
+test("message:delete is rejected for a non-sender", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  const impostor = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    impostor.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", { roomId: "room-1", author: "alice", text: "hello" });
+    const message = await sent;
+
+    const rejected = waitFor<{ messageId: string; error: string }>(impostor, "message:delete-rejected");
+    impostor.emit("message:delete", { roomId: "room-1", messageId: message.id, author: "bob" });
+    const payload = await rejected;
+    assert.equal(payload.error, "Only the sender can delete this message");
+  } finally {
+    sender.close();
+    impostor.close();
+    httpServer.close();
+  }
+});

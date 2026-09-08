@@ -144,6 +144,7 @@ function MessageRow({
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
+  onDelete,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -162,12 +163,15 @@ function MessageRow({
   onStartEdit: (message: ChatMessage) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
+  onDelete: (messageId: string) => void;
 }) {
-  // Mirrors messageEditing.ts's rules loosely for the UI — the server is
-  // the actual source of truth and re-checks all of this on message:edit.
+  // Mirrors messageEditing.ts/messageDeletion.ts's rules loosely for the
+  // UI — the server is the actual source of truth and re-checks all of
+  // this on message:edit/message:delete.
   const isPlainTextMessage = !message.location && !message.selfDestructImageUrl && !message.audioUrl && !message.imageUrl;
-  const isWithinEditWindow = Date.now() - new Date(message.createdAt).getTime() < 15 * 60 * 1000;
-  const canEdit = isOwnMessage && isPlainTextMessage && isWithinEditWindow;
+  const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
+  const canEdit = isOwnMessage && isPlainTextMessage && messageAgeMs < 15 * 60 * 1000;
+  const canDelete = isOwnMessage && !message.deleted && messageAgeMs < 24 * 60 * 60 * 1000;
   const { dragX, handlers } = useSwipeToReply(() =>
     onReply({ id: message.id, author: message.author, text: message.text })
   );
@@ -193,7 +197,9 @@ function MessageRow({
           </div>
         )}
         <strong>{message.author}: </strong>
-        {message.location ? (
+        {message.deleted ? (
+          <em className="chat-app__deleted-message">🚫 This message was deleted</em>
+        ) : message.location ? (
           <LocationMessage location={message.location} liveUpdate={liveLocationUpdate} />
         ) : message.selfDestructImageUrl ? (
           <SelfDestructPhoto url={message.selfDestructImageUrl} viewer={viewer} />
@@ -242,6 +248,11 @@ function MessageRow({
         {canEdit && !isEditing && (
           <button className="chat-app__copy-link-button" onClick={() => onStartEdit(message)} title="Edit this message">
             ✏️
+          </button>
+        )}
+        {canDelete && (
+          <button className="chat-app__copy-link-button" onClick={() => onDelete(message.id)} title="Delete for everyone">
+            🗑️
           </button>
         )}
         {!isOwnMessage && (
@@ -828,6 +839,19 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     socket.on("message:edit-rejected", ({ error }: { messageId: string; error: string }) => {
       setEditError(error);
     });
+    // WhatsApp/Bumble's real "Delete for Everyone" (#134).
+    socket.on("message:deleted", ({ messageId }: { messageId: string }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, deleted: true, text: "", imageUrl: undefined, audioUrl: undefined, waveform: undefined, selfDestructImageUrl: undefined, location: undefined }
+            : m
+        )
+      );
+    });
+    socket.on("message:delete-rejected", ({ error }: { messageId: string; error: string }) => {
+      setEditError(error);
+    });
     socket.on("typing:update", ({ roomId: updatedRoomId, authors }: { roomId: string; authors: string[] }) => {
       if (updatedRoomId !== roomId) return;
       setTypingAuthors(authors.filter((a) => a !== authorRef.current));
@@ -1078,6 +1102,12 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     socketRef.current?.emit("message:edit", { roomId, messageId: editingMessageId, author, text: editText.trim() });
     setEditingMessageId(null);
     setEditText("");
+  };
+
+  const deleteMessage = (messageId: string) => {
+    if (!confirm("Delete this message for everyone?")) return;
+    setEditError(null);
+    socketRef.current?.emit("message:delete", { roomId, messageId, author });
   };
 
   const sendImage = async (file: File) => {
@@ -1615,6 +1645,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             onStartEdit={startEdit}
             onSaveEdit={submitEdit}
             onCancelEdit={cancelEdit}
+            onDelete={deleteMessage}
           />
         ))}
         {queue.map((q) => (

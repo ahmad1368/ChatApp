@@ -31,6 +31,10 @@ export interface ChatMessage {
   // succeeds; see messageEditing.ts for the sender-only/time-window/
   // text-only-message rules.
   edited?: boolean;
+  // WhatsApp/Bumble's real "Delete for Everyone" (#134) — set once a
+  // message:delete succeeds; see messageDeletion.ts. The client renders a
+  // placeholder instead of whatever content fields were originally set.
+  deleted?: boolean;
 }
 
 export interface ChatLocationShare {
