@@ -7102,6 +7102,86 @@ test("GET /api/bio-matches/:author returns nothing when the author has no bio", 
   }
 });
 
+test("GET /api/icebreakers/:author/:candidate falls back to generic suggestions with no shared signals (#132)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/icebreakers/alice/bob`);
+    const body = await res.json();
+    assert.equal(body.suggestions.length, 5);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/icebreakers/:author/:candidate suggests based on shared interests and bio keywords", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/interests-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking"], hideInterests: false }),
+    });
+    await fetch(`${baseUrl}/api/interests-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking"], hideInterests: false }),
+    });
+    await fetch(`${baseUrl}/api/bio/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "I love climbing" }),
+    });
+    await fetch(`${baseUrl}/api/bio/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "Big fan of climbing" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/icebreakers/alice/bob`);
+    const body = await res.json();
+    assert.ok(body.suggestions.some((line: string) => line.includes("hiking")));
+    assert.ok(body.suggestions.some((line: string) => line.includes("climbing")));
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/icebreakers/:author/:candidate ignores interests hidden by either side", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/interests-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking"], hideInterests: true }),
+    });
+    await fetch(`${baseUrl}/api/interests-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking"], hideInterests: false }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/icebreakers/alice/bob`);
+    const body = await res.json();
+    assert.ok(!body.suggestions.some((line: string) => line.includes("hiking")));
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/icebreakers/:author/:candidate suggests based on shared music when both connected", async () => {
+  const { server, baseUrl, spotifyInfoStore } = listen();
+  try {
+    spotifyInfoStore.connect("alice", ["Song A"]);
+    spotifyInfoStore.connect("bob", ["Song A"]);
+
+    const res = await fetch(`${baseUrl}/api/icebreakers/alice/bob`);
+    const body = await res.json();
+    assert.ok(body.suggestions.some((line: string) => line.includes("Song A")));
+  } finally {
+    server.close();
+  }
+});
+
 test("POST /api/squads creates a squad and GET /api/squads/:author returns it", async () => {
   const { server, baseUrl } = listen();
   try {

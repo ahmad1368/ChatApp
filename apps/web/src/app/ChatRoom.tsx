@@ -12,6 +12,7 @@ import { computeWaveform } from "./voiceNoteWaveform";
 import GifPicker from "./GifPicker";
 import LocationPicker, { LocationSharePayload } from "./LocationPicker";
 import { applyBeautyFilter, applyBackgroundBlur } from "./beautyFilter";
+import IcebreakerSuggestions from "./IcebreakerSuggestions";
 import LocationMessage from "./LocationMessage";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
@@ -1570,6 +1571,9 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           You're browsing as a guest — you can read messages, but{" "}
           <a href="/signup">sign up</a> to send your own.
         </div>
+      )}
+      {!isGuest && callTarget && messages.length < 3 && (
+        <IcebreakerSuggestions author={author} candidate={callTarget} onPick={setText} />
       )}
       <div className="chat-app__composer">
         <textarea
