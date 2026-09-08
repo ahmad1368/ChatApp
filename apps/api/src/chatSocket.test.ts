@@ -451,6 +451,44 @@ test("call:invite broadcasts call:incoming, call:accept broadcasts call:accepted
   }
 });
 
+test("call:invite with video:true carries the video flag through to call:incoming (#129)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const caller = await connectClient(baseUrl);
+  const callee = await connectClient(baseUrl);
+  try {
+    caller.emit("join", "room-1");
+    callee.emit("join", "room-1");
+    await settle();
+
+    const incoming = waitFor<{ video: boolean }>(callee, "call:incoming");
+    caller.emit("call:invite", { roomId: "room-1", caller: "alice", callee: "bob", video: true });
+    assert.equal((await incoming).video, true);
+  } finally {
+    caller.close();
+    callee.close();
+    httpServer.close();
+  }
+});
+
+test("call:invite without video defaults to an audio call", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const caller = await connectClient(baseUrl);
+  const callee = await connectClient(baseUrl);
+  try {
+    caller.emit("join", "room-1");
+    callee.emit("join", "room-1");
+    await settle();
+
+    const incoming = waitFor<{ video: boolean }>(callee, "call:incoming");
+    caller.emit("call:invite", { roomId: "room-1", caller: "alice", callee: "bob" });
+    assert.equal((await incoming).video, false);
+  } finally {
+    caller.close();
+    callee.close();
+    httpServer.close();
+  }
+});
+
 test("call:invite is rejected when the callee is already in a call", async () => {
   const { httpServer, baseUrl } = await startChatServer();
   const caller = await connectClient(baseUrl);

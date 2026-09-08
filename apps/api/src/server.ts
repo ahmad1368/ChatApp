@@ -2867,12 +2867,12 @@ export async function createChatServer() {
       }
     );
 
-    // Badoo's real in-app audio call (#128) — signaling only, broadcast to
-    // the room the same way chat messages are (recipients are already
-    // joined to it), with clients filtering for events addressed to them.
-    // See calls.ts for the actual state machine and why there's no
-    // per-user socket routing here.
-    socket.on("call:invite", (payload: { roomId?: string; caller?: string; callee?: string }) => {
+    // Badoo's real in-app audio/video call (#128, extended to video by
+    // #129) — signaling only, broadcast to the room the same way chat
+    // messages are (recipients are already joined to it), with clients
+    // filtering for events addressed to them. See calls.ts for the actual
+    // state machine and why there's no per-user socket routing here.
+    socket.on("call:invite", (payload: { roomId?: string; caller?: string; callee?: string; video?: unknown }) => {
       const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
       const caller = typeof payload?.caller === "string" ? payload.caller : "";
       const callee = typeof payload?.callee === "string" ? payload.callee : "";
@@ -2883,7 +2883,7 @@ export async function createChatServer() {
         socket.emit("call:rejected", { reason: "blocked" });
         return;
       }
-      const result = callStore.initiate(roomId, caller, callee);
+      const result = callStore.initiate(roomId, caller, callee, payload?.video);
       if (!result.success) {
         socket.emit("call:rejected", { reason: result.error });
         return;
