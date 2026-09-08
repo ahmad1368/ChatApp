@@ -33,6 +33,7 @@ import { canEditMessage } from "./messageEditing";
 import { canDeleteMessage } from "./messageDeletion";
 import { canSendFirstMessage } from "./firstMessageRule";
 import { GenderInfoStore } from "./genderInfo";
+import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -188,6 +189,7 @@ export function createApp(deps?: {
   callStore: CallStore;
   videoCallEffectsStore: VideoCallEffectsStore;
   genderInfoStore: GenderInfoStore;
+  matchExpiryStore: MatchExpiryStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -279,6 +281,7 @@ export function createApp(deps?: {
   const callStore = new CallStore();
   const videoCallEffectsStore = new VideoCallEffectsStore();
   const genderInfoStore = new GenderInfoStore();
+  const matchExpiryStore = new MatchExpiryStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1705,6 +1708,11 @@ export function createApp(deps?: {
     // real network activity for the hour it happened in — see
     // peakHours.ts.
     peakHoursStore.recordActivity();
+    // Bumble's real 24-hour match-expiry timer (#136) starts ticking the
+    // moment a match is created — see matchExpiry.ts.
+    if (result.matched) {
+      matchExpiryStore.recordMatch(swiperName, swipedName);
+    }
     res.status(201).json({ matched: result.matched });
   });
 
@@ -1714,14 +1722,39 @@ export function createApp(deps?: {
   // per match at the route level like #94's swipe-candidates route.
   app.get("/api/matches/:author", (req, res) => {
     const author = req.params.author;
-    const matches = swipeStore.getMatches(author).map((matchedAuthor) => ({
-      author: matchedAuthor,
-      compatibility: computeInterestCompatibility(
-        interestsInfoStore.get(author).interests,
-        interestsInfoStore.get(matchedAuthor).interests
-      ),
-    }));
+    // Bumble's real 24-hour match-expiry timer (#136): an expired match
+    // (nobody said anything within the window) drops off the list, same
+    // as real Bumble removing it from your matches.
+    const matches = swipeStore
+      .getMatches(author)
+      .filter((matchedAuthor) => !matchExpiryStore.isExpired(author, matchedAuthor))
+      .map((matchedAuthor) => ({
+        author: matchedAuthor,
+        compatibility: computeInterestCompatibility(
+          interestsInfoStore.get(author).interests,
+          interestsInfoStore.get(matchedAuthor).interests
+        ),
+      }));
     res.json({ matches });
+  });
+
+  // Bumble's real "24-hour timer to respond to the first message before
+  // the Match expires" (#136) — lets the client render a live countdown
+  // rather than only finding out a match is gone once it disappears.
+  app.get("/api/matches/:author/:candidate/expiry", (req, res) => {
+    const { author, candidate } = req.params;
+    const state = matchExpiryStore.getState(author, candidate);
+    if (!state) {
+      res.status(404).json({ error: "No tracked match between these two authors" });
+      return;
+    }
+    const expiresAt = new Date(new Date(state.matchedAt).getTime() + MATCH_RESPONSE_WINDOW_MS).toISOString();
+    res.json({
+      matchedAt: state.matchedAt,
+      firstMessageSentAt: state.firstMessageSentAt ?? null,
+      expiresAt,
+      expired: matchExpiryStore.isExpired(author, candidate),
+    });
   });
 
   // Tinder's "Rewind" feature (#92): undo only the single most recent
@@ -2796,6 +2829,7 @@ export function createApp(deps?: {
     callStore,
     videoCallEffectsStore,
     genderInfoStore,
+    matchExpiryStore,
   };
 }
 
@@ -2812,6 +2846,7 @@ export async function createChatServer() {
     callStore,
     blockStore,
     genderInfoStore,
+    matchExpiryStore,
   } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -2862,26 +2897,40 @@ export async function createChatServer() {
 
       const roomId = payload.roomId || DEFAULT_ROOM_ID;
 
-      // Bumble's real "women message first" rule (#135) — only checked
-      // when the client tells us who the first message is for (a fresh
-      // 1:1 match's chat screen; this app's rooms otherwise have no
-      // formal "these two people only" concept to derive it from) and
-      // only for the very first message ever sent in that room. Uses
-      // genderInfo.ts's own per-chat-author store — same "own per-field
-      // store keyed by guest chat author" pattern as #67-89's other
-      // profile info, not #21-28's auth-gated onboarding gender field,
-      // since guest chat identities aren't merged with real accounts yet.
-      if (payload.recipient && (messagesByRoom.get(roomId) ?? []).length === 0) {
-        const senderGender = genderInfoStore.get(payload.author);
-        const recipientGender = genderInfoStore.get(payload.recipient);
-        const check = canSendFirstMessage(senderGender, recipientGender);
-        if (!check.allowed) {
-          socket.emit("message:rejected", { reason: "first_message_gender_rule", error: check.error });
+      // Both of these are only checked when the client tells us who this
+      // message is for (a fresh 1:1 match's chat screen; this app's rooms
+      // otherwise have no formal "these two people only" concept to
+      // derive it from).
+      if (payload.recipient) {
+        // Bumble's real 24-hour match-expiry timer (#136): once expired
+        // with no first message sent, the match is over — see
+        // matchExpiry.ts.
+        if (matchExpiryStore.isExpired(payload.author, payload.recipient)) {
+          socket.emit("message:rejected", { reason: "match_expired" });
           return;
+        }
+        // Bumble's real "women message first" rule (#135) — only for the
+        // very first message ever sent in the room. Uses genderInfo.ts's
+        // own per-chat-author store — same "own per-field store keyed by
+        // guest chat author" pattern as #67-89's other profile info, not
+        // #21-28's auth-gated onboarding gender field, since guest chat
+        // identities aren't merged with real accounts yet.
+        if ((messagesByRoom.get(roomId) ?? []).length === 0) {
+          const senderGender = genderInfoStore.get(payload.author);
+          const recipientGender = genderInfoStore.get(payload.recipient);
+          const check = canSendFirstMessage(senderGender, recipientGender);
+          if (!check.allowed) {
+            socket.emit("message:rejected", { reason: "first_message_gender_rule", error: check.error });
+            return;
+          }
         }
       }
 
       const message: ChatMessage = buildChatMessage(payload);
+
+      if (payload.recipient) {
+        matchExpiryStore.recordFirstMessage(payload.author, payload.recipient);
+      }
 
       // WhatsApp/Bumble's real "share live location" (#127): a static
       // ("text") location share needs no extra validation beyond the

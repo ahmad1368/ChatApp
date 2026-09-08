@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { DEFAULT_ROOM_ID } from "@chatapp/shared";
 import { getOrCreateGuestIdentity } from "../guestIdentity";
+import MatchCountdown from "../MatchCountdown";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -22,7 +23,10 @@ interface Match {
  * Links into the app's single shared chat room (#1-28's original chat
  * core, still one room per this app's current scope) rather than a
  * per-match private thread — matched-pair DM rooms don't exist yet in
- * this codebase and are a separate, larger feature.
+ * this codebase and are a separate, larger feature. Each row also shows
+ * #136's real 24-hour "say something before the match expires" countdown
+ * (see MatchCountdown.tsx) — an expired match with nobody having sent a
+ * first message just drops out of this list entirely on the next load.
  */
 export default function MatchesPage() {
   const [author] = useState(() => getOrCreateGuestIdentity());
@@ -63,6 +67,7 @@ export default function MatchesPage() {
                   <Link href={`/profile/${encodeURIComponent(match.author)}`}>{match.author}</Link>
                 </p>
                 <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{match.compatibility}% compatible</p>
+                <MatchCountdown author={author} candidate={match.author} />
               </div>
               <Link href={`/room/${DEFAULT_ROOM_ID}`}>Chat</Link>
             </li>
