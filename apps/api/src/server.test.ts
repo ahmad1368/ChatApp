@@ -42,6 +42,7 @@ function listen() {
     liveLocationShareStore,
     callStore,
     matchExpiryStore,
+    pinnedChatsStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -64,6 +65,7 @@ function listen() {
     liveLocationShareStore,
     callStore,
     matchExpiryStore,
+    pinnedChatsStore,
   };
 }
 
@@ -2402,6 +2404,64 @@ test("DELETE /api/blocks removes a block, 404s if absent", async () => {
       body: JSON.stringify({ blockerAuthor: "alice", blockedAuthor: "bob" }),
     });
     assert.equal(missing.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/pinned-chats pins a chat (#138)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/pinned-chats`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice", chatAuthor: "bob" }),
+    });
+    assert.equal(res.status, 201);
+    const listRes = await fetch(`${baseUrl}/api/pinned-chats/alice`);
+    assert.deepEqual((await listRes.json()).pinnedChats, ["bob"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/pinned-chats rejects missing fields (#138)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/pinned-chats`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/pinned-chats/:viewerAuthor returns only that viewer's own pins (#138)", async () => {
+  const { server, baseUrl, pinnedChatsStore } = listen();
+  try {
+    pinnedChatsStore.pin("alice", "bob");
+    pinnedChatsStore.pin("dave", "alice");
+    const res = await fetch(`${baseUrl}/api/pinned-chats/alice`);
+    assert.deepEqual((await res.json()).pinnedChats, ["bob"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/pinned-chats unpins a chat (#138)", async () => {
+  const { server, baseUrl, pinnedChatsStore } = listen();
+  try {
+    pinnedChatsStore.pin("alice", "bob");
+    const res = await fetch(`${baseUrl}/api/pinned-chats`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice", chatAuthor: "bob" }),
+    });
+    assert.equal(res.status, 204);
+    assert.equal(pinnedChatsStore.isPinned("alice", "bob"), false);
   } finally {
     server.close();
   }

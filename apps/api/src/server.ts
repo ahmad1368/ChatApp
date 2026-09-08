@@ -39,6 +39,7 @@ import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
 import { BlockStore } from "./blocks";
 import { ContactBlockStore } from "./contactBlocks";
+import { PinnedChatsStore } from "./pinnedChats";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
 import { SharedDateStore } from "./sharedDates";
@@ -135,6 +136,7 @@ export function createApp(deps?: {
   reportStore: ReportStore;
   blockStore: BlockStore;
   contactBlockStore: ContactBlockStore;
+  pinnedChatsStore: PinnedChatsStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   sharedDateStore: SharedDateStore;
@@ -222,6 +224,7 @@ export function createApp(deps?: {
   const reportStore = new ReportStore();
   const blockStore = new BlockStore();
   const contactBlockStore = new ContactBlockStore();
+  const pinnedChatsStore = new PinnedChatsStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const sharedDateStore = new SharedDateStore();
@@ -374,6 +377,30 @@ export function createApp(deps?: {
   // blocked party).
   app.get("/api/blocks/:blockerAuthor", (req, res) => {
     res.json({ blockedAuthors: blockStore.getBlockedAuthors(req.params.blockerAuthor) });
+  });
+
+  // Bumble's real "Pin important chats to the top of the list" (#138).
+  // One-sided like blocking above — pinning is per-viewer, not mutual.
+  app.post("/api/pinned-chats", (req, res) => {
+    const result = pinnedChatsStore.pin(req.body?.viewerAuthor, req.body?.chatAuthor);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ pinned: true });
+  });
+
+  app.delete("/api/pinned-chats", (req, res) => {
+    const result = pinnedChatsStore.unpin(req.body?.viewerAuthor, req.body?.chatAuthor);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  app.get("/api/pinned-chats/:viewerAuthor", (req, res) => {
+    res.json({ pinnedChats: pinnedChatsStore.getPinnedChats(req.params.viewerAuthor) });
   });
 
   // Self-declared phone number (same client-supplied-identity limitation as
@@ -2790,6 +2817,7 @@ export function createApp(deps?: {
     reportStore,
     blockStore,
     contactBlockStore,
+    pinnedChatsStore,
     watermarkStore,
     photoStore,
     sharedDateStore,
