@@ -21,6 +21,7 @@ import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
 import { UploadStore } from "./uploads";
 import { VoiceNoteStore } from "./voiceNotes";
+import { SelfDestructPhotoStore } from "./selfDestructPhotos";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -184,6 +185,7 @@ export function createApp(deps?: {
   const pushService = new PushService();
   const uploadStore = new UploadStore();
   const voiceNoteStore = new VoiceNoteStore();
+  const selfDestructPhotoStore = new SelfDestructPhotoStore();
   const errorReportStore = new ErrorReportStore();
   const otpService = new OtpService();
   const recoveryCodeService = new RecoveryCodeService();
@@ -2080,6 +2082,37 @@ export function createApp(deps?: {
     res.set("Content-Type", note.mimeType);
     res.set("Cache-Control", "public, max-age=31536000, immutable");
     res.send(note.data);
+  });
+
+  // Bumble/Snapchat-style "view once, then gone" chat photo (#123) — see
+  // selfDestructPhotos.ts. Never cacheable (each GET can be the one that
+  // destroys it), unlike /api/uploads and /api/voice-notes above.
+  app.post("/api/self-destruct-photos", (req, res) => {
+    const { author, mimeType, data } = req.body ?? {};
+    const result = selfDestructPhotoStore.save(author, mimeType, data);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ url: `/api/self-destruct-photos/${result.id}` });
+  });
+
+  app.get("/api/self-destruct-photos/:id", (req, res) => {
+    const viewer = typeof req.query.viewer === "string" ? req.query.viewer.trim() : "";
+    if (!viewer) {
+      res.status(400).json({ error: "viewer is required" });
+      return;
+    }
+    const photo = selfDestructPhotoStore.view(req.params.id, viewer);
+    if (!photo) {
+      res.status(selfDestructPhotoStore.hasBeenViewed(req.params.id) ? 410 : 404).json({
+        error: selfDestructPhotoStore.hasBeenViewed(req.params.id) ? "This photo has already disappeared" : "Photo not found",
+      });
+      return;
+    }
+    res.set("Content-Type", photo.mimeType);
+    res.set("Cache-Control", "no-store");
+    res.send(photo.data);
   });
 
   // Collects unhandled client-side errors (uncaught exceptions, rejected

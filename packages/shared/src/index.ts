@@ -11,6 +11,11 @@ export interface ChatMessage {
   // can render the waveform without a second fetch.
   audioUrl?: string;
   waveform?: number[];
+  // Bumble/Snapchat-style "view once, then gone" chat photo (#123) —
+  // distinct from imageUrl since this one hits a view-destroys-it
+  // endpoint (see selfDestructPhotos.ts) rather than a permanently
+  // viewable upload.
+  selfDestructImageUrl?: string;
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
@@ -23,6 +28,7 @@ export interface SendMessagePayload {
   imageUrl?: string;
   audioUrl?: string;
   waveform?: number[];
+  selfDestructImageUrl?: string;
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;

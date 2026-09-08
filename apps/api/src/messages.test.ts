@@ -53,4 +53,19 @@ describe("buildChatMessage", () => {
     assert.equal(message.audioUrl, undefined);
     assert.equal(message.waveform, undefined);
   });
+
+  it("carries a self-destruct photo's URL through when provided (#123)", () => {
+    const message = buildChatMessage({
+      roomId: "room-a",
+      author: "bob",
+      text: "",
+      selfDestructImageUrl: "/api/self-destruct-photos/abc123",
+    });
+    assert.equal(message.selfDestructImageUrl, "/api/self-destruct-photos/abc123");
+  });
+
+  it("leaves selfDestructImageUrl undefined when not provided", () => {
+    const message = buildChatMessage({ roomId: "room-a", author: "bob", text: "hello" });
+    assert.equal(message.selfDestructImageUrl, undefined);
+  });
 });

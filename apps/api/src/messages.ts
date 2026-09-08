@@ -10,6 +10,7 @@ export function buildChatMessage(payload: SendMessagePayload): ChatMessage {
     imageUrl: payload.imageUrl,
     audioUrl: payload.audioUrl,
     waveform: payload.waveform,
+    selfDestructImageUrl: payload.selfDestructImageUrl,
     replyToId: payload.replyToId,
     replyToAuthor: payload.replyToAuthor,
     replyToText: payload.replyToText,
