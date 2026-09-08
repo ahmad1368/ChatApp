@@ -11,6 +11,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 interface Match {
   author: string;
   compatibility: number;
+  archived: boolean;
 }
 
 /**
@@ -28,24 +29,49 @@ interface Match {
  * (see MatchCountdown.tsx) — an expired match with nobody having sent a
  * first message just drops out of this list entirely on the next load.
  * #138's pin toggle sorts pinned matches to the top of this list, per
- * viewer (see pinnedChats.ts — one-sided, like #45's blocking).
+ * viewer (see pinnedChats.ts — one-sided, like #45's blocking). #139's
+ * archive toggle hides a match from the default list without unmatching
+ * or affecting #136/#137's expiry timer, and can be reviewed in a
+ * separate "Show archived" view (see archivedChats.ts — also one-sided).
  */
 export default function MatchesPage() {
   const [author] = useState(() => getOrCreateGuestIdentity());
   const [matches, setMatches] = useState<Match[]>([]);
   const [pinnedChats, setPinnedChats] = useState<Set<string>>(new Set());
+  const [showArchived, setShowArchived] = useState(false);
 
-  useEffect(() => {
-    fetch(`${API_URL}/api/matches/${encodeURIComponent(author)}`)
+  const loadMatches = () => {
+    fetch(`${API_URL}/api/matches/${encodeURIComponent(author)}?includeArchived=true`)
       .then((res) => res.json())
       .then((body) => setMatches(body.matches ?? []))
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadMatches();
 
     fetch(`${API_URL}/api/pinned-chats/${encodeURIComponent(author)}`)
       .then((res) => res.json())
       .then((body) => setPinnedChats(new Set(body.pinnedChats ?? [])))
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [author]);
+
+  const toggleArchive = (chatAuthor: string, isArchived: boolean) => {
+    const method = isArchived ? "DELETE" : "POST";
+    fetch(`${API_URL}/api/archived-chats`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: author, chatAuthor }),
+    })
+      .then((res) => {
+        if (!res.ok) return;
+        setMatches((prev) =>
+          prev.map((m) => (m.author === chatAuthor ? { ...m, archived: !isArchived } : m))
+        );
+      })
+      .catch(() => {});
+  };
 
   const togglePin = (chatAuthor: string) => {
     const isPinned = pinnedChats.has(chatAuthor);
@@ -67,11 +93,13 @@ export default function MatchesPage() {
       .catch(() => {});
   };
 
-  const sortedMatches = [...matches].sort((a, b) => {
+  const visibleMatches = matches.filter((m) => m.archived === showArchived);
+  const sortedMatches = [...visibleMatches].sort((a, b) => {
     const aPinned = pinnedChats.has(a.author) ? 1 : 0;
     const bPinned = pinnedChats.has(b.author) ? 1 : 0;
     return bPinned - aPinned;
   });
+  const archivedCount = matches.filter((m) => m.archived).length;
 
   return (
     <main style={{ maxWidth: 480, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
@@ -79,8 +107,27 @@ export default function MatchesPage() {
       <p>
         <Link href="/discover">&larr; Back to Discover</Link>
       </p>
-      {matches.length === 0 ? (
-        <p style={{ color: "var(--color-muted)", marginTop: 16 }}>No matches yet — keep swiping!</p>
+      {archivedCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowArchived((prev) => !prev)}
+          style={{
+            fontSize: 12,
+            background: "none",
+            border: "1px solid var(--color-border)",
+            borderRadius: 6,
+            padding: "4px 8px",
+            cursor: "pointer",
+            marginBottom: 8,
+          }}
+        >
+          {showArchived ? "← Back to matches" : `Show archived (${archivedCount})`}
+        </button>
+      )}
+      {sortedMatches.length === 0 ? (
+        <p style={{ color: "var(--color-muted)", marginTop: 16 }}>
+          {showArchived ? "No archived chats." : "No matches yet — keep swiping!"}
+        </p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, marginTop: 16 }}>
           {sortedMatches.map((match) => (
@@ -119,6 +166,20 @@ export default function MatchesPage() {
                   }}
                 >
                   {pinnedChats.has(match.author) ? "Unpin" : "Pin"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleArchive(match.author, match.archived)}
+                  style={{
+                    fontSize: 12,
+                    background: "none",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 6,
+                    padding: "4px 8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {match.archived ? "Unarchive" : "Archive"}
                 </button>
                 <Link href={`/room/${DEFAULT_ROOM_ID}`}>Chat</Link>
               </div>

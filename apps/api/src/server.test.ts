@@ -43,6 +43,7 @@ function listen() {
     callStore,
     matchExpiryStore,
     pinnedChatsStore,
+    archivedChatsStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -66,6 +67,7 @@ function listen() {
     callStore,
     matchExpiryStore,
     pinnedChatsStore,
+    archivedChatsStore,
   };
 }
 
@@ -2462,6 +2464,91 @@ test("DELETE /api/pinned-chats unpins a chat (#138)", async () => {
     });
     assert.equal(res.status, 204);
     assert.equal(pinnedChatsStore.isPinned("alice", "bob"), false);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/archived-chats archives a chat (#139)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/archived-chats`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice", chatAuthor: "bob" }),
+    });
+    assert.equal(res.status, 201);
+    const listRes = await fetch(`${baseUrl}/api/archived-chats/alice`);
+    assert.deepEqual((await listRes.json()).archivedChats, ["bob"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/archived-chats rejects missing fields (#139)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/archived-chats`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/archived-chats/:viewerAuthor returns only that viewer's own archived chats (#139)", async () => {
+  const { server, baseUrl, archivedChatsStore } = listen();
+  try {
+    archivedChatsStore.archive("alice", "bob");
+    archivedChatsStore.archive("dave", "alice");
+    const res = await fetch(`${baseUrl}/api/archived-chats/alice`);
+    assert.deepEqual((await res.json()).archivedChats, ["bob"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/archived-chats unarchives a chat (#139)", async () => {
+  const { server, baseUrl, archivedChatsStore } = listen();
+  try {
+    archivedChatsStore.archive("alice", "bob");
+    const res = await fetch(`${baseUrl}/api/archived-chats`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice", chatAuthor: "bob" }),
+    });
+    assert.equal(res.status, 204);
+    assert.equal(archivedChatsStore.isArchived("alice", "bob"), false);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/matches/:author excludes an archived match by default, includes it with includeArchived=true (#139)", async () => {
+  const { server, baseUrl, archivedChatsStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    archivedChatsStore.archive("alice", "bob");
+
+    const defaultRes = await fetch(`${baseUrl}/api/matches/alice`);
+    assert.deepEqual(await defaultRes.json(), { matches: [] });
+
+    const includeRes = await fetch(`${baseUrl}/api/matches/alice?includeArchived=true`);
+    const includeBody = await includeRes.json();
+    assert.deepEqual(includeBody.matches, [{ author: "bob", compatibility: 0, archived: true }]);
   } finally {
     server.close();
   }
@@ -5295,7 +5382,7 @@ test("POST /api/swipes reports a match on mutual likes, and GET /api/matches ref
     assert.deepEqual(await res.json(), { matched: true });
 
     const matchesRes = await fetch(`${baseUrl}/api/matches/alice`);
-    assert.deepEqual(await matchesRes.json(), { matches: [{ author: "bob", compatibility: 0 }] });
+    assert.deepEqual(await matchesRes.json(), { matches: [{ author: "bob", compatibility: 0, archived: false }] });
   } finally {
     server.close();
   }
@@ -5327,7 +5414,7 @@ test("GET /api/matches/:author includes each match's real interest-compatibility
     });
 
     const res = await fetch(`${baseUrl}/api/matches/alice`);
-    assert.deepEqual(await res.json(), { matches: [{ author: "bob", compatibility: 100 }] });
+    assert.deepEqual(await res.json(), { matches: [{ author: "bob", compatibility: 100, archived: false }] });
   } finally {
     server.close();
   }

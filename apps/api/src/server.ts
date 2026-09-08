@@ -40,6 +40,7 @@ import { ReportStore } from "./reports";
 import { BlockStore } from "./blocks";
 import { ContactBlockStore } from "./contactBlocks";
 import { PinnedChatsStore } from "./pinnedChats";
+import { ArchivedChatsStore } from "./archivedChats";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
 import { SharedDateStore } from "./sharedDates";
@@ -137,6 +138,7 @@ export function createApp(deps?: {
   blockStore: BlockStore;
   contactBlockStore: ContactBlockStore;
   pinnedChatsStore: PinnedChatsStore;
+  archivedChatsStore: ArchivedChatsStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   sharedDateStore: SharedDateStore;
@@ -225,6 +227,7 @@ export function createApp(deps?: {
   const blockStore = new BlockStore();
   const contactBlockStore = new ContactBlockStore();
   const pinnedChatsStore = new PinnedChatsStore();
+  const archivedChatsStore = new ArchivedChatsStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const sharedDateStore = new SharedDateStore();
@@ -401,6 +404,31 @@ export function createApp(deps?: {
 
   app.get("/api/pinned-chats/:viewerAuthor", (req, res) => {
     res.json({ pinnedChats: pinnedChatsStore.getPinnedChats(req.params.viewerAuthor) });
+  });
+
+  // Bumble's real "Archive old chats" (#139). One-sided like pinning above
+  // — archiving is a per-viewer list preference, not a mutual/shared flag,
+  // and doesn't affect matching or #136/#137's expiry timer at all.
+  app.post("/api/archived-chats", (req, res) => {
+    const result = archivedChatsStore.archive(req.body?.viewerAuthor, req.body?.chatAuthor);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ archived: true });
+  });
+
+  app.delete("/api/archived-chats", (req, res) => {
+    const result = archivedChatsStore.unarchive(req.body?.viewerAuthor, req.body?.chatAuthor);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  app.get("/api/archived-chats/:viewerAuthor", (req, res) => {
+    res.json({ archivedChats: archivedChatsStore.getArchivedChats(req.params.viewerAuthor) });
   });
 
   // Self-declared phone number (same client-supplied-identity limitation as
@@ -1749,18 +1777,24 @@ export function createApp(deps?: {
   // per match at the route level like #94's swipe-candidates route.
   app.get("/api/matches/:author", (req, res) => {
     const author = req.params.author;
+    const includeArchived = req.query.includeArchived === "true";
     // Bumble's real 24-hour match-expiry timer (#136): an expired match
     // (nobody said anything within the window) drops off the list, same
-    // as real Bumble removing it from your matches.
+    // as real Bumble removing it from your matches. Bumble's real
+    // "Archive old chats" (#139): archived matches are hidden from the
+    // default list too, unless the caller explicitly asks to see them
+    // (e.g. a dedicated "Archived" view).
     const matches = swipeStore
       .getMatches(author)
       .filter((matchedAuthor) => !matchExpiryStore.isExpired(author, matchedAuthor))
+      .filter((matchedAuthor) => includeArchived || !archivedChatsStore.isArchived(author, matchedAuthor))
       .map((matchedAuthor) => ({
         author: matchedAuthor,
         compatibility: computeInterestCompatibility(
           interestsInfoStore.get(author).interests,
           interestsInfoStore.get(matchedAuthor).interests
         ),
+        archived: archivedChatsStore.isArchived(author, matchedAuthor),
       }));
     res.json({ matches });
   });
@@ -2818,6 +2852,7 @@ export function createApp(deps?: {
     blockStore,
     contactBlockStore,
     pinnedChatsStore,
+    archivedChatsStore,
     watermarkStore,
     photoStore,
     sharedDateStore,
