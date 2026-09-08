@@ -319,6 +319,16 @@ body {
   object-fit: cover;
 }
 
+.chat-app__message-status {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.chat-app__message-status--read {
+  color: var(--color-accent);
+}
+
 .chat-app__send {
   padding: 8px 16px;
   font-size: inherit;

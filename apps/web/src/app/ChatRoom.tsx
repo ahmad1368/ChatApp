@@ -132,6 +132,7 @@ function MessageRow({
   onBlock,
   isOwnMessage,
   viewer,
+  status,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -142,6 +143,7 @@ function MessageRow({
   onBlock: (author: string) => void;
   isOwnMessage: boolean;
   viewer: string;
+  status?: string;
 }) {
   const { dragX, handlers } = useSwipeToReply(() =>
     onReply({ id: message.id, author: message.author, text: message.text })
@@ -206,6 +208,14 @@ function MessageRow({
           <button className="chat-app__report-button" onClick={() => onBlock(message.author)} title={`Block ${message.author}`}>
             🚫
           </button>
+        )}
+        {isOwnMessage && (
+          <span
+            className={`chat-app__message-status${status === "read" ? " chat-app__message-status--read" : ""}`}
+            title={status === "read" ? "Read" : status === "delivered" ? "Delivered" : "Sent"}
+          >
+            {status === "read" || status === "delivered" ? "✓✓" : "✓"}
+          </span>
         )}
       </div>
     </div>
@@ -295,6 +305,11 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   queueRef.current = queue;
   const authorRef = useRef(author);
   authorRef.current = author;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  // Bumble's real sent/delivered/read message status (#125) — keyed by
+  // message id, populated from the live message:status broadcast.
+  const [messageStatuses, setMessageStatuses] = useState<Record<string, string>>({});
   // Tracks the newest message timestamp we've seen locally so that on
   // reconnect (dropped wifi, backgrounded tab, another device catching up)
   // we only fetch what we missed instead of the whole history again.
@@ -684,6 +699,21 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       if (!isOwnMessage && document.hidden && canNotify) {
         new Notification(message.author, { body: message.text, tag: roomId });
       }
+
+      // Bumble's real sent/delivered/read message status (#125): this
+      // client having received message:new at all *is* delivery; if the
+      // tab is also visible right now, treat that as having been seen too
+      // — a coarser trigger than per-message viewport visibility, but
+      // consistent with this app's other simplicity-over-precision calls.
+      if (!isOwnMessage) {
+        socket.emit("message:delivered", { roomId, messageId: message.id, author: authorRef.current });
+        if (!document.hidden) {
+          socket.emit("message:read", { roomId, messageId: message.id, author: authorRef.current });
+        }
+      }
+    });
+    socket.on("message:status", ({ messageId, status }: { messageId: string; status: string }) => {
+      setMessageStatuses((prev) => ({ ...prev, [messageId]: status }));
     });
     socket.on("message:rejected", (payload: { reason?: string }) => {
       if (payload?.reason === "scam_content") {
@@ -709,6 +739,15 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       } else {
         clearHiddenTimer();
         if (!socket.connected) socket.connect();
+        // #125: anything that arrived while this tab was hidden was only
+        // marked delivered above — catch it up to read now that it's
+        // actually being looked at. Marking an already-read message read
+        // again is harmless (readReceipts.ts's markRead is idempotent).
+        for (const message of messagesRef.current) {
+          if (message.roomId === roomId && message.author !== authorRef.current) {
+            socket.emit("message:read", { roomId, messageId: message.id, author: authorRef.current });
+          }
+        }
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -1079,6 +1118,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             onBlock={blockUser}
             isOwnMessage={m.author === author}
             viewer={author}
+            status={m.author === author ? messageStatuses[m.id] : undefined}
           />
         ))}
         {queue.map((q) => (

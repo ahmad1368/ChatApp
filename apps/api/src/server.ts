@@ -22,6 +22,7 @@ import { PushService } from "./push";
 import { UploadStore } from "./uploads";
 import { VoiceNoteStore } from "./voiceNotes";
 import { SelfDestructPhotoStore } from "./selfDestructPhotos";
+import { ReadReceiptStore } from "./readReceipts";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -171,6 +172,7 @@ export function createApp(deps?: {
   contactsGraphStore: ContactsGraphStore;
   viewModeStore: ViewModeStore;
   weekendPlansStore: WeekendPlansStore;
+  readReceiptStore: ReadReceiptStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -256,6 +258,7 @@ export function createApp(deps?: {
   const contactsGraphStore = new ContactsGraphStore();
   const viewModeStore = new ViewModeStore();
   const weekendPlansStore = new WeekendPlansStore();
+  const readReceiptStore = new ReadReceiptStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1934,6 +1937,20 @@ export function createApp(deps?: {
     res.json(all.slice(startIndex, endIndex));
   });
 
+  // Bumble's real sent/delivered/read message status (#125) — a REST
+  // snapshot of the same status the message:status socket event pushes
+  // live, for a surface that isn't already holding a socket connection
+  // (or to check a historical message's status without waiting for a
+  // live update). See readReceipts.ts for the aggregate-status shape.
+  app.get("/api/rooms/:roomId/messages/:messageId/status", (req, res) => {
+    const message = messagesByRoom.get(req.params.roomId)?.find((m) => m.id === req.params.messageId);
+    if (!message) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+    res.json({ status: readReceiptStore.getStatus(message.id, message.author) });
+  });
+
   // GDPR data portability: its own high-priority, dependency-free path,
   // same as Report/Block/SOS. Streams the requester's own data back as a
   // downloadable JSON backup rather than requiring a separate export job.
@@ -2626,11 +2643,12 @@ export function createApp(deps?: {
     contactsGraphStore,
     viewModeStore,
     weekendPlansStore,
+    readReceiptStore,
   };
 }
 
 export async function createChatServer() {
-  const { app, messagesByRoom, pushService, reportStore, presenceStore } = createApp();
+  const { app, messagesByRoom, pushService, reportStore, presenceStore, readReceiptStore } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
@@ -2706,6 +2724,35 @@ export async function createChatServer() {
         console.error("Failed to deliver push notifications:", err);
       });
     });
+
+    // Bumble's real sent/delivered/read message status (#125): the client
+    // announces delivery the moment a message:new reaches it, and read
+    // once the recipient has actually seen it (their tab is visible) —
+    // see readReceipts.ts for why this is an aggregate "did any other
+    // participant" status rather than a per-recipient list. Broadcasting
+    // message:status to the whole room (rather than only the sender)
+    // keeps a multi-tab sender in sync without extra bookkeeping.
+    const reportReceipt = (
+      event: "message:delivered" | "message:read",
+      payload: { roomId?: string; messageId?: string; author?: string }
+    ) => {
+      const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+      const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
+      const author = typeof payload?.author === "string" ? payload.author : "";
+      if (!roomId || !messageId || !author) return;
+
+      const message = messagesByRoom.get(roomId)?.find((m) => m.id === messageId);
+      if (!message || message.author === author) return;
+
+      if (event === "message:read") {
+        readReceiptStore.markRead(messageId, author);
+      } else {
+        readReceiptStore.markDelivered(messageId, author);
+      }
+      io.to(roomId).emit("message:status", { messageId, status: readReceiptStore.getStatus(messageId, message.author) });
+    };
+    socket.on("message:delivered", (payload) => reportReceipt("message:delivered", payload));
+    socket.on("message:read", (payload) => reportReceipt("message:read", payload));
 
     socket.on("disconnect", () => {
       messageRateLimiter.clear(socket.id);
