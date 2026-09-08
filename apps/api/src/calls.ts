@@ -7,6 +7,11 @@ export interface Call {
   caller: string;
   callee: string;
   status: CallStatus;
+  // Badoo's real in-app video call (#129): the only thing that
+  // distinguishes a video call from #128's audio call at the signaling
+  // level — everything else (ringing/accept/end, offer/answer/ICE relay)
+  // is identical, so this store needed nothing more than this one field.
+  video: boolean;
 }
 
 export type InitiateCallResult = { success: true; call: Call } | { success: false; error: string };
@@ -44,7 +49,7 @@ export class CallStore {
     return undefined;
   }
 
-  initiate(roomId: unknown, caller: unknown, callee: unknown): InitiateCallResult {
+  initiate(roomId: unknown, caller: unknown, callee: unknown, video: unknown = false): InitiateCallResult {
     const room = typeof roomId === "string" ? roomId.trim() : "";
     const callerName = typeof caller === "string" ? caller.trim() : "";
     const calleeName = typeof callee === "string" ? callee.trim() : "";
@@ -54,7 +59,14 @@ export class CallStore {
     if (this.getActiveCallFor(callerName)) return { success: false, error: "You're already in a call" };
     if (this.getActiveCallFor(calleeName)) return { success: false, error: "This person is already in a call" };
 
-    const call: Call = { id: this.generateId(), roomId: room, caller: callerName, callee: calleeName, status: "ringing" };
+    const call: Call = {
+      id: this.generateId(),
+      roomId: room,
+      caller: callerName,
+      callee: calleeName,
+      status: "ringing",
+      video: video === true,
+    };
     this.calls.set(call.id, call);
     return { success: true, call };
   }

@@ -326,12 +326,15 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [typingAuthors, setTypingAuthors] = useState<string[]>([]);
   const isTypingRef = useRef(false);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Badoo's real in-app audio call (#128) — WebRTC signaling relayed over
-  // this same socket/room; see calls.ts for the server-side state
-  // machine. STUN-only (no TURN server configured anywhere in this app's
-  // infra), so a call between two peers both behind restrictive/symmetric
-  // NATs can fail to connect — an honest, disclosed limitation.
-  type CallInfo = { id: string; caller: string; callee: string };
+  // Badoo's real in-app audio/video call (#128, extended to video by
+  // #129) — WebRTC signaling relayed over this same socket/room; see
+  // calls.ts for the server-side state machine (identical for both call
+  // types — only the `video` flag and this client's getUserMedia
+  // constraints/rendering differ). STUN-only (no TURN server configured
+  // anywhere in this app's infra), so a call between two peers both
+  // behind restrictive/symmetric NATs can fail to connect — an honest,
+  // disclosed limitation.
+  type CallInfo = { id: string; caller: string; callee: string; video: boolean };
   const [callState, setCallState] = useState<"idle" | "calling" | "ringing" | "active">("idle");
   const [activeCall, setActiveCall] = useState<CallInfo | null>(null);
   const [callError, setCallError] = useState<string | null>(null);
@@ -340,6 +343,8 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
   // Tracks the newest message timestamp we've seen locally so that on
   // reconnect (dropped wifi, backgrounded tab, another device catching up)
   // we only fetch what we missed instead of the whole history again.
@@ -788,9 +793,10 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       setCallState("active");
       const remoteAuthor = call.caller === authorRef.current ? call.callee : call.caller;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: call.video });
         localStreamRef.current = stream;
-        const pc = createPeerConnection(call.id, remoteAuthor);
+        if (call.video && localVideoRef.current) localVideoRef.current.srcObject = stream;
+        const pc = createPeerConnection(call.id, remoteAuthor, call.video);
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
         if (call.caller === authorRef.current) {
           const offer = await pc.createOffer();
@@ -798,7 +804,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           socket.emit("call:signal", { callId: call.id, roomId, from: authorRef.current, to: remoteAuthor, data: { type: "offer", sdp: offer.sdp } });
         }
       } catch {
-        setCallError("Microphone access is required for a call");
+        setCallError(call.video ? "Camera/microphone access is required for a video call" : "Microphone access is required for a call");
         socket.emit("call:end", { callId: call.id, author: authorRef.current });
         teardownCall();
       }
@@ -1113,11 +1119,13 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
     if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
     setActiveCall(null);
     setCallState("idle");
   };
 
-  const createPeerConnection = (callId: string, remoteAuthor: string): RTCPeerConnection => {
+  const createPeerConnection = (callId: string, remoteAuthor: string, video: boolean): RTCPeerConnection => {
     const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -1130,17 +1138,20 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         });
       }
     };
+    // A single remote stream carries both tracks for a video call — the
+    // <video> element plays its audio track too, so only one needs it.
     pc.ontrack = (event) => {
-      if (remoteAudioRef.current) remoteAudioRef.current.srcObject = event.streams[0];
+      const target = video ? remoteVideoRef.current : remoteAudioRef.current;
+      if (target) target.srcObject = event.streams[0];
     };
     peerConnectionRef.current = pc;
     return pc;
   };
 
-  const startCall = (callee: string) => {
+  const startCall = (callee: string, video: boolean) => {
     if (isGuest || callState !== "idle") return;
     setCallError(null);
-    socketRef.current?.emit("call:invite", { roomId, caller: author, callee });
+    socketRef.current?.emit("call:invite", { roomId, caller: author, callee, video });
     setCallState("calling");
   };
 
@@ -1288,15 +1299,29 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       </div>
       <SOSButton author={author} />
       {callState === "idle" && callTarget && !isGuest && (
-        <button className="chat-app__call-button" onClick={() => startCall(callTarget)}>
-          📞 Call {callTarget}
-        </button>
+        <div className="chat-app__call-buttons">
+          <button className="chat-app__call-button" onClick={() => startCall(callTarget, false)}>
+            📞 Call {callTarget}
+          </button>
+          <button className="chat-app__call-button" onClick={() => startCall(callTarget, true)}>
+            📹 Video call {callTarget}
+          </button>
+        </div>
       )}
       {callState !== "idle" && activeCall && (
         <div className="chat-app__call-panel">
-          {callState === "calling" && <p>Calling {activeCall.callee}…</p>}
-          {callState === "ringing" && <p>📞 Incoming call from {activeCall.caller}</p>}
-          {callState === "active" && <p>🔊 On a call with {activeCall.caller === author ? activeCall.callee : activeCall.caller}</p>}
+          {callState === "calling" && <p>{activeCall.video ? "Video calling" : "Calling"} {activeCall.callee}…</p>}
+          {callState === "ringing" && (
+            <p>
+              {activeCall.video ? "📹" : "📞"} Incoming {activeCall.video ? "video " : ""}call from {activeCall.caller}
+            </p>
+          )}
+          {callState === "active" && (
+            <p>
+              {activeCall.video ? "📹" : "🔊"} On a {activeCall.video ? "video " : ""}call with{" "}
+              {activeCall.caller === author ? activeCall.callee : activeCall.caller}
+            </p>
+          )}
           <div className="chat-app__call-panel-actions">
             {callState === "ringing" && (
               <button className="chat-app__call-accept" onClick={acceptCall}>
@@ -1307,7 +1332,14 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
               {callState === "ringing" ? "Decline" : "Hang up"}
             </button>
           </div>
-          <audio ref={remoteAudioRef} autoPlay />
+          {activeCall.video ? (
+            <div className="chat-app__video-call">
+              <video ref={remoteVideoRef} className="chat-app__remote-video" autoPlay playsInline />
+              <video ref={localVideoRef} className="chat-app__local-video" autoPlay playsInline muted />
+            </div>
+          ) : (
+            <audio ref={remoteAudioRef} autoPlay />
+          )}
         </div>
       )}
       {callError && <p style={{ color: "var(--color-danger)" }}>{callError}</p>}

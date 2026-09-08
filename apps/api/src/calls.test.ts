@@ -20,7 +20,7 @@ test("initiate() rejects calling yourself", () => {
   assert.deepEqual(result, { success: false, error: "Cannot call yourself" });
 });
 
-test("initiate() creates a ringing call", () => {
+test("initiate() creates a ringing, non-video call by default", () => {
   const store = new CallStore();
   const result = store.initiate("room-1", "alice", "bob");
   assert.equal(result.success, true);
@@ -29,7 +29,17 @@ test("initiate() creates a ringing call", () => {
     assert.equal(result.call.caller, "alice");
     assert.equal(result.call.callee, "bob");
     assert.equal(result.call.status, "ringing");
+    assert.equal(result.call.video, false);
     assert.ok(result.call.id.length > 0);
+  }
+});
+
+test("initiate() creates a video call when requested (#129)", () => {
+  const store = new CallStore();
+  const result = store.initiate("room-1", "alice", "bob", true);
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.call.video, true);
   }
 });
 
