@@ -11,6 +11,7 @@ import { OtpService } from "./auth";
 import { RecaptchaService } from "./recaptcha";
 import { SpotifyService } from "./spotifyAuth";
 import { InstagramService } from "./instagramAuth";
+import { GiphyService } from "./giphy";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -79,6 +80,13 @@ function listenWithFacebookAuth(facebookAuthService: FacebookAuthService) {
 
 function listenWithSpotify(spotifyService: SpotifyService) {
   const { app } = createApp({ spotifyService });
+  const server = app.listen(0);
+  const { port } = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+function listenWithGiphy(giphyService: GiphyService) {
+  const { app } = createApp({ giphyService });
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}` };
@@ -4060,6 +4068,82 @@ test("POST /api/spotify/connect connects and stores top tracks, then GET/DELETE 
 
     const deleteRes = await fetch(`${baseUrl}/api/spotify/alice`, { method: "DELETE" });
     assert.deepEqual(await deleteRes.json(), { spotifyInfo: { connected: false, topTracks: [], hideSpotify: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/giphy/search 503s when Giphy isn't configured (#124)", async () => {
+  const { server, baseUrl } = listenWithGiphy(new GiphyService(undefined, async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/giphy/search?q=cats`);
+    assert.equal(res.status, 503);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/giphy/search rejects a missing query", async () => {
+  const { server, baseUrl } = listenWithGiphy(new GiphyService("test-key", async () => []));
+  try {
+    const res = await fetch(`${baseUrl}/api/giphy/search`);
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/giphy/search rejects an invalid type", async () => {
+  const { server, baseUrl } = listenWithGiphy(new GiphyService("test-key", async () => []));
+  try {
+    const res = await fetch(`${baseUrl}/api/giphy/search?q=cats&type=videos`);
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/giphy/search returns 502 when the fetcher fails", async () => {
+  const { server, baseUrl } = listenWithGiphy(new GiphyService("test-key", async () => undefined));
+  try {
+    const res = await fetch(`${baseUrl}/api/giphy/search?q=cats`);
+    assert.equal(res.status, 502);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/giphy/search returns results and defaults type to gifs", async () => {
+  let receivedType: string | undefined;
+  const { server, baseUrl } = listenWithGiphy(
+    new GiphyService("test-key", async (query, type) => {
+      receivedType = type;
+      return [{ id: "1", url: "https://example.com/1.gif", previewUrl: "https://example.com/1-small.gif", title: query }];
+    })
+  );
+  try {
+    const res = await fetch(`${baseUrl}/api/giphy/search?q=cats`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      results: [{ id: "1", url: "https://example.com/1.gif", previewUrl: "https://example.com/1-small.gif", title: "cats" }],
+    });
+    assert.equal(receivedType, "gifs");
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/giphy/search?type=stickers passes the sticker type through", async () => {
+  let receivedType: string | undefined;
+  const { server, baseUrl } = listenWithGiphy(
+    new GiphyService("test-key", async (_q, type) => {
+      receivedType = type;
+      return [];
+    })
+  );
+  try {
+    await fetch(`${baseUrl}/api/giphy/search?q=cats&type=stickers`);
+    assert.equal(receivedType, "stickers");
   } finally {
     server.close();
   }
