@@ -789,3 +789,109 @@ test("message:delete is rejected for a non-sender", async () => {
     httpServer.close();
   }
 });
+
+async function setGender(baseUrl: string, author: string, gender: string) {
+  await fetch(`${baseUrl}/api/gender-info/${encodeURIComponent(author)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gender }),
+  });
+}
+
+test("message:send blocks a man from sending the first message to a woman (#135)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const man = await connectClient(baseUrl);
+  try {
+    man.emit("join", "room-1");
+    await settle();
+    await setGender(baseUrl, "bob", "man");
+    await setGender(baseUrl, "alice", "woman");
+
+    const rejected = waitFor<{ reason: string; error: string }>(man, "message:rejected");
+    man.emit("message:send", { roomId: "room-1", author: "bob", text: "hey", recipient: "alice" });
+    const payload = await rejected;
+    assert.equal(payload.reason, "first_message_gender_rule");
+  } finally {
+    man.close();
+    httpServer.close();
+  }
+});
+
+test("message:send allows a woman to send the first message to a man", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const woman = await connectClient(baseUrl);
+  try {
+    woman.emit("join", "room-1");
+    await settle();
+    await setGender(baseUrl, "bob", "man");
+    await setGender(baseUrl, "alice", "woman");
+
+    const sent = waitFor<{ id: string }>(woman, "message:new");
+    woman.emit("message:send", { roomId: "room-1", author: "alice", text: "hey", recipient: "bob" });
+    await sent;
+  } finally {
+    woman.close();
+    httpServer.close();
+  }
+});
+
+test("message:send allows either side in a same-gender match", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    client.emit("join", "room-1");
+    await settle();
+    await setGender(baseUrl, "bob", "man");
+    await setGender(baseUrl, "carl", "man");
+
+    const sent = waitFor<{ id: string }>(client, "message:new");
+    client.emit("message:send", { roomId: "room-1", author: "bob", text: "hey", recipient: "carl" });
+    await sent;
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
+
+test("message:send skips the gender rule once a conversation is already underway", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const man = await connectClient(baseUrl);
+  const woman = await connectClient(baseUrl);
+  try {
+    man.emit("join", "room-1");
+    woman.emit("join", "room-1");
+    await settle();
+    await setGender(baseUrl, "bob", "man");
+    await setGender(baseUrl, "alice", "woman");
+
+    const firstSent = waitFor<{ id: string }>(man, "message:new");
+    woman.emit("message:send", { roomId: "room-1", author: "alice", text: "hi", recipient: "bob" });
+    await firstSent;
+
+    const secondSent = waitFor<{ id: string }>(man, "message:new");
+    man.emit("message:send", { roomId: "room-1", author: "bob", text: "hey back", recipient: "alice" });
+    await secondSent;
+  } finally {
+    man.close();
+    woman.close();
+    httpServer.close();
+  }
+});
+
+test("message:send skips the gender rule when recipient is omitted", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const man = await connectClient(baseUrl);
+  try {
+    man.emit("join", "room-1");
+    await settle();
+    await setGender(baseUrl, "bob", "man");
+    await setGender(baseUrl, "alice", "woman");
+
+    const sent = waitFor<{ id: string }>(man, "message:new");
+    man.emit("message:send", { roomId: "room-1", author: "bob", text: "hey" });
+    await sent;
+  } finally {
+    man.close();
+    httpServer.close();
+  }
+});

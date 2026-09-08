@@ -400,6 +400,48 @@ test("PUT /api/video-call-effects/:author rejects a missing author", async () =>
   }
 });
 
+test("GET /api/gender-info/:author is null before any update (#135)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/gender-info/alice`);
+    assert.deepEqual(await res.json(), { gender: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/gender-info/:author sets the gender, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/gender-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gender: "woman" }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { gender: "woman" });
+
+    const getRes = await fetch(`${baseUrl}/api/gender-info/alice`);
+    assert.deepEqual(await getRes.json(), { gender: "woman" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/gender-info/:author rejects an invalid gender", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/gender-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gender: "robot" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("DELETE /api/account/:author erases only that author's messages", async () => {
   const { server, baseUrl, messagesByRoom } = listen();
   messagesByRoom.set("general", [

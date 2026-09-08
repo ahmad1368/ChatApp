@@ -305,7 +305,22 @@ function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessag
   return additions.length ? [...prev, ...additions] : prev;
 }
 
-export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: { roomId?: string; isGuest?: boolean }) {
+export default function ChatRoom({
+  roomId = DEFAULT_ROOM_ID,
+  isGuest = false,
+  recipient,
+}: {
+  roomId?: string;
+  isGuest?: boolean;
+  // Bumble's real "women message first" rule (#135): the other person in
+  // a fresh 1:1 match, so the server can enforce the rule on the very
+  // first message. This app's rooms have no formal "these two people
+  // only" concept yet — #100's matches list still links into one shared
+  // room rather than a per-match room (see matches/page.tsx) — so no
+  // current caller passes this; it's here so a future per-match room can
+  // without needing any more server work.
+  recipient?: string;
+}) {
   const { t } = useLocale();
   // Hydrate synchronously from the local cache so there's something on
   // screen immediately, even before the network fetch (or if it never
@@ -948,13 +963,16 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       setCallError(reason ?? "Call failed");
       setCallState("idle");
     });
-    socket.on("message:rejected", (payload: { reason?: string }) => {
+    socket.on("message:rejected", (payload: { reason?: string; error?: string }) => {
       if (payload?.reason === "scam_content") {
         setImageError("That message looks like it violates ChatApp's policy against financial and crypto scams, so it wasn't sent.");
       } else if (payload?.reason === "rate_limited") {
         setImageError("You're sending messages too quickly. Please wait a moment and try again.");
       } else if (payload?.reason === "guest_mode") {
         setImageError("Guests can't send messages — sign up to chat.");
+      } else if (payload?.reason === "first_message_gender_rule") {
+        // Bumble's real "women message first" rule (#135).
+        setImageError(payload.error ?? "Only she can send the first message in this match.");
       }
     });
 
@@ -1065,6 +1083,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         replyToAuthor: replyTarget?.author,
         replyToText: replyTarget?.text,
         asGuest: isGuest,
+        recipient,
       });
       setReplyTarget(null);
       return;

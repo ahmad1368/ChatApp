@@ -66,6 +66,13 @@ export interface SendMessagePayload {
   // client already hides the send UI for guests; this is defense in
   // depth for a request that bypasses the UI.
   asGuest?: boolean;
+  // Bumble's real "women message first" rule (#135) — the other person
+  // in a fresh 1:1 match, so the server can look up both sides' gender
+  // and enforce it on the very first message only. Optional: this app's
+  // rooms otherwise have no formal "these two people only" concept, so
+  // omitting it (a group room, or an already-started conversation) just
+  // skips the check.
+  recipient?: string;
 }
 
 export const DEFAULT_ROOM_ID = "general";
