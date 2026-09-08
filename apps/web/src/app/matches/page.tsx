@@ -27,17 +27,51 @@ interface Match {
  * #136's real 24-hour "say something before the match expires" countdown
  * (see MatchCountdown.tsx) — an expired match with nobody having sent a
  * first message just drops out of this list entirely on the next load.
+ * #138's pin toggle sorts pinned matches to the top of this list, per
+ * viewer (see pinnedChats.ts — one-sided, like #45's blocking).
  */
 export default function MatchesPage() {
   const [author] = useState(() => getOrCreateGuestIdentity());
   const [matches, setMatches] = useState<Match[]>([]);
+  const [pinnedChats, setPinnedChats] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetch(`${API_URL}/api/matches/${encodeURIComponent(author)}`)
       .then((res) => res.json())
       .then((body) => setMatches(body.matches ?? []))
       .catch(() => {});
+
+    fetch(`${API_URL}/api/pinned-chats/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setPinnedChats(new Set(body.pinnedChats ?? [])))
+      .catch(() => {});
   }, [author]);
+
+  const togglePin = (chatAuthor: string) => {
+    const isPinned = pinnedChats.has(chatAuthor);
+    const method = isPinned ? "DELETE" : "POST";
+    fetch(`${API_URL}/api/pinned-chats`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: author, chatAuthor }),
+    })
+      .then((res) => {
+        if (!res.ok) return;
+        setPinnedChats((prev) => {
+          const next = new Set(prev);
+          if (isPinned) next.delete(chatAuthor);
+          else next.add(chatAuthor);
+          return next;
+        });
+      })
+      .catch(() => {});
+  };
+
+  const sortedMatches = [...matches].sort((a, b) => {
+    const aPinned = pinnedChats.has(a.author) ? 1 : 0;
+    const bPinned = pinnedChats.has(b.author) ? 1 : 0;
+    return bPinned - aPinned;
+  });
 
   return (
     <main style={{ maxWidth: 480, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
@@ -49,7 +83,7 @@ export default function MatchesPage() {
         <p style={{ color: "var(--color-muted)", marginTop: 16 }}>No matches yet — keep swiping!</p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, marginTop: 16 }}>
-          {matches.map((match) => (
+          {sortedMatches.map((match) => (
             <li
               key={match.author}
               style={{
@@ -60,16 +94,34 @@ export default function MatchesPage() {
                 borderRadius: 8,
                 padding: 12,
                 marginBottom: 8,
+                background: pinnedChats.has(match.author) ? "var(--color-surface-raised, rgba(0,0,0,0.03))" : undefined,
               }}
             >
               <div>
                 <p style={{ fontWeight: "bold" }}>
+                  {pinnedChats.has(match.author) && "📌 "}
                   <Link href={`/profile/${encodeURIComponent(match.author)}`}>{match.author}</Link>
                 </p>
                 <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{match.compatibility}% compatible</p>
                 <MatchCountdown author={author} candidate={match.author} />
               </div>
-              <Link href={`/room/${DEFAULT_ROOM_ID}`}>Chat</Link>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => togglePin(match.author)}
+                  style={{
+                    fontSize: 12,
+                    background: "none",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 6,
+                    padding: "4px 8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {pinnedChats.has(match.author) ? "Unpin" : "Pin"}
+                </button>
+                <Link href={`/room/${DEFAULT_ROOM_ID}`}>Chat</Link>
+              </div>
             </li>
           ))}
         </ul>
