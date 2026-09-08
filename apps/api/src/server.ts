@@ -1754,7 +1754,22 @@ export function createApp(deps?: {
       firstMessageSentAt: state.firstMessageSentAt ?? null,
       expiresAt,
       expired: matchExpiryStore.isExpired(author, candidate),
+      extended: state.extended ?? false,
     });
+  });
+
+  // Bumble's real "Extend" (#137) — either side can push the 24-hour
+  // deadline back by another 24 hours, once per match, before it expires.
+  app.post("/api/matches/:author/:candidate/extend", (req, res) => {
+    const { author, candidate } = req.params;
+    const result = matchExpiryStore.extend(author, candidate);
+    if (!result.allowed) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    const state = matchExpiryStore.getState(author, candidate)!;
+    const expiresAt = new Date(new Date(state.matchedAt).getTime() + MATCH_RESPONSE_WINDOW_MS).toISOString();
+    res.json({ expiresAt, extended: true });
   });
 
   // Tinder's "Rewind" feature (#92): undo only the single most recent

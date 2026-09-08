@@ -68,3 +68,57 @@ test("getState() returns undefined for an untracked pair", () => {
   const store = new MatchExpiryStore();
   assert.equal(store.getState("alice", "bob"), undefined);
 });
+
+test("extend() rejects an untracked pair", () => {
+  const store = new MatchExpiryStore();
+  const result = store.extend("alice", "bob");
+  assert.equal(result.allowed, false);
+  assert.match(result.error ?? "", /no tracked match/i);
+});
+
+test("extend() pushes the deadline back by another full window", () => {
+  const store = new MatchExpiryStore();
+  const now = Date.now();
+  store.recordMatch("alice", "bob", now);
+  const justBeforeOriginalExpiry = now + MATCH_RESPONSE_WINDOW_MS - 1000;
+  const result = store.extend("alice", "bob", justBeforeOriginalExpiry);
+  assert.equal(result.allowed, true);
+  assert.equal(store.isExpired("alice", "bob", justBeforeOriginalExpiry + 2000), false);
+  assert.equal(store.isExpired("alice", "bob", now + 2 * MATCH_RESPONSE_WINDOW_MS + 1000), true);
+});
+
+test("extend() is order-independent", () => {
+  const store = new MatchExpiryStore();
+  store.recordMatch("alice", "bob");
+  const result = store.extend("bob", "alice");
+  assert.equal(result.allowed, true);
+  assert.equal(store.getState("alice", "bob")?.extended, true);
+});
+
+test("extend() can only be used once per match", () => {
+  const store = new MatchExpiryStore();
+  store.recordMatch("alice", "bob");
+  assert.equal(store.extend("alice", "bob").allowed, true);
+  const second = store.extend("alice", "bob");
+  assert.equal(second.allowed, false);
+  assert.match(second.error ?? "", /already been extended/i);
+});
+
+test("extend() is rejected once a first message has been sent", () => {
+  const store = new MatchExpiryStore();
+  const now = Date.now();
+  store.recordMatch("alice", "bob", now);
+  store.recordFirstMessage("alice", "bob", now + 1000);
+  const result = store.extend("alice", "bob", now + 2000);
+  assert.equal(result.allowed, false);
+  assert.match(result.error ?? "", /conversation started/i);
+});
+
+test("extend() is rejected once the match has already expired", () => {
+  const store = new MatchExpiryStore();
+  const now = Date.now();
+  store.recordMatch("alice", "bob", now);
+  const result = store.extend("alice", "bob", now + MATCH_RESPONSE_WINDOW_MS + 1000);
+  assert.equal(result.allowed, false);
+  assert.match(result.error ?? "", /already expired/i);
+});
