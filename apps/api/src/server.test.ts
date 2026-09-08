@@ -358,6 +358,48 @@ test("GET /api/rooms/:roomId/video-call-eligibility is eligible at 10 messages",
   }
 });
 
+test("GET /api/video-call-effects/:author defaults to both off (#131)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/video-call-effects/alice`);
+    assert.deepEqual(await res.json(), { effects: { beautyFilter: false, backgroundBlur: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/video-call-effects/:author sets both flags, then GET returns them", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/video-call-effects/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ beautyFilter: true, backgroundBlur: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { effects: { beautyFilter: true, backgroundBlur: true } });
+
+    const getRes = await fetch(`${baseUrl}/api/video-call-effects/alice`);
+    assert.deepEqual(await getRes.json(), { effects: { beautyFilter: true, backgroundBlur: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/video-call-effects/:author rejects a missing author", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/video-call-effects/${encodeURIComponent(" ")}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ beautyFilter: true, backgroundBlur: true }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("DELETE /api/account/:author erases only that author's messages", async () => {
   const { server, baseUrl, messagesByRoom } = listen();
   messagesByRoom.set("general", [

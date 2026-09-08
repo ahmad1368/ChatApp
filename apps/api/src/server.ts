@@ -27,6 +27,7 @@ import { TypingStore } from "./typing";
 import { LiveLocationShareStore } from "./liveLocationShares";
 import { CallStore } from "./calls";
 import { checkVideoCallEligibility } from "./videoCallGate";
+import { VideoCallEffectsStore } from "./videoCallEffects";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -180,6 +181,7 @@ export function createApp(deps?: {
   typingStore: TypingStore;
   liveLocationShareStore: LiveLocationShareStore;
   callStore: CallStore;
+  videoCallEffectsStore: VideoCallEffectsStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -269,6 +271,7 @@ export function createApp(deps?: {
   const typingStore = new TypingStore();
   const liveLocationShareStore = new LiveLocationShareStore();
   const callStore = new CallStore();
+  const videoCallEffectsStore = new VideoCallEffectsStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -2019,6 +2022,22 @@ export function createApp(deps?: {
     res.json(checkVideoCallEligibility(roomMessages, caller, callee));
   });
 
+  // Badoo's real beauty filter/background blur during video calls (#131)
+  // — a persisted preference; the actual pixel processing happens
+  // entirely client-side when a call starts, see videoCallEffects.ts.
+  app.put("/api/video-call-effects/:author", (req, res) => {
+    const result = videoCallEffectsStore.update(req.params.author, req.body?.beautyFilter, req.body?.backgroundBlur);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ effects: result.effects });
+  });
+
+  app.get("/api/video-call-effects/:author", (req, res) => {
+    res.json({ effects: videoCallEffectsStore.get(req.params.author) });
+  });
+
   // GDPR data portability: its own high-priority, dependency-free path,
   // same as Report/Block/SOS. Streams the requester's own data back as a
   // downloadable JSON backup rather than requiring a separate export job.
@@ -2715,6 +2734,7 @@ export function createApp(deps?: {
     typingStore,
     liveLocationShareStore,
     callStore,
+    videoCallEffectsStore,
   };
 }
 
