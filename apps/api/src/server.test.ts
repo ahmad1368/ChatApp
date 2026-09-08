@@ -41,6 +41,7 @@ function listen() {
     typingStore,
     liveLocationShareStore,
     callStore,
+    matchExpiryStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -62,6 +63,7 @@ function listen() {
     typingStore,
     liveLocationShareStore,
     callStore,
+    matchExpiryStore,
   };
 }
 
@@ -5266,6 +5268,93 @@ test("GET /api/matches/:author includes each match's real interest-compatibility
 
     const res = await fetch(`${baseUrl}/api/matches/alice`);
     assert.deepEqual(await res.json(), { matches: [{ author: "bob", compatibility: 100 }] });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes starts the #136 match-expiry timer once a match is created", async () => {
+  const { server, baseUrl, matchExpiryStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    assert.equal(matchExpiryStore.getState("alice", "bob"), undefined);
+
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+    assert.ok(matchExpiryStore.getState("alice", "bob"));
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/matches/:author excludes an expired match (#136)", async () => {
+  const { server, baseUrl, matchExpiryStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const stillFresh = await fetch(`${baseUrl}/api/matches/alice`);
+    assert.deepEqual((await stillFresh.json()).matches.map((m: { author: string }) => m.author), ["bob"]);
+
+    // Force the match into the past to simulate the 24h window elapsing.
+    const state = matchExpiryStore.getState("alice", "bob");
+    if (state) state.matchedAt = new Date(0).toISOString();
+
+    const afterExpiry = await fetch(`${baseUrl}/api/matches/alice`);
+    assert.deepEqual(await afterExpiry.json(), { matches: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/matches/:author/:candidate/expiry 404s for an untracked pair", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/matches/alice/bob/expiry`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/matches/:author/:candidate/expiry reflects the live MatchExpiryStore", async () => {
+  const { server, baseUrl, matchExpiryStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/matches/alice/bob/expiry`);
+    const body = await res.json();
+    assert.equal(body.expired, false);
+    assert.equal(body.firstMessageSentAt, null);
+    assert.ok(new Date(body.expiresAt).getTime() > new Date(body.matchedAt).getTime());
+
+    matchExpiryStore.recordFirstMessage("alice", "bob");
+    const afterMessage = await fetch(`${baseUrl}/api/matches/alice/bob/expiry`);
+    assert.ok((await afterMessage.json()).firstMessageSentAt);
   } finally {
     server.close();
   }

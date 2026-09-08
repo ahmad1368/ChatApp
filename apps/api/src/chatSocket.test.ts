@@ -895,3 +895,35 @@ test("message:send skips the gender rule when recipient is omitted", async () =>
     httpServer.close();
   }
 });
+
+test("message:send with a recipient works end-to-end after a real match (#136)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    client.emit("join", "room-1");
+    await settle();
+
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const sent = waitFor<{ id: string }>(client, "message:new");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "hey", recipient: "bob" });
+    await sent;
+
+    const expiryRes = await fetch(`${baseUrl}/api/matches/alice/bob/expiry`);
+    const expiry = await expiryRes.json();
+    assert.ok(expiry.firstMessageSentAt);
+    assert.equal(expiry.expired, false);
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
