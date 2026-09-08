@@ -40,6 +40,7 @@ function listen() {
     readReceiptStore,
     typingStore,
     liveLocationShareStore,
+    callStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -60,6 +61,7 @@ function listen() {
     readReceiptStore,
     typingStore,
     liveLocationShareStore,
+    callStore,
   };
 }
 
@@ -262,6 +264,54 @@ test("GET /api/rooms/:roomId/messages/:messageId/location reflects the live shar
     assert.equal(body.longitude, -74.006);
     assert.equal(body.active, true);
     assert.ok(new Date(body.expiresAt).getTime() > Date.now());
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/calls/:callId 404s for an unknown call (#128)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/unknown`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/calls/:callId reflects the live CallStore", async () => {
+  const { server, baseUrl, callStore } = listen();
+  try {
+    const initiated = callStore.initiate("room-1", "alice", "bob");
+    assert.equal(initiated.success, true);
+    if (!initiated.success) return;
+
+    const res = await fetch(`${baseUrl}/api/calls/${initiated.call.id}`);
+    assert.deepEqual(await res.json(), { call: initiated.call });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/calls/active/:author is null before any call", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/calls/active/alice`);
+    assert.deepEqual(await res.json(), { call: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/calls/active/:author reflects an in-progress call", async () => {
+  const { server, baseUrl, callStore } = listen();
+  try {
+    const initiated = callStore.initiate("room-1", "alice", "bob");
+    assert.equal(initiated.success, true);
+    if (!initiated.success) return;
+
+    const res = await fetch(`${baseUrl}/api/calls/active/bob`);
+    assert.deepEqual(await res.json(), { call: initiated.call });
   } finally {
     server.close();
   }

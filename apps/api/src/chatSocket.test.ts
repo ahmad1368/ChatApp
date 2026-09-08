@@ -424,3 +424,101 @@ test("location:update from someone other than the original sharer is rejected pr
     httpServer.close();
   }
 });
+
+test("call:invite broadcasts call:incoming, call:accept broadcasts call:accepted (#128)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const caller = await connectClient(baseUrl);
+  const callee = await connectClient(baseUrl);
+  try {
+    caller.emit("join", "room-1");
+    callee.emit("join", "room-1");
+    await settle();
+
+    const incoming = waitFor<{ id: string; caller: string; callee: string; status: string }>(callee, "call:incoming");
+    caller.emit("call:invite", { roomId: "room-1", caller: "alice", callee: "bob" });
+    const call = await incoming;
+    assert.equal(call.caller, "alice");
+    assert.equal(call.callee, "bob");
+    assert.equal(call.status, "ringing");
+
+    const accepted = waitFor<{ id: string; status: string }>(caller, "call:accepted");
+    callee.emit("call:accept", { callId: call.id, author: "bob" });
+    assert.equal((await accepted).status, "active");
+  } finally {
+    caller.close();
+    callee.close();
+    httpServer.close();
+  }
+});
+
+test("call:invite is rejected when the callee is already in a call", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const caller = await connectClient(baseUrl);
+  const callee = await connectClient(baseUrl);
+  const thirdParty = await connectClient(baseUrl);
+  try {
+    caller.emit("join", "room-1");
+    callee.emit("join", "room-1");
+    thirdParty.emit("join", "room-1");
+    await settle();
+
+    const firstIncoming = waitFor(callee, "call:incoming");
+    caller.emit("call:invite", { roomId: "room-1", caller: "alice", callee: "bob" });
+    await firstIncoming;
+
+    const rejected = waitFor<{ reason: string }>(thirdParty, "call:rejected");
+    thirdParty.emit("call:invite", { roomId: "room-1", caller: "carol", callee: "bob" });
+    assert.equal((await rejected).reason, "This person is already in a call");
+  } finally {
+    caller.close();
+    callee.close();
+    thirdParty.close();
+    httpServer.close();
+  }
+});
+
+test("call:end broadcasts call:ended to the room", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const caller = await connectClient(baseUrl);
+  const callee = await connectClient(baseUrl);
+  try {
+    caller.emit("join", "room-1");
+    callee.emit("join", "room-1");
+    await settle();
+
+    const incoming = waitFor<{ id: string }>(callee, "call:incoming");
+    caller.emit("call:invite", { roomId: "room-1", caller: "alice", callee: "bob" });
+    const call = await incoming;
+
+    const ended = waitFor<{ callId: string; endedBy: string }>(callee, "call:ended");
+    caller.emit("call:end", { callId: call.id, author: "alice" });
+    assert.deepEqual(await ended, { callId: call.id, endedBy: "alice" });
+  } finally {
+    caller.close();
+    callee.close();
+    httpServer.close();
+  }
+});
+
+test("call:signal relays an opaque WebRTC payload to the room", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const caller = await connectClient(baseUrl);
+  const callee = await connectClient(baseUrl);
+  try {
+    caller.emit("join", "room-1");
+    callee.emit("join", "room-1");
+    await settle();
+
+    const incoming = waitFor<{ id: string }>(callee, "call:incoming");
+    caller.emit("call:invite", { roomId: "room-1", caller: "alice", callee: "bob" });
+    const call = await incoming;
+
+    const signal = waitFor<{ callId: string; from: string; to: string; data: unknown }>(callee, "call:signal");
+    caller.emit("call:signal", { callId: call.id, roomId: "room-1", from: "alice", to: "bob", data: { type: "offer", sdp: "fake-sdp" } });
+    assert.deepEqual(await signal, { callId: call.id, from: "alice", to: "bob", data: { type: "offer", sdp: "fake-sdp" } });
+  } finally {
+    caller.close();
+    callee.close();
+    httpServer.close();
+  }
+});
