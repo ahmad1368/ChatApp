@@ -18,22 +18,29 @@ function formatRemaining(ms: number): string {
  * the match disappears. Renders nothing once a first message has already
  * been sent (the clock stopped) or if this pair isn't tracked at all
  * (matched before this feature existed).
+ *
+ * Also offers Bumble's real "Extend" (#137): a one-time button that pushes
+ * the deadline back by another 24 hours, hidden once already used.
  */
 export default function MatchCountdown({ author, candidate }: { author: string; candidate: string }) {
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [firstMessageSent, setFirstMessageSent] = useState(true);
+  const [extended, setExtended] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
+  const load = () => {
     fetch(`${API_URL}/api/matches/${encodeURIComponent(author)}/${encodeURIComponent(candidate)}/expiry`)
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => {
         if (!body) return;
         setExpiresAt(body.expiresAt);
         setFirstMessageSent(Boolean(body.firstMessageSentAt));
+        setExtended(Boolean(body.extended));
       })
       .catch(() => {});
-  }, [author, candidate]);
+  };
+
+  useEffect(load, [author, candidate]);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -44,9 +51,35 @@ export default function MatchCountdown({ author, candidate }: { author: string; 
   const remainingMs = new Date(expiresAt).getTime() - now;
   if (remainingMs <= 0) return null;
 
+  const handleExtend = () => {
+    fetch(`${API_URL}/api/matches/${encodeURIComponent(author)}/${encodeURIComponent(candidate)}/extend`, {
+      method: "POST",
+    })
+      .then((res) => (res.ok ? load() : undefined))
+      .catch(() => {});
+  };
+
   return (
     <p style={{ color: "var(--color-danger)", fontSize: 12, margin: "2px 0 0" }}>
       ⏳ {formatRemaining(remainingMs)} left to say something
+      {!extended && (
+        <button
+          type="button"
+          onClick={handleExtend}
+          style={{
+            marginLeft: 8,
+            fontSize: 12,
+            color: "var(--color-accent, #0070f3)",
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            textDecoration: "underline",
+          }}
+        >
+          Extend +24h
+        </button>
+      )}
     </p>
   );
 }

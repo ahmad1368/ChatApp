@@ -5360,6 +5360,67 @@ test("GET /api/matches/:author/:candidate/expiry reflects the live MatchExpirySt
   }
 });
 
+test("POST /api/matches/:author/:candidate/extend pushes the deadline back (#137)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const before = await (await fetch(`${baseUrl}/api/matches/alice/bob/expiry`)).json();
+
+    const extendRes = await fetch(`${baseUrl}/api/matches/alice/bob/extend`, { method: "POST" });
+    assert.equal(extendRes.status, 200);
+    const extendBody = await extendRes.json();
+    assert.equal(extendBody.extended, true);
+
+    const after = await (await fetch(`${baseUrl}/api/matches/alice/bob/expiry`)).json();
+    assert.equal(after.extended, true);
+    assert.ok(new Date(after.expiresAt).getTime() > new Date(before.expiresAt).getTime());
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/matches/:author/:candidate/extend 400s for an untracked pair (#137)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/matches/alice/bob/extend`, { method: "POST" });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/matches/:author/:candidate/extend can only be used once (#137)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    await fetch(`${baseUrl}/api/matches/alice/bob/extend`, { method: "POST" });
+    const second = await fetch(`${baseUrl}/api/matches/alice/bob/extend`, { method: "POST" });
+    assert.equal(second.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("POST /api/swipes rejects re-swiping someone already liked", async () => {
   const { server, baseUrl } = listen();
   try {

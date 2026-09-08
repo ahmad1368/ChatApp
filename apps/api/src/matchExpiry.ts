@@ -4,6 +4,12 @@ export const MATCH_RESPONSE_WINDOW_MS = 24 * 60 * 60 * 1000;
 export interface MatchExpiryState {
   matchedAt: string;
   firstMessageSentAt?: string;
+  extended?: boolean;
+}
+
+export interface ExtendMatchResult {
+  allowed: boolean;
+  error?: string;
 }
 
 /**
@@ -48,5 +54,31 @@ export class MatchExpiryStore {
     const state = this.statesByPairKey.get(this.pairKey(a, b));
     if (!state || state.firstMessageSentAt) return false;
     return now - new Date(state.matchedAt).getTime() > MATCH_RESPONSE_WINDOW_MS;
+  }
+
+  /**
+   * Bumble's real "Extend" (#137) — either side can push the 24-hour
+   * deadline back by another 24 hours, once per match, as long as nobody
+   * has sent the first message yet and it hasn't already expired.
+   * Implemented by shifting `matchedAt` forward by a full window, which
+   * `isExpired` then measures from as usual.
+   */
+  extend(a: string, b: string, now: number = Date.now()): ExtendMatchResult {
+    const state = this.statesByPairKey.get(this.pairKey(a, b));
+    if (!state) {
+      return { allowed: false, error: "No tracked match between these two authors" };
+    }
+    if (state.firstMessageSentAt) {
+      return { allowed: false, error: "This match already has a conversation started" };
+    }
+    if (state.extended) {
+      return { allowed: false, error: "This match has already been extended once" };
+    }
+    if (this.isExpired(a, b, now)) {
+      return { allowed: false, error: "This match has already expired" };
+    }
+    state.extended = true;
+    state.matchedAt = new Date(new Date(state.matchedAt).getTime() + MATCH_RESPONSE_WINDOW_MS).toISOString();
+    return { allowed: true };
   }
 }
