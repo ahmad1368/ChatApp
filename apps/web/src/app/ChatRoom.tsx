@@ -138,6 +138,12 @@ function MessageRow({
   viewer,
   status,
   liveLocationUpdate,
+  isEditing,
+  editText,
+  onEditTextChange,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -150,7 +156,18 @@ function MessageRow({
   viewer: string;
   status?: string;
   liveLocationUpdate?: { latitude: number; longitude: number };
+  isEditing: boolean;
+  editText: string;
+  onEditTextChange: (text: string) => void;
+  onStartEdit: (message: ChatMessage) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
 }) {
+  // Mirrors messageEditing.ts's rules loosely for the UI — the server is
+  // the actual source of truth and re-checks all of this on message:edit.
+  const isPlainTextMessage = !message.location && !message.selfDestructImageUrl && !message.audioUrl && !message.imageUrl;
+  const isWithinEditWindow = Date.now() - new Date(message.createdAt).getTime() < 15 * 60 * 1000;
+  const canEdit = isOwnMessage && isPlainTextMessage && isWithinEditWindow;
   const { dragX, handlers } = useSwipeToReply(() =>
     onReply({ id: message.id, author: message.author, text: message.text })
   );
@@ -193,8 +210,27 @@ function MessageRow({
           </div>
         ) : message.imageUrl ? (
           <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+        ) : isEditing ? (
+          <span className="chat-app__edit-box">
+            <input
+              type="text"
+              value={editText}
+              onChange={(e) => onEditTextChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onSaveEdit();
+                if (e.key === "Escape") onCancelEdit();
+              }}
+              autoFocus
+              className="chat-app__input"
+            />
+            <button onClick={onSaveEdit}>Save</button>
+            <button onClick={onCancelEdit}>Cancel</button>
+          </span>
         ) : (
-          <span>{message.text}</span>
+          <span>
+            {message.text}
+            {message.edited && <em className="chat-app__edited-tag"> (edited)</em>}
+          </span>
         )}
         <button
           className="chat-app__copy-link-button"
@@ -203,6 +239,11 @@ function MessageRow({
         >
           🔗
         </button>
+        {canEdit && !isEditing && (
+          <button className="chat-app__copy-link-button" onClick={() => onStartEdit(message)} title="Edit this message">
+            ✏️
+          </button>
+        )}
         {!isOwnMessage && (
           <button
             className="chat-app__report-button"
@@ -268,6 +309,13 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [showShortcuts, setShowShortcuts] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  // Bumble's real "edit a sent message" (#133) — see messageEditing.ts
+  // for the sender-only/15-minute-window/text-only-message rules the
+  // server enforces; the UI just optimistically clears editing state on
+  // submit and surfaces an error if the server rejects it.
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
   const [reportTarget, setReportTarget] = useState<{ author: string; messageId: string } | null>(null);
   const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
   const [watermarkLabel, setWatermarkLabel] = useState<string | null>(null);
@@ -771,6 +819,15 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     socket.on("message:status", ({ messageId, status }: { messageId: string; status: string }) => {
       setMessageStatuses((prev) => ({ ...prev, [messageId]: status }));
     });
+    // Bumble's real "edit a sent message" (#133) — mergeMessages() below
+    // only ever appends by id, so an existing message's text needs its
+    // own update path here rather than going through that.
+    socket.on("message:edited", ({ messageId, text, edited }: { messageId: string; text: string; edited: boolean }) => {
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, text, edited } : m)));
+    });
+    socket.on("message:edit-rejected", ({ error }: { messageId: string; error: string }) => {
+      setEditError(error);
+    });
     socket.on("typing:update", ({ roomId: updatedRoomId, authors }: { roomId: string; authors: string[] }) => {
       if (updatedRoomId !== roomId) return;
       setTypingAuthors(authors.filter((a) => a !== authorRef.current));
@@ -1003,6 +1060,24 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     navigator.clipboard?.writeText(url).catch(() => {
       // Clipboard API unavailable/denied — link is still shareable manually via the URL bar.
     });
+  };
+
+  const startEdit = (message: ChatMessage) => {
+    setEditError(null);
+    setEditingMessageId(message.id);
+    setEditText(message.text);
+  };
+
+  const cancelEdit = () => {
+    setEditingMessageId(null);
+    setEditText("");
+  };
+
+  const submitEdit = () => {
+    if (!editingMessageId || !editText.trim()) return;
+    socketRef.current?.emit("message:edit", { roomId, messageId: editingMessageId, author, text: editText.trim() });
+    setEditingMessageId(null);
+    setEditText("");
   };
 
   const sendImage = async (file: File) => {
@@ -1443,6 +1518,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         </div>
       )}
       {callError && <p style={{ color: "var(--color-danger)" }}>{callError}</p>}
+      {editError && <p style={{ color: "var(--color-danger)" }}>{editError}</p>}
       {imageError && <p className="chat-app__status chat-app__status--offline">{imageError}</p>}
       {liveUpdatesEnabled ? (
         <p
@@ -1533,6 +1609,12 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             viewer={author}
             status={m.author === author ? messageStatuses[m.id] : undefined}
             liveLocationUpdate={liveLocationUpdates[m.id]}
+            isEditing={editingMessageId === m.id}
+            editText={editText}
+            onEditTextChange={setEditText}
+            onStartEdit={startEdit}
+            onSaveEdit={submitEdit}
+            onCancelEdit={cancelEdit}
           />
         ))}
         {queue.map((q) => (

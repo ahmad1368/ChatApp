@@ -29,6 +29,7 @@ import { CallStore } from "./calls";
 import { checkVideoCallEligibility } from "./videoCallGate";
 import { VideoCallEffectsStore } from "./videoCallEffects";
 import { generateIcebreakers } from "./icebreakers";
+import { canEditMessage } from "./messageEditing";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -2919,6 +2920,37 @@ export async function createChatServer() {
     };
     socket.on("message:delivered", (payload) => reportReceipt("message:delivered", payload));
     socket.on("message:read", (payload) => reportReceipt("message:read", payload));
+
+    // Bumble's real "edit a sent message" (#133) — see messageEditing.ts
+    // for the sender-only/time-window/text-only-message rules. Reuses the
+    // same scam-content check message:send applies, so an edit can't be
+    // used to slip content past moderation that a fresh send would catch.
+    socket.on("message:edit", (payload: { roomId?: string; messageId?: string; author?: string; text?: unknown }) => {
+      const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+      const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
+      const author = typeof payload?.author === "string" ? payload.author : "";
+      const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+      if (!roomId || !messageId || !author || !text) return;
+
+      const message = messagesByRoom.get(roomId)?.find((m) => m.id === messageId);
+      if (!message) {
+        socket.emit("message:edit-rejected", { messageId, error: "Message not found" });
+        return;
+      }
+      const check = canEditMessage(message, author);
+      if (!check.allowed) {
+        socket.emit("message:edit-rejected", { messageId, error: check.error });
+        return;
+      }
+      if (scanForScamContent(text).flagged) {
+        socket.emit("message:edit-rejected", { messageId, error: "That edit looks like it violates ChatApp's policy against financial and crypto scams" });
+        return;
+      }
+
+      message.text = text;
+      message.edited = true;
+      io.to(roomId).emit("message:edited", { messageId, text: message.text, edited: true });
+    });
 
     // WhatsApp/Bumble's real "share live location" (#127) — periodic
     // position updates for an already-started live share (see
