@@ -329,6 +329,13 @@ body {
   color: var(--color-accent);
 }
 
+.chat-app__typing-indicator {
+  font-style: italic;
+  font-size: 12px;
+  color: var(--color-muted);
+  margin: 4px 0;
+}
+
 .chat-app__send {
   padding: 8px 16px;
   font-size: inherit;
