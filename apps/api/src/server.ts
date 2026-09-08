@@ -28,6 +28,7 @@ import { LiveLocationShareStore } from "./liveLocationShares";
 import { CallStore } from "./calls";
 import { checkVideoCallEligibility } from "./videoCallGate";
 import { VideoCallEffectsStore } from "./videoCallEffects";
+import { generateIcebreakers } from "./icebreakers";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -1448,6 +1449,43 @@ export function createApp(deps?: {
       .filter((entry): entry is { author: string; sharedKeywords: string[]; compatibility: number } => entry !== null)
       .sort((a, b) => b.sharedKeywords.length - a.sharedKeywords.length);
     res.json({ candidates: bioMatches });
+  });
+
+  // Hinge's real "AI-suggested conversation starters" (#132) — genuinely
+  // personalized from this app's real shared-signal computations (#94's
+  // interest overlap, #118's music match, #119's weekend-plan match,
+  // #120's bio keyword match) rather than an invented LLM call this app
+  // has no model or API key for; see icebreakers.ts. Respects each
+  // signal's own hide flag on both sides, same as their standalone match
+  // endpoints above.
+  app.get("/api/icebreakers/:author/:candidate", (req, res) => {
+    const { author, candidate } = req.params;
+
+    const authorInterests = interestsInfoStore.get(author);
+    const candidateInterests = interestsInfoStore.get(candidate);
+    const sharedInterests =
+      !authorInterests.hideInterests && !candidateInterests.hideInterests
+        ? authorInterests.interests.filter((interest) => candidateInterests.interests.includes(interest))
+        : [];
+
+    const authorSpotify = spotifyInfoStore.get(author);
+    const candidateSpotify = spotifyInfoStore.get(candidate);
+    const musicTracks =
+      authorSpotify.connected && !authorSpotify.hideSpotify && candidateSpotify.connected && !candidateSpotify.hideSpotify
+        ? computeMusicMatch(authorSpotify.topTracks, candidateSpotify.topTracks).sharedTracks
+        : [];
+
+    const authorPlans = weekendPlansStore.get(author);
+    const candidatePlans = weekendPlansStore.get(candidate);
+    const weekendPlans =
+      !authorPlans.hideWeekendPlans && !candidatePlans.hideWeekendPlans
+        ? computeWeekendPlanMatch(authorPlans.weekendPlans, candidatePlans.weekendPlans).sharedPlans
+        : [];
+
+    const bioKeywords = computeBioMatch(bioStore.get(author), bioStore.get(candidate)).sharedKeywords;
+
+    const suggestions = generateIcebreakers({ interests: sharedInterests, musicTracks, weekendPlans, bioKeywords });
+    res.json({ suggestions });
   });
 
   // Match.com/Tinder's real "Double Date" (#109): a small group of
