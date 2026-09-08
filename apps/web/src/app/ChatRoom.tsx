@@ -338,6 +338,11 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [callState, setCallState] = useState<"idle" | "calling" | "ringing" | "active">("idle");
   const [activeCall, setActiveCall] = useState<CallInfo | null>(null);
   const [callError, setCallError] = useState<string | null>(null);
+  // Bumble's real "mandatory text-first" video-call gate (#130) — lets the
+  // button show how many more messages are needed instead of a dead click.
+  const [videoCallEligibility, setVideoCallEligibility] = useState<{ eligible: boolean; messagesExchanged: number; required: number } | null>(
+    null
+  );
   const activeCallRef = useRef<CallInfo | null>(null);
   activeCallRef.current = activeCall;
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -1275,6 +1280,20 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const otherParticipants = Array.from(new Set(messages.filter((m) => m.author !== author).map((m) => m.author)));
   const callTarget = otherParticipants.length === 1 ? otherParticipants[0] : undefined;
 
+  useEffect(() => {
+    if (!callTarget) {
+      setVideoCallEligibility(null);
+      return;
+    }
+    fetch(
+      `${API_URL}/api/rooms/${encodeURIComponent(roomId)}/video-call-eligibility?caller=${encodeURIComponent(author)}&callee=${encodeURIComponent(callTarget)}`
+    )
+      .then((res) => res.json())
+      .then(setVideoCallEligibility)
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callTarget, messages.length, roomId, author]);
+
   return (
     <BiometricLock author={author}>
     <main className="chat-app">
@@ -1303,9 +1322,18 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           <button className="chat-app__call-button" onClick={() => startCall(callTarget, false)}>
             📞 Call {callTarget}
           </button>
-          <button className="chat-app__call-button" onClick={() => startCall(callTarget, true)}>
-            📹 Video call {callTarget}
-          </button>
+          {videoCallEligibility?.eligible ? (
+            <button className="chat-app__call-button" onClick={() => startCall(callTarget, true)}>
+              📹 Video call {callTarget}
+            </button>
+          ) : (
+            videoCallEligibility && (
+              <span className="chat-app__video-call-locked" title="Bumble's real mandatory text-first rule (#130)">
+                🔒 Send {videoCallEligibility.required - videoCallEligibility.messagesExchanged} more message
+                {videoCallEligibility.required - videoCallEligibility.messagesExchanged === 1 ? "" : "s"} to unlock video calling
+              </span>
+            )
+          )}
         </div>
       )}
       {callState !== "idle" && activeCall && (

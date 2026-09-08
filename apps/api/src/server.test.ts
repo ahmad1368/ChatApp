@@ -317,6 +317,47 @@ test("GET /api/calls/active/:author reflects an in-progress call", async () => {
   }
 });
 
+test("GET /api/rooms/:roomId/video-call-eligibility rejects missing caller/callee (#130)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/room-1/video-call-eligibility?caller=alice`);
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/video-call-eligibility is ineligible before 10 messages", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  messagesByRoom.set("room-1", [
+    { id: "1", roomId: "room-1", author: "alice", text: "hi", createdAt: new Date().toISOString() },
+  ]);
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/room-1/video-call-eligibility?caller=alice&callee=bob`);
+    assert.deepEqual(await res.json(), { eligible: false, messagesExchanged: 1, required: 10 });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/video-call-eligibility is eligible at 10 messages", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  const messages = Array.from({ length: 10 }, (_, i) => ({
+    id: String(i),
+    roomId: "room-1",
+    author: i % 2 === 0 ? "alice" : "bob",
+    text: `msg ${i}`,
+    createdAt: new Date().toISOString(),
+  }));
+  messagesByRoom.set("room-1", messages);
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/room-1/video-call-eligibility?caller=alice&callee=bob`);
+    assert.deepEqual(await res.json(), { eligible: true, messagesExchanged: 10, required: 10 });
+  } finally {
+    server.close();
+  }
+});
+
 test("DELETE /api/account/:author erases only that author's messages", async () => {
   const { server, baseUrl, messagesByRoom } = listen();
   messagesByRoom.set("general", [
