@@ -26,6 +26,7 @@ import { ReadReceiptStore } from "./readReceipts";
 import { TypingStore } from "./typing";
 import { LiveLocationShareStore } from "./liveLocationShares";
 import { CallStore } from "./calls";
+import { checkVideoCallEligibility } from "./videoCallGate";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -2002,6 +2003,22 @@ export function createApp(deps?: {
     res.json({ call: callStore.getActiveCallFor(req.params.author) ?? null });
   });
 
+  // Bumble's real "mandatory text-first" video-call gate (#130) — lets the
+  // client show/disable the video-call button (and how many more messages
+  // are needed) ahead of time, rather than only finding out after the
+  // call is rejected. See videoCallGate.ts; #128's audio call has no such
+  // gate and isn't checked here.
+  app.get("/api/rooms/:roomId/video-call-eligibility", (req, res) => {
+    const caller = typeof req.query.caller === "string" ? req.query.caller : "";
+    const callee = typeof req.query.callee === "string" ? req.query.callee : "";
+    if (!caller || !callee) {
+      res.status(400).json({ error: "caller and callee are required" });
+      return;
+    }
+    const roomMessages = messagesByRoom.get(req.params.roomId) ?? [];
+    res.json(checkVideoCallEligibility(roomMessages, caller, callee));
+  });
+
   // GDPR data portability: its own high-priority, dependency-free path,
   // same as Report/Block/SOS. Streams the requester's own data back as a
   // downloadable JSON backup rather than requiring a separate export job.
@@ -2882,6 +2899,17 @@ export async function createChatServer() {
       if (isBlocked) {
         socket.emit("call:rejected", { reason: "blocked" });
         return;
+      }
+      // Bumble's real "mandatory text-first" gate (#130) — audio calls
+      // (#128) aren't gated, only video.
+      if (payload?.video) {
+        const eligibility = checkVideoCallEligibility(messagesByRoom.get(roomId) ?? [], caller, callee);
+        if (!eligibility.eligible) {
+          socket.emit("call:rejected", {
+            reason: `Send ${eligibility.required - eligibility.messagesExchanged} more message(s) before starting a video call`,
+          });
+          return;
+        }
       }
       const result = callStore.initiate(roomId, caller, callee, payload?.video);
       if (!result.success) {
