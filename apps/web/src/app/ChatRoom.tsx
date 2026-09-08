@@ -326,6 +326,20 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [typingAuthors, setTypingAuthors] = useState<string[]>([]);
   const isTypingRef = useRef(false);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Badoo's real in-app audio call (#128) — WebRTC signaling relayed over
+  // this same socket/room; see calls.ts for the server-side state
+  // machine. STUN-only (no TURN server configured anywhere in this app's
+  // infra), so a call between two peers both behind restrictive/symmetric
+  // NATs can fail to connect — an honest, disclosed limitation.
+  type CallInfo = { id: string; caller: string; callee: string };
+  const [callState, setCallState] = useState<"idle" | "calling" | "ringing" | "active">("idle");
+  const [activeCall, setActiveCall] = useState<CallInfo | null>(null);
+  const [callError, setCallError] = useState<string | null>(null);
+  const activeCallRef = useRef<CallInfo | null>(null);
+  activeCallRef.current = activeCall;
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   // Tracks the newest message timestamp we've seen locally so that on
   // reconnect (dropped wifi, backgrounded tab, another device catching up)
   // we only fetch what we missed instead of the whole history again.
@@ -754,6 +768,70 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         setLocationError("Your live location share has ended.");
       }
     });
+
+    // Badoo's real in-app audio call (#128) — see calls.ts and the
+    // startCall/acceptCall/endCall/createPeerConnection helpers above.
+    socket.on("call:incoming", (call: CallInfo) => {
+      if (call.caller === authorRef.current) {
+        // Our own outgoing invite, echoed back to the whole room (this
+        // socket is in it too) — just learn the call id, stay "calling".
+        setActiveCall(call);
+        return;
+      }
+      if (call.callee !== authorRef.current) return; // some other pair's call in a group room
+      setActiveCall(call);
+      setCallState("ringing");
+    });
+    socket.on("call:accepted", async (call: CallInfo) => {
+      if (activeCallRef.current && call.id !== activeCallRef.current.id) return;
+      setActiveCall(call);
+      setCallState("active");
+      const remoteAuthor = call.caller === authorRef.current ? call.callee : call.caller;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        localStreamRef.current = stream;
+        const pc = createPeerConnection(call.id, remoteAuthor);
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        if (call.caller === authorRef.current) {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit("call:signal", { callId: call.id, roomId, from: authorRef.current, to: remoteAuthor, data: { type: "offer", sdp: offer.sdp } });
+        }
+      } catch {
+        setCallError("Microphone access is required for a call");
+        socket.emit("call:end", { callId: call.id, author: authorRef.current });
+        teardownCall();
+      }
+    });
+    socket.on(
+      "call:signal",
+      async ({ callId, from, to, data }: { callId: string; from: string; to: string; data: { type: string; sdp?: string; candidate?: RTCIceCandidateInit } }) => {
+        if (to !== authorRef.current) return;
+        const pc = peerConnectionRef.current;
+        if (!pc) return;
+        if (data.type === "offer" && data.sdp) {
+          await pc.setRemoteDescription({ type: "offer", sdp: data.sdp });
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit("call:signal", { callId, roomId, from: authorRef.current, to: from, data: { type: "answer", sdp: answer.sdp } });
+        } else if (data.type === "answer" && data.sdp) {
+          await pc.setRemoteDescription({ type: "answer", sdp: data.sdp });
+        } else if (data.type === "ice-candidate" && data.candidate) {
+          try {
+            await pc.addIceCandidate(data.candidate);
+          } catch {
+            // A stray/late ICE candidate after the connection settled — harmless to drop.
+          }
+        }
+      }
+    );
+    socket.on("call:ended", ({ callId }: { callId: string; endedBy: string }) => {
+      if (activeCallRef.current?.id === callId) teardownCall();
+    });
+    socket.on("call:rejected", ({ reason }: { reason?: string }) => {
+      setCallError(reason ?? "Call failed");
+      setCallState("idle");
+    });
     socket.on("message:rejected", (payload: { reason?: string }) => {
       if (payload?.reason === "scam_content") {
         setImageError("That message looks like it violates ChatApp's policy against financial and crypto scams, so it wasn't sent.");
@@ -803,6 +881,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       clearHiddenTimer();
       if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
       stopLiveShareTracking();
+      teardownCall();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("online", handleOnline);
       socket.disconnect();
@@ -1026,6 +1105,57 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     setShowLocationPicker(false);
   };
 
+  const STUN_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+
+  const teardownCall = () => {
+    peerConnectionRef.current?.close();
+    peerConnectionRef.current = null;
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
+    localStreamRef.current = null;
+    if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
+    setActiveCall(null);
+    setCallState("idle");
+  };
+
+  const createPeerConnection = (callId: string, remoteAuthor: string): RTCPeerConnection => {
+    const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socketRef.current?.emit("call:signal", {
+          callId,
+          roomId,
+          from: authorRef.current,
+          to: remoteAuthor,
+          data: { type: "ice-candidate", candidate: event.candidate.toJSON() },
+        });
+      }
+    };
+    pc.ontrack = (event) => {
+      if (remoteAudioRef.current) remoteAudioRef.current.srcObject = event.streams[0];
+    };
+    peerConnectionRef.current = pc;
+    return pc;
+  };
+
+  const startCall = (callee: string) => {
+    if (isGuest || callState !== "idle") return;
+    setCallError(null);
+    socketRef.current?.emit("call:invite", { roomId, caller: author, callee });
+    setCallState("calling");
+  };
+
+  const acceptCall = () => {
+    if (!activeCall) return;
+    socketRef.current?.emit("call:accept", { callId: activeCall.id, author });
+  };
+
+  const endCall = () => {
+    if (activeCall) {
+      socketRef.current?.emit("call:end", { callId: activeCall.id, author });
+    }
+    teardownCall();
+  };
+
   // Badoo's real voice-note messages with a waveform (#122): record via
   // MediaRecorder, compute the waveform client-side (see
   // voiceNoteWaveform.ts — this server has no audio-decoding capability
@@ -1126,6 +1256,14 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     }
   };
 
+  // #128: this app has no separate "conversation participants" list —
+  // the other person to call is derived from who else has actually
+  // posted in this room. A call button only makes sense once that's
+  // unambiguous (exactly one other person); a group room (e.g. #109's
+  // Double Date) hides it rather than guessing who to ring.
+  const otherParticipants = Array.from(new Set(messages.filter((m) => m.author !== author).map((m) => m.author)));
+  const callTarget = otherParticipants.length === 1 ? otherParticipants[0] : undefined;
+
   return (
     <BiometricLock author={author}>
     <main className="chat-app">
@@ -1149,6 +1287,30 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         </div>
       </div>
       <SOSButton author={author} />
+      {callState === "idle" && callTarget && !isGuest && (
+        <button className="chat-app__call-button" onClick={() => startCall(callTarget)}>
+          📞 Call {callTarget}
+        </button>
+      )}
+      {callState !== "idle" && activeCall && (
+        <div className="chat-app__call-panel">
+          {callState === "calling" && <p>Calling {activeCall.callee}…</p>}
+          {callState === "ringing" && <p>📞 Incoming call from {activeCall.caller}</p>}
+          {callState === "active" && <p>🔊 On a call with {activeCall.caller === author ? activeCall.callee : activeCall.caller}</p>}
+          <div className="chat-app__call-panel-actions">
+            {callState === "ringing" && (
+              <button className="chat-app__call-accept" onClick={acceptCall}>
+                Accept
+              </button>
+            )}
+            <button className="chat-app__call-end" onClick={endCall}>
+              {callState === "ringing" ? "Decline" : "Hang up"}
+            </button>
+          </div>
+          <audio ref={remoteAudioRef} autoPlay />
+        </div>
+      )}
+      {callError && <p style={{ color: "var(--color-danger)" }}>{callError}</p>}
       {imageError && <p className="chat-app__status chat-app__status--offline">{imageError}</p>}
       {liveUpdatesEnabled ? (
         <p

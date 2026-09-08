@@ -25,6 +25,7 @@ import { SelfDestructPhotoStore } from "./selfDestructPhotos";
 import { ReadReceiptStore } from "./readReceipts";
 import { TypingStore } from "./typing";
 import { LiveLocationShareStore } from "./liveLocationShares";
+import { CallStore } from "./calls";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -177,6 +178,7 @@ export function createApp(deps?: {
   readReceiptStore: ReadReceiptStore;
   typingStore: TypingStore;
   liveLocationShareStore: LiveLocationShareStore;
+  callStore: CallStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -265,6 +267,7 @@ export function createApp(deps?: {
   const readReceiptStore = new ReadReceiptStore();
   const typingStore = new TypingStore();
   const liveLocationShareStore = new LiveLocationShareStore();
+  const callStore = new CallStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1982,6 +1985,23 @@ export function createApp(deps?: {
     });
   });
 
+  // Badoo's real in-app audio call (#128) — a REST snapshot of an
+  // in-progress call/whether an author is currently busy, for a surface
+  // that isn't already holding a socket connection. See calls.ts for the
+  // actual signaling state machine.
+  app.get("/api/calls/:callId", (req, res) => {
+    const call = callStore.get(req.params.callId);
+    if (!call) {
+      res.status(404).json({ error: "Call not found" });
+      return;
+    }
+    res.json({ call });
+  });
+
+  app.get("/api/calls/active/:author", (req, res) => {
+    res.json({ call: callStore.getActiveCallFor(req.params.author) ?? null });
+  });
+
   // GDPR data portability: its own high-priority, dependency-free path,
   // same as Report/Block/SOS. Streams the requester's own data back as a
   // downloadable JSON backup rather than requiring a separate export job.
@@ -2677,12 +2697,23 @@ export function createApp(deps?: {
     readReceiptStore,
     typingStore,
     liveLocationShareStore,
+    callStore,
   };
 }
 
 export async function createChatServer() {
-  const { app, messagesByRoom, pushService, reportStore, presenceStore, readReceiptStore, typingStore, liveLocationShareStore } =
-    createApp();
+  const {
+    app,
+    messagesByRoom,
+    pushService,
+    reportStore,
+    presenceStore,
+    readReceiptStore,
+    typingStore,
+    liveLocationShareStore,
+    callStore,
+    blockStore,
+  } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
@@ -2835,6 +2866,65 @@ export async function createChatServer() {
         io.to(roomId).emit("location:update", { messageId, latitude: result.latitude, longitude: result.longitude });
       }
     );
+
+    // Badoo's real in-app audio call (#128) — signaling only, broadcast to
+    // the room the same way chat messages are (recipients are already
+    // joined to it), with clients filtering for events addressed to them.
+    // See calls.ts for the actual state machine and why there's no
+    // per-user socket routing here.
+    socket.on("call:invite", (payload: { roomId?: string; caller?: string; callee?: string }) => {
+      const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+      const caller = typeof payload?.caller === "string" ? payload.caller : "";
+      const callee = typeof payload?.callee === "string" ? payload.callee : "";
+      if (!roomId || !caller || !callee) return;
+
+      const isBlocked = blockStore.getBlockedAuthors(caller).includes(callee) || blockStore.getBlockedAuthors(callee).includes(caller);
+      if (isBlocked) {
+        socket.emit("call:rejected", { reason: "blocked" });
+        return;
+      }
+      const result = callStore.initiate(roomId, caller, callee);
+      if (!result.success) {
+        socket.emit("call:rejected", { reason: result.error });
+        return;
+      }
+      io.to(roomId).emit("call:incoming", result.call);
+    });
+
+    socket.on("call:accept", (payload: { callId?: string; author?: string }) => {
+      const callId = typeof payload?.callId === "string" ? payload.callId : "";
+      const author = typeof payload?.author === "string" ? payload.author : "";
+      if (!callId || !author) return;
+      const result = callStore.accept(callId, author);
+      if (!result.success) return;
+      io.to(result.call.roomId).emit("call:accepted", result.call);
+    });
+
+    // Covers both the callee declining before pickup and either side
+    // hanging up once active — calls.ts's end() allows both participants.
+    socket.on("call:end", (payload: { callId?: string; author?: string }) => {
+      const callId = typeof payload?.callId === "string" ? payload.callId : "";
+      const author = typeof payload?.author === "string" ? payload.author : "";
+      if (!callId || !author) return;
+      const call = callStore.get(callId);
+      const result = callStore.end(callId, author);
+      if (!result.success || !call) return;
+      io.to(call.roomId).emit("call:ended", { callId, endedBy: author });
+    });
+
+    // WebRTC offer/answer/ICE-candidate relay — this server never touches
+    // the actual audio stream, only these signaling payloads, exactly the
+    // production-standard division of responsibility. `data` is opaque to
+    // the server; only the intended recipient's client interprets it.
+    socket.on("call:signal", (payload: { callId?: string; roomId?: string; from?: string; to?: string; data?: unknown }) => {
+      const callId = typeof payload?.callId === "string" ? payload.callId : "";
+      const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+      const from = typeof payload?.from === "string" ? payload.from : "";
+      const to = typeof payload?.to === "string" ? payload.to : "";
+      if (!callId || !roomId || !from || !to) return;
+      if (!callStore.get(callId)) return;
+      io.to(roomId).emit("call:signal", { callId, from, to, data: payload.data });
+    });
 
     // Bumble's real typing indicator (#126) — client-driven start/stop
     // (the client debounces its own "stopped typing" after a pause in
