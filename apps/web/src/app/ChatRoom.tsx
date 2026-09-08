@@ -7,7 +7,8 @@ import { io, Socket } from "socket.io-client";
 import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
 import { loadDataSaverPreference, saveDataSaverPreference } from "./dataSaverStore";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
-import { compressImage } from "./imageCompression";
+import { compressImage, blobToBase64 } from "./imageCompression";
+import { computeWaveform } from "./voiceNoteWaveform";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
 import ReportDialog from "./ReportDialog";
@@ -132,7 +133,18 @@ function MessageRow({
           </div>
         )}
         <strong>{message.author}: </strong>
-        {message.imageUrl ? (
+        {message.audioUrl ? (
+          <div className="chat-app__voice-note">
+            {message.waveform && message.waveform.length > 0 && (
+              <div className="chat-app__waveform" aria-hidden>
+                {message.waveform.map((peak, i) => (
+                  <div key={i} className="chat-app__waveform-bar" style={{ height: `${Math.max(10, peak * 100)}%` }} />
+                ))}
+              </div>
+            )}
+            <audio controls src={message.audioUrl} />
+          </div>
+        ) : message.imageUrl ? (
           <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
         ) : (
           <span>{message.text}</span>
@@ -216,6 +228,11 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isSendingVoiceNote, setIsSendingVoiceNote] = useState(false);
+  const [voiceNoteError, setVoiceNoteError] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   // Explicit user preference (persisted), defaulting to the OS/browser's
   // Data Saver signal on a metered/slow connection — either way, don't
@@ -761,6 +778,74 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     if (file) sendImage(file);
   };
 
+  // Badoo's real voice-note messages with a waveform (#122): record via
+  // MediaRecorder, compute the waveform client-side (see
+  // voiceNoteWaveform.ts — this server has no audio-decoding capability
+  // of its own), then upload and send the same way sendImage() does.
+  const sendVoiceNote = async (blob: Blob) => {
+    if (isGuest) return;
+    setVoiceNoteError(null);
+    setIsSendingVoiceNote(true);
+    try {
+      const [waveform, base64] = await Promise.all([computeWaveform(blob), blobToBase64(blob)]);
+      const uploadRes = await fetch(`${API_URL}/api/voice-notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mimeType: blob.type, data: base64, waveform }),
+      });
+      if (!uploadRes.ok) {
+        const body = await uploadRes.json().catch(() => ({}));
+        throw new Error(body.error ?? "Upload failed");
+      }
+      const { url, waveform: savedWaveform } = await uploadRes.json();
+      socketRef.current?.emit("message:send", {
+        roomId,
+        author,
+        text: "",
+        audioUrl: `${API_URL}${url}`,
+        waveform: savedWaveform,
+        asGuest: isGuest,
+      });
+    } catch (err) {
+      setVoiceNoteError(err instanceof Error ? err.message : "Failed to send voice note");
+    } finally {
+      setIsSendingVoiceNote(false);
+    }
+  };
+
+  const startRecording = async () => {
+    if (isGuest || isRecording) return;
+    setVoiceNoteError(null);
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setVoiceNoteError("Voice notes aren't supported in this browser");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      recordedChunksRef.current = [];
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(recordedChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" });
+        sendVoiceNote(blob);
+      };
+      mediaRecorder.start();
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecording(true);
+    } catch {
+      setVoiceNoteError("Microphone access is required to record a voice note");
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current = null;
+    setIsRecording(false);
+  };
+
   // Global shortcuts: Ctrl/Cmd+K works even while typing elsewhere; `?` is
   // only treated as a shortcut when the user isn't actively typing a message.
   useEffect(() => {
@@ -913,6 +998,9 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           </div>
         ))}
         {isSendingImage && <p className="chat-app__status">Compressing and sending image…</p>}
+        {isRecording && <p className="chat-app__status">Recording voice note…</p>}
+        {isSendingVoiceNote && <p className="chat-app__status">Sending voice note…</p>}
+        {voiceNoteError && <p style={{ color: "var(--color-danger)" }}>{voiceNoteError}</p>}
       </div>
       {replyTarget && (
         <div className="chat-app__reply-banner">
@@ -955,6 +1043,14 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           title="Send an image"
         >
           📷
+        </button>
+        <button
+          className={`chat-app__voice-button${isRecording ? " chat-app__voice-button--recording" : ""}`}
+          onClick={isRecording ? stopRecording : startRecording}
+          disabled={isGuest || isSendingVoiceNote || !liveUpdatesEnabled}
+          title={isRecording ? "Stop recording" : "Record a voice note"}
+        >
+          {isRecording ? "⏹" : "🎤"}
         </button>
         <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}

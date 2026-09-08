@@ -5,6 +5,12 @@ export interface ChatMessage {
   text: string;
   createdAt: string;
   imageUrl?: string;
+  // Badoo's real voice-note messages with a waveform (#122): audioUrl
+  // points at the uploaded clip (see voiceNotes.ts), waveform is the
+  // client-computed amplitude sketch carried alongside it so a recipient
+  // can render the waveform without a second fetch.
+  audioUrl?: string;
+  waveform?: number[];
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
@@ -15,6 +21,8 @@ export interface SendMessagePayload {
   author: string;
   text: string;
   imageUrl?: string;
+  audioUrl?: string;
+  waveform?: number[];
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;

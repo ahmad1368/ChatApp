@@ -558,6 +558,68 @@ test("GET /api/uploads/:id returns 404 for an unknown upload id", async () => {
   }
 });
 
+test("POST /api/voice-notes rejects an unsupported mime type (#122)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/voice-notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mimeType: "video/mp4", data: TINY_PNG_BASE64, waveform: [0.1, 0.5] }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/voice-notes rejects an invalid waveform", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/voice-notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mimeType: "audio/webm", data: TINY_PNG_BASE64, waveform: [1.5] }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/voice-notes then GET /api/voice-notes/:id stores a valid clip and serves it back", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const waveform = [0.1, 0.4, 0.9, 0.2];
+    const uploadRes = await fetch(`${baseUrl}/api/voice-notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mimeType: "audio/webm", data: TINY_PNG_BASE64, waveform }),
+    });
+    assert.equal(uploadRes.status, 201);
+    const uploadBody = await uploadRes.json();
+    assert.match(uploadBody.url, /^\/api\/voice-notes\/[\w-]+$/);
+    assert.deepEqual(uploadBody.waveform, waveform);
+
+    const getRes = await fetch(`${baseUrl}${uploadBody.url}`);
+    assert.equal(getRes.status, 200);
+    assert.equal(getRes.headers.get("content-type"), "audio/webm");
+    const bytes = new Uint8Array(await getRes.arrayBuffer());
+    assert.equal(bytes.length, Buffer.from(TINY_PNG_BASE64, "base64").byteLength);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/voice-notes/:id returns 404 for an unknown id", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/voice-notes/does-not-exist`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
 test("POST /api/error-reports rejects a report missing a message", async () => {
   const { server, baseUrl } = listen();
   try {

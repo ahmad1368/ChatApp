@@ -35,4 +35,22 @@ describe("buildChatMessage", () => {
     assert.equal(message.replyToAuthor, undefined);
     assert.equal(message.replyToText, undefined);
   });
+
+  it("carries a voice note's audioUrl and waveform through when provided (#122)", () => {
+    const message = buildChatMessage({
+      roomId: "room-a",
+      author: "bob",
+      text: "",
+      audioUrl: "/api/voice-notes/abc123",
+      waveform: [0.1, 0.5, 0.9],
+    });
+    assert.equal(message.audioUrl, "/api/voice-notes/abc123");
+    assert.deepEqual(message.waveform, [0.1, 0.5, 0.9]);
+  });
+
+  it("leaves audioUrl and waveform undefined when not provided", () => {
+    const message = buildChatMessage({ roomId: "room-a", author: "bob", text: "hello" });
+    assert.equal(message.audioUrl, undefined);
+    assert.equal(message.waveform, undefined);
+  });
 });
