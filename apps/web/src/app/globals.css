@@ -382,6 +382,22 @@ body {
   color: var(--color-muted);
 }
 
+.chat-app__video-effects-toggle {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-bottom: 8px;
+}
+
+.chat-app__video-effects-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .chat-app__call-button {
   padding: 6px 12px;
   background: var(--color-panel);

@@ -11,6 +11,7 @@ import { compressImage, blobToBase64 } from "./imageCompression";
 import { computeWaveform } from "./voiceNoteWaveform";
 import GifPicker from "./GifPicker";
 import LocationPicker, { LocationSharePayload } from "./LocationPicker";
+import { applyBeautyFilter, applyBackgroundBlur } from "./beautyFilter";
 import LocationMessage from "./LocationMessage";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
@@ -350,6 +351,13 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  // Badoo's real beauty filter/background blur during video calls (#131)
+  // — persisted preference; see beautyFilter.ts for the actual client-
+  // side processing applied when a call starts.
+  const [beautyFilterEnabled, setBeautyFilterEnabled] = useState(false);
+  const [backgroundBlurEnabled, setBackgroundBlurEnabled] = useState(false);
+  const [backgroundBlurUnsupported, setBackgroundBlurUnsupported] = useState(false);
+  const beautyFilterCleanupRef = useRef<(() => void) | null>(null);
   // Tracks the newest message timestamp we've seen locally so that on
   // reconnect (dropped wifi, backgrounded tab, another device catching up)
   // we only fetch what we missed instead of the whole history again.
@@ -798,11 +806,26 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
       setCallState("active");
       const remoteAuthor = call.caller === authorRef.current ? call.callee : call.caller;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: call.video });
-        localStreamRef.current = stream;
-        if (call.video && localVideoRef.current) localVideoRef.current.srcObject = stream;
+        const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: call.video });
+        localStreamRef.current = rawStream;
+
+        let outgoingStream = rawStream;
+        if (call.video) {
+          const videoTrack = rawStream.getVideoTracks()[0];
+          if (backgroundBlurEnabled && videoTrack) {
+            const applied = await applyBackgroundBlur(videoTrack);
+            if (!applied) setBackgroundBlurUnsupported(true);
+          }
+          if (beautyFilterEnabled) {
+            const { stream: processedStream, stop } = applyBeautyFilter(rawStream);
+            beautyFilterCleanupRef.current = stop;
+            outgoingStream = processedStream;
+          }
+          if (localVideoRef.current) localVideoRef.current.srcObject = outgoingStream;
+        }
+
         const pc = createPeerConnection(call.id, remoteAuthor, call.video);
-        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        outgoingStream.getTracks().forEach((track) => pc.addTrack(track, outgoingStream));
         if (call.caller === authorRef.current) {
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
@@ -1123,6 +1146,9 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     peerConnectionRef.current = null;
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
+    beautyFilterCleanupRef.current?.();
+    beautyFilterCleanupRef.current = null;
+    setBackgroundBlurUnsupported(false);
     if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
@@ -1294,6 +1320,28 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callTarget, messages.length, roomId, author]);
 
+  useEffect(() => {
+    fetch(`${API_URL}/api/video-call-effects/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => {
+        setBeautyFilterEnabled(body.effects?.beautyFilter ?? false);
+        setBackgroundBlurEnabled(body.effects?.backgroundBlur ?? false);
+      })
+      .catch(() => {});
+  }, [author]);
+
+  const toggleVideoCallEffect = (effect: "beautyFilter" | "backgroundBlur", value: boolean) => {
+    const nextBeautyFilter = effect === "beautyFilter" ? value : beautyFilterEnabled;
+    const nextBackgroundBlur = effect === "backgroundBlur" ? value : backgroundBlurEnabled;
+    setBeautyFilterEnabled(nextBeautyFilter);
+    setBackgroundBlurEnabled(nextBackgroundBlur);
+    fetch(`${API_URL}/api/video-call-effects/${encodeURIComponent(author)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ beautyFilter: nextBeautyFilter, backgroundBlur: nextBackgroundBlur }),
+    }).catch(() => {});
+  };
+
   return (
     <BiometricLock author={author}>
     <main className="chat-app">
@@ -1333,6 +1381,29 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
                 {videoCallEligibility.required - videoCallEligibility.messagesExchanged === 1 ? "" : "s"} to unlock video calling
               </span>
             )
+          )}
+        </div>
+      )}
+      {!isGuest && (
+        <div className="chat-app__video-effects-toggle">
+          <label>
+            <input
+              type="checkbox"
+              checked={beautyFilterEnabled}
+              onChange={(e) => toggleVideoCallEffect("beautyFilter", e.target.checked)}
+            />
+            ✨ Beauty filter
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={backgroundBlurEnabled}
+              onChange={(e) => toggleVideoCallEffect("backgroundBlur", e.target.checked)}
+            />
+            🌫️ Background blur
+          </label>
+          {backgroundBlurUnsupported && (
+            <span className="chat-app__video-call-locked">Background blur isn&apos;t supported by your browser/camera.</span>
           )}
         </div>
       )}
