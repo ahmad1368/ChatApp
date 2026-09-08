@@ -24,6 +24,7 @@ import { VoiceNoteStore } from "./voiceNotes";
 import { SelfDestructPhotoStore } from "./selfDestructPhotos";
 import { ReadReceiptStore } from "./readReceipts";
 import { TypingStore } from "./typing";
+import { LiveLocationShareStore } from "./liveLocationShares";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
@@ -175,6 +176,7 @@ export function createApp(deps?: {
   weekendPlansStore: WeekendPlansStore;
   readReceiptStore: ReadReceiptStore;
   typingStore: TypingStore;
+  liveLocationShareStore: LiveLocationShareStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -262,6 +264,7 @@ export function createApp(deps?: {
   const weekendPlansStore = new WeekendPlansStore();
   const readReceiptStore = new ReadReceiptStore();
   const typingStore = new TypingStore();
+  const liveLocationShareStore = new LiveLocationShareStore();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -1961,6 +1964,24 @@ export function createApp(deps?: {
     res.json({ authors: typingStore.getTypingAuthors(req.params.roomId) });
   });
 
+  // WhatsApp/Bumble's real "share live location" (#127) — a REST snapshot
+  // of the current in-progress position for a client that (re)loaded the
+  // page after the share started and missed earlier location:update
+  // broadcasts; see liveLocationShares.ts.
+  app.get("/api/rooms/:roomId/messages/:messageId/location", (req, res) => {
+    const share = liveLocationShareStore.get(req.params.messageId);
+    if (!share) {
+      res.status(404).json({ error: "No live location share for this message" });
+      return;
+    }
+    res.json({
+      latitude: share.latitude,
+      longitude: share.longitude,
+      expiresAt: share.expiresAt,
+      active: liveLocationShareStore.isActive(req.params.messageId),
+    });
+  });
+
   // GDPR data portability: its own high-priority, dependency-free path,
   // same as Report/Block/SOS. Streams the requester's own data back as a
   // downloadable JSON backup rather than requiring a separate export job.
@@ -2655,11 +2676,13 @@ export function createApp(deps?: {
     weekendPlansStore,
     readReceiptStore,
     typingStore,
+    liveLocationShareStore,
   };
 }
 
 export async function createChatServer() {
-  const { app, messagesByRoom, pushService, reportStore, presenceStore, readReceiptStore, typingStore } = createApp();
+  const { app, messagesByRoom, pushService, reportStore, presenceStore, readReceiptStore, typingStore, liveLocationShareStore } =
+    createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*" },
@@ -2709,6 +2732,32 @@ export async function createChatServer() {
 
       const roomId = payload.roomId || DEFAULT_ROOM_ID;
       const message: ChatMessage = buildChatMessage(payload);
+
+      // WhatsApp/Bumble's real "share live location" (#127): a static
+      // ("text") location share needs no extra validation beyond the
+      // coordinates already carried on the message, but a live share
+      // needs its duration validated and its authoritative expiresAt
+      // computed server-side — see liveLocationShares.ts.
+      if (payload.location?.live) {
+        const startResult = liveLocationShareStore.start(
+          message.id,
+          message.author,
+          payload.location.latitude,
+          payload.location.longitude,
+          payload.location.durationMinutes
+        );
+        if (!startResult.success) {
+          socket.emit("message:rejected", { reason: "invalid_location" });
+          return;
+        }
+        message.location = {
+          latitude: payload.location.latitude,
+          longitude: payload.location.longitude,
+          label: payload.location.label,
+          live: true,
+          expiresAt: startResult.expiresAt,
+        };
+      }
 
       // Report spam/promotional content to the monitoring system (#58):
       // unlike the scam check above, this doesn't block the send — Tinder's
@@ -2764,6 +2813,28 @@ export async function createChatServer() {
     };
     socket.on("message:delivered", (payload) => reportReceipt("message:delivered", payload));
     socket.on("message:read", (payload) => reportReceipt("message:read", payload));
+
+    // WhatsApp/Bumble's real "share live location" (#127) — periodic
+    // position updates for an already-started live share (see
+    // liveLocationShares.ts and message:send above for how it starts).
+    // Rejected privately to the sharer rather than broadcast, since only
+    // they need to know their own share ended/was invalid.
+    socket.on(
+      "location:update",
+      (payload: { roomId?: string; messageId?: string; author?: string; latitude?: unknown; longitude?: unknown }) => {
+        const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+        const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
+        const author = typeof payload?.author === "string" ? payload.author : "";
+        if (!roomId || !messageId || !author) return;
+
+        const result = liveLocationShareStore.update(messageId, author, payload.latitude, payload.longitude);
+        if (!result.success) {
+          socket.emit("location:rejected", { messageId, error: result.error });
+          return;
+        }
+        io.to(roomId).emit("location:update", { messageId, latitude: result.latitude, longitude: result.longitude });
+      }
+    );
 
     // Bumble's real typing indicator (#126) — client-driven start/stop
     // (the client debounces its own "stopped typing" after a pause in

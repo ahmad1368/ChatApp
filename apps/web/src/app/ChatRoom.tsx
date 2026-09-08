@@ -10,6 +10,8 @@ import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { compressImage, blobToBase64 } from "./imageCompression";
 import { computeWaveform } from "./voiceNoteWaveform";
 import GifPicker from "./GifPicker";
+import LocationPicker, { LocationSharePayload } from "./LocationPicker";
+import LocationMessage from "./LocationMessage";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
 import ReportDialog from "./ReportDialog";
@@ -133,6 +135,7 @@ function MessageRow({
   isOwnMessage,
   viewer,
   status,
+  liveLocationUpdate,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -144,6 +147,7 @@ function MessageRow({
   isOwnMessage: boolean;
   viewer: string;
   status?: string;
+  liveLocationUpdate?: { latitude: number; longitude: number };
 }) {
   const { dragX, handlers } = useSwipeToReply(() =>
     onReply({ id: message.id, author: message.author, text: message.text })
@@ -170,7 +174,9 @@ function MessageRow({
           </div>
         )}
         <strong>{message.author}: </strong>
-        {message.selfDestructImageUrl ? (
+        {message.location ? (
+          <LocationMessage location={message.location} liveUpdate={liveLocationUpdate} />
+        ) : message.selfDestructImageUrl ? (
           <SelfDestructPhoto url={message.selfDestructImageUrl} viewer={viewer} />
         ) : message.audioUrl ? (
           <div className="chat-app__voice-note">
@@ -279,6 +285,11 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
   const [selfDestructError, setSelfDestructError] = useState<string | null>(null);
   const selfDestructFileInputRef = useRef<HTMLInputElement | null>(null);
   const [showGifPicker, setShowGifPicker] = useState(false);
+  // WhatsApp/Bumble's real "send live or text location" (#127).
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [liveLocationUpdates, setLiveLocationUpdates] = useState<Record<string, { latitude: number; longitude: number }>>({});
+  const liveShareRef = useRef<{ messageId: string; expiresAt: string; intervalId: ReturnType<typeof setInterval> } | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSendingVoiceNote, setIsSendingVoiceNote] = useState(false);
   const [voiceNoteError, setVoiceNoteError] = useState<string | null>(null);
@@ -716,6 +727,13 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
           socket.emit("message:read", { roomId, messageId: message.id, author: authorRef.current });
         }
       }
+
+      // #127: this is the server's authoritative echo of a live share we
+      // just started — only now do we know its message id, so tracking
+      // starts here rather than at send time.
+      if (isOwnMessage && message.location?.live && message.location.expiresAt) {
+        startLiveShareTracking(message.id, message.location.expiresAt);
+      }
     });
     socket.on("message:status", ({ messageId, status }: { messageId: string; status: string }) => {
       setMessageStatuses((prev) => ({ ...prev, [messageId]: status }));
@@ -723,6 +741,18 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     socket.on("typing:update", ({ roomId: updatedRoomId, authors }: { roomId: string; authors: string[] }) => {
       if (updatedRoomId !== roomId) return;
       setTypingAuthors(authors.filter((a) => a !== authorRef.current));
+    });
+    socket.on(
+      "location:update",
+      ({ messageId, latitude, longitude }: { messageId: string; latitude: number; longitude: number }) => {
+        setLiveLocationUpdates((prev) => ({ ...prev, [messageId]: { latitude, longitude } }));
+      }
+    );
+    socket.on("location:rejected", ({ messageId }: { messageId: string; error?: string }) => {
+      if (liveShareRef.current?.messageId === messageId) {
+        stopLiveShareTracking();
+        setLocationError("Your live location share has ended.");
+      }
     });
     socket.on("message:rejected", (payload: { reason?: string }) => {
       if (payload?.reason === "scam_content") {
@@ -772,6 +802,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     return () => {
       clearHiddenTimer();
       if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      stopLiveShareTracking();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("online", handleOnline);
       socket.disconnect();
@@ -943,6 +974,56 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
     if (isGuest) return;
     socketRef.current?.emit("message:send", { roomId, author, text: "", imageUrl: url, asGuest: isGuest });
     setShowGifPicker(false);
+  };
+
+  // WhatsApp/Bumble's real "share live location" (#127): re-sends the
+  // sharer's current position every 15s to the message that started the
+  // share, until it expires — a poll rather than watchPosition's
+  // continuous stream, both simpler to bound/clean up and closer to how
+  // real apps throttle live-location updates anyway.
+  const LIVE_SHARE_UPDATE_INTERVAL_MS = 15_000;
+  const stopLiveShareTracking = () => {
+    if (liveShareRef.current) {
+      clearInterval(liveShareRef.current.intervalId);
+      liveShareRef.current = null;
+    }
+  };
+  const startLiveShareTracking = (messageId: string, expiresAt: string) => {
+    stopLiveShareTracking();
+    const intervalId = setInterval(() => {
+      if (new Date(expiresAt).getTime() <= Date.now()) {
+        stopLiveShareTracking();
+        return;
+      }
+      navigator.geolocation?.getCurrentPosition((position) => {
+        socketRef.current?.emit("location:update", {
+          roomId,
+          messageId,
+          author,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+      });
+    }, LIVE_SHARE_UPDATE_INTERVAL_MS);
+    liveShareRef.current = { messageId, expiresAt, intervalId };
+  };
+
+  const sendLocation = (payload: LocationSharePayload) => {
+    if (isGuest) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      location: {
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        label: payload.label,
+        live: payload.live,
+        durationMinutes: payload.durationMinutes,
+      },
+      asGuest: isGuest,
+    });
+    setShowLocationPicker(false);
   };
 
   // Badoo's real voice-note messages with a waveform (#122): record via
@@ -1157,6 +1238,7 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
             isOwnMessage={m.author === author}
             viewer={author}
             status={m.author === author ? messageStatuses[m.id] : undefined}
+            liveLocationUpdate={liveLocationUpdates[m.id]}
           />
         ))}
         {queue.map((q) => (
@@ -1253,11 +1335,21 @@ export default function ChatRoom({ roomId = DEFAULT_ROOM_ID, isGuest = false }: 
         >
           GIF
         </button>
+        <button
+          className="chat-app__image-button"
+          onClick={() => setShowLocationPicker((v) => !v)}
+          disabled={isGuest || !liveUpdatesEnabled}
+          title="Send your location"
+        >
+          📍
+        </button>
         <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}
         </button>
       </div>
       {showGifPicker && <GifPicker onPick={sendGif} onClose={() => setShowGifPicker(false)} />}
+      {showLocationPicker && <LocationPicker onSend={sendLocation} onClose={() => setShowLocationPicker(false)} />}
+      {locationError && <p style={{ color: "var(--color-danger)" }}>{locationError}</p>}
       {blockedAuthors.length > 0 && (
         <div className="chat-app__guest-banner">
           <strong>Blocked users:</strong>

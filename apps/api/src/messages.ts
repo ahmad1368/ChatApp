@@ -11,6 +11,7 @@ export function buildChatMessage(payload: SendMessagePayload): ChatMessage {
     audioUrl: payload.audioUrl,
     waveform: payload.waveform,
     selfDestructImageUrl: payload.selfDestructImageUrl,
+    location: payload.location,
     replyToId: payload.replyToId,
     replyToAuthor: payload.replyToAuthor,
     replyToText: payload.replyToText,

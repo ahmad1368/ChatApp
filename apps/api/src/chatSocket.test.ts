@@ -318,3 +318,109 @@ test("disconnecting while typing clears the indicator for everyone else in the r
     httpServer.close();
   }
 });
+
+test("message:send with a live location share sets an authoritative expiresAt on message:new (#127)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    await settle();
+
+    const received = waitFor<{ location?: { latitude: number; longitude: number; live: boolean; expiresAt?: string } }>(
+      sender,
+      "message:new"
+    );
+    sender.emit("message:send", {
+      roomId: "room-1",
+      author: "alice",
+      text: "",
+      location: { latitude: 40.7128, longitude: -74.006, live: true, durationMinutes: 15 },
+    });
+    const message = await received;
+
+    assert.equal(message.location?.latitude, 40.7128);
+    assert.equal(message.location?.live, true);
+    assert.ok(message.location?.expiresAt && new Date(message.location.expiresAt).getTime() > Date.now());
+  } finally {
+    sender.close();
+    httpServer.close();
+  }
+});
+
+test("message:send rejects a live location share with an out-of-range duration", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    await settle();
+
+    const rejected = waitFor<{ reason?: string }>(sender, "message:rejected");
+    sender.emit("message:send", {
+      roomId: "room-1",
+      author: "alice",
+      text: "",
+      location: { latitude: 40.7128, longitude: -74.006, live: true, durationMinutes: 10_000 },
+    });
+    assert.equal((await rejected).reason, "invalid_location");
+  } finally {
+    sender.close();
+    httpServer.close();
+  }
+});
+
+test("location:update broadcasts new coordinates to the room", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  const listener = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    listener.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", {
+      roomId: "room-1",
+      author: "alice",
+      text: "",
+      location: { latitude: 40.7128, longitude: -74.006, live: true, durationMinutes: 15 },
+    });
+    const message = await sent;
+
+    const update = waitFor<{ messageId: string; latitude: number; longitude: number }>(listener, "location:update");
+    sender.emit("location:update", { roomId: "room-1", messageId: message.id, author: "alice", latitude: 40.71, longitude: -74.0 });
+    assert.deepEqual(await update, { messageId: message.id, latitude: 40.71, longitude: -74.0 });
+  } finally {
+    sender.close();
+    listener.close();
+    httpServer.close();
+  }
+});
+
+test("location:update from someone other than the original sharer is rejected privately", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const sender = await connectClient(baseUrl);
+  const impostor = await connectClient(baseUrl);
+  try {
+    sender.emit("join", "room-1");
+    impostor.emit("join", "room-1");
+    await settle();
+
+    const sent = waitFor<{ id: string }>(sender, "message:new");
+    sender.emit("message:send", {
+      roomId: "room-1",
+      author: "alice",
+      text: "",
+      location: { latitude: 40.7128, longitude: -74.006, live: true, durationMinutes: 15 },
+    });
+    const message = await sent;
+
+    const rejected = waitFor<{ messageId: string; error: string }>(impostor, "location:rejected");
+    impostor.emit("location:update", { roomId: "room-1", messageId: message.id, author: "bob", latitude: 40.71, longitude: -74.0 });
+    const payload = await rejected;
+    assert.equal(payload.messageId, message.id);
+  } finally {
+    sender.close();
+    impostor.close();
+    httpServer.close();
+  }
+});
