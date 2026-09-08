@@ -68,4 +68,19 @@ describe("buildChatMessage", () => {
     const message = buildChatMessage({ roomId: "room-a", author: "bob", text: "hello" });
     assert.equal(message.selfDestructImageUrl, undefined);
   });
+
+  it("carries a location share through when provided (#127)", () => {
+    const message = buildChatMessage({
+      roomId: "room-a",
+      author: "bob",
+      text: "",
+      location: { latitude: 40.7128, longitude: -74.006, label: "Central Park", live: false },
+    });
+    assert.deepEqual(message.location, { latitude: 40.7128, longitude: -74.006, label: "Central Park", live: false });
+  });
+
+  it("leaves location undefined when not provided", () => {
+    const message = buildChatMessage({ roomId: "room-a", author: "bob", text: "hello" });
+    assert.equal(message.location, undefined);
+  });
 });

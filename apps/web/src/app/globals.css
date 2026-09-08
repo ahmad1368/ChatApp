@@ -336,6 +336,40 @@ body {
   margin: 4px 0;
 }
 
+.chat-app__location-picker {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 8px;
+  background: var(--color-panel);
+}
+
+.chat-app__location-picker-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.chat-app__location {
+  display: block;
+  margin-top: 4px;
+}
+
+.chat-app__location-label {
+  font-weight: bold;
+}
+
+.chat-app__location-link {
+  color: var(--color-accent);
+}
+
+.chat-app__location-live {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
 .chat-app__send {
   padding: 8px 16px;
   font-size: inherit;

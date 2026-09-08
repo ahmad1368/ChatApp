@@ -39,6 +39,7 @@ function listen() {
     spotifyInfoStore,
     readReceiptStore,
     typingStore,
+    liveLocationShareStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -58,6 +59,7 @@ function listen() {
     spotifyInfoStore,
     readReceiptStore,
     typingStore,
+    liveLocationShareStore,
   };
 }
 
@@ -235,6 +237,31 @@ test("GET /api/rooms/:roomId/typing reflects the live TypingStore", async () => 
     typingStore.startTyping("room-a", "alice");
     const res = await fetch(`${baseUrl}/api/rooms/room-a/typing`);
     assert.deepEqual(await res.json(), { authors: ["alice"] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages/:messageId/location 404s when there's no live share (#127)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/rooms/room-a/messages/m1/location`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages/:messageId/location reflects the live share and its active state", async () => {
+  const { server, baseUrl, liveLocationShareStore } = listen();
+  try {
+    liveLocationShareStore.start("m1", "alice", 40.7128, -74.006, 15);
+    const res = await fetch(`${baseUrl}/api/rooms/room-a/messages/m1/location`);
+    const body = await res.json();
+    assert.equal(body.latitude, 40.7128);
+    assert.equal(body.longitude, -74.006);
+    assert.equal(body.active, true);
+    assert.ok(new Date(body.expiresAt).getTime() > Date.now());
   } finally {
     server.close();
   }

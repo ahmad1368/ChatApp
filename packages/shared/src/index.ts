@@ -16,9 +16,28 @@ export interface ChatMessage {
   // endpoint (see selfDestructPhotos.ts) rather than a permanently
   // viewable upload.
   selfDestructImageUrl?: string;
+  // WhatsApp/Bumble's real "send live or text location" (#127) — every
+  // share carries real coordinates (an optional `label` covers the "text"
+  // half: a plain description like "Central Park" attached to the pin,
+  // rather than a fabricated geocoding lookup); `live` sharers keep
+  // updating `latitude`/`longitude` via the location:update socket event
+  // until `expiresAt` (see liveLocationShares.ts for why a static share
+  // needs none of that server-side tracking).
+  location?: ChatLocationShare;
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
+}
+
+export interface ChatLocationShare {
+  latitude: number;
+  longitude: number;
+  label?: string;
+  live: boolean;
+  expiresAt?: string;
+  // Client → server only on the initial send of a live share; the server
+  // computes and echoes back the authoritative `expiresAt` above.
+  durationMinutes?: number;
 }
 
 export interface SendMessagePayload {
@@ -29,6 +48,7 @@ export interface SendMessagePayload {
   audioUrl?: string;
   waveform?: number[];
   selfDestructImageUrl?: string;
+  location?: ChatLocationShare;
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
