@@ -19,6 +19,7 @@ import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
+import { buildNewMatchNotification } from "./matchNotifications";
 import { UploadStore } from "./uploads";
 import { VoiceNoteStore } from "./voiceNotes";
 import { SelfDestructPhotoStore } from "./selfDestructPhotos";
@@ -1768,6 +1769,16 @@ export function createApp(deps?: {
     // moment a match is created — see matchExpiry.ts.
     if (result.matched) {
       matchExpiryStore.recordMatch(swiperName, swipedName);
+      // Tinder's real "Push notification for a new Match" (#151) — each
+      // side gets their own notification naming the other person;
+      // fire-and-forget the same way message:send's push above doesn't
+      // block the response on delivery.
+      pushService.notifyAuthor(swiperName, buildNewMatchNotification(swipedName)).catch((err) => {
+        console.error("Failed to deliver new-match push notification:", err);
+      });
+      pushService.notifyAuthor(swipedName, buildNewMatchNotification(swiperName)).catch((err) => {
+        console.error("Failed to deliver new-match push notification:", err);
+      });
     }
     res.status(201).json({ matched: result.matched });
   });
