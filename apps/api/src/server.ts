@@ -289,6 +289,26 @@ export function createApp(deps?: {
   const videoCallEffectsStore = new VideoCallEffectsStore();
   const genderInfoStore = new GenderInfoStore();
   const matchExpiryStore = new MatchExpiryStore();
+
+  // Tinder's real "Reminder notification to respond to expiring chats"
+  // (#154): a periodic sweep is this app's stand-in for the job-queue/
+  // cron infra a production notification service would use — checks
+  // every tracked match once per interval rather than scheduling a
+  // one-off timer per match. `.unref()` so this never keeps the process
+  // (or a test run that instantiates the app) alive on its own.
+  const MATCH_EXPIRY_REMINDER_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
+  setInterval(() => {
+    for (const [a, b] of matchExpiryStore.getAllPairs()) {
+      if (!matchExpiryStore.needsExpiryReminder(a, b)) continue;
+      matchExpiryStore.markReminderSent(a, b);
+      const payload = { title: "Your match is about to expire! ⏳", body: "Say something before the 24-hour window closes." };
+      for (const author of [a, b]) {
+        pushService.notifyAuthor(author, payload).catch((err) => {
+          console.error("Failed to deliver match-expiry reminder push notification:", err);
+        });
+      }
+    }
+  }, MATCH_EXPIRY_REMINDER_SWEEP_INTERVAL_MS).unref();
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.

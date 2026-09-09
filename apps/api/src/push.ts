@@ -30,11 +30,9 @@ export class PushService {
     this.subscriptionsByEndpoint.delete(endpoint);
   }
 
-  /** Sends a push message to every subscriber except the message's own author. */
-  async notifyOthers(author: string, payload: { title: string; body: string }): Promise<void> {
-    const recipients = [...this.subscriptionsByEndpoint.values()].filter((s) => s.author !== author);
+  private async sendToSubscriptions(subscriptions: PushSubscription[], payload: { title: string; body: string }): Promise<void> {
     await Promise.all(
-      recipients.map(({ subscription }) =>
+      subscriptions.map((subscription) =>
         webpush.sendNotification(subscription, JSON.stringify(payload)).catch((err) => {
           // 404/410 means the browser dropped the subscription; stop targeting it.
           if (err?.statusCode === 404 || err?.statusCode === 410) {
@@ -45,5 +43,27 @@ export class PushService {
         })
       )
     );
+  }
+
+  /** Sends a push message to every subscriber except the message's own author. */
+  async notifyOthers(author: string, payload: { title: string; body: string }): Promise<void> {
+    const recipients = [...this.subscriptionsByEndpoint.values()]
+      .filter((s) => s.author !== author)
+      .map((s) => s.subscription);
+    await this.sendToSubscriptions(recipients, payload);
+  }
+
+  /**
+   * Sends a push message to every subscription belonging to one specific
+   * author (e.g. Tinder's real "new Match"/"new like"/"expiring chat"
+   * pushes, #151/#153/#154) — unlike notifyOthers()'s broadcast to
+   * everyone else, this targets a single person across however many
+   * devices they've subscribed from.
+   */
+  async notifyAuthor(author: string, payload: { title: string; body: string }): Promise<void> {
+    const recipients = [...this.subscriptionsByEndpoint.values()]
+      .filter((s) => s.author === author)
+      .map((s) => s.subscription);
+    await this.sendToSubscriptions(recipients, payload);
   }
 }

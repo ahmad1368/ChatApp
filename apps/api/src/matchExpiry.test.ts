@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
+import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS, MATCH_EXPIRY_REMINDER_LEAD_MS } from "./matchExpiry";
 
 test("isExpired() is false for a pair that was never matched", () => {
   const store = new MatchExpiryStore();
@@ -121,4 +121,68 @@ test("extend() is rejected once the match has already expired", () => {
   const result = store.extend("alice", "bob", now + MATCH_RESPONSE_WINDOW_MS + 1000);
   assert.equal(result.allowed, false);
   assert.match(result.error ?? "", /already expired/i);
+});
+
+test("needsExpiryReminder() is false right after matching (not yet in the lead-time window)", () => {
+  const store = new MatchExpiryStore();
+  const now = Date.now();
+  store.recordMatch("alice", "bob", now);
+  assert.equal(store.needsExpiryReminder("alice", "bob", now + 1000), false);
+});
+
+test("needsExpiryReminder() is true once inside the reminder lead-time window", () => {
+  const store = new MatchExpiryStore();
+  const now = Date.now();
+  store.recordMatch("alice", "bob", now);
+  const insideWindow = now + MATCH_RESPONSE_WINDOW_MS - MATCH_EXPIRY_REMINDER_LEAD_MS + 1000;
+  assert.equal(store.needsExpiryReminder("alice", "bob", insideWindow), true);
+});
+
+test("needsExpiryReminder() is false once a first message has been sent", () => {
+  const store = new MatchExpiryStore();
+  const now = Date.now();
+  store.recordMatch("alice", "bob", now);
+  store.recordFirstMessage("alice", "bob", now + 1000);
+  const insideWindow = now + MATCH_RESPONSE_WINDOW_MS - MATCH_EXPIRY_REMINDER_LEAD_MS + 1000;
+  assert.equal(store.needsExpiryReminder("alice", "bob", insideWindow), false);
+});
+
+test("needsExpiryReminder() is false once the match has already expired", () => {
+  const store = new MatchExpiryStore();
+  const now = Date.now();
+  store.recordMatch("alice", "bob", now);
+  assert.equal(store.needsExpiryReminder("alice", "bob", now + MATCH_RESPONSE_WINDOW_MS + 1000), false);
+});
+
+test("needsExpiryReminder() is false for an untracked pair", () => {
+  const store = new MatchExpiryStore();
+  assert.equal(store.needsExpiryReminder("alice", "bob"), false);
+});
+
+test("markReminderSent() makes needsExpiryReminder() false afterward, even still inside the window", () => {
+  const store = new MatchExpiryStore();
+  const now = Date.now();
+  store.recordMatch("alice", "bob", now);
+  const insideWindow = now + MATCH_RESPONSE_WINDOW_MS - MATCH_EXPIRY_REMINDER_LEAD_MS + 1000;
+  store.markReminderSent("alice", "bob", insideWindow);
+  assert.equal(store.needsExpiryReminder("alice", "bob", insideWindow + 1000), false);
+});
+
+test("getAllPairs() lists every tracked match as an [a, b] tuple", () => {
+  const store = new MatchExpiryStore();
+  store.recordMatch("alice", "bob");
+  store.recordMatch("carol", "dave");
+  const pairs = store.getAllPairs().map((pair) => [...pair].sort());
+  assert.deepEqual(
+    pairs.sort(),
+    [
+      ["alice", "bob"],
+      ["carol", "dave"],
+    ].sort()
+  );
+});
+
+test("getAllPairs() is empty when no match has ever been recorded", () => {
+  const store = new MatchExpiryStore();
+  assert.deepEqual(store.getAllPairs(), []);
 });
