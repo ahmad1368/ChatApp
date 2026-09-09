@@ -18,6 +18,10 @@ ChatApp is pivoting from a generic real-time chat app into a **dating app** — 
 
 Issue #46 ("Safety Center and guide for safe meetups") and #47 ("Share My Date") are near-duplicates in the auto-generated backlog — both describe Bumble's "Share My Date" feature. #46 was implemented with a single-link, one-shot version (`SafetyPlanStore`). #47 was implemented as a richer, meaningfully different version (`SharedDateStore`: multiple named trusted contacts each with their own share code, a live status the sharer can push, and revocation) rather than a duplicate rebuild. When both PRs merge into `staging`, reconcile by keeping #47's `SharedDateStore` as the canonical "Share My Date" implementation and either removing #46's `SafetyPlanStore` or wiring the Safety Center's UI to call into `SharedDateStore` instead.
 
+## Known backlog overlap: #5 and #152
+
+Issue #152 ("Push notification for a new text message") is an exact duplicate of already-implemented #5 ("Web Push notifications") in the auto-generated backlog — same feature, no differentiating angle. #5 already shipped this: `message:send` calls `pushService.notifyOthers(message.author, { title: message.author, body: message.text })` for every new chat message, delivered via the VAPID-backed subscribe/notify flow and the service worker's `push` handler. No separate implementation was made for #152 — skip it in `/next-issue` picks (see that file's step 1) and close it as a duplicate of #5 once confirmed.
+
 ## Issue workflow
 
 Issues are tracked on GitHub (`gh issue list`) and implemented one at a time via `/next-issue` (`.claude/commands/next-issue.md`). Read that file for the exact branch/PR rules before doing any issue work — do not improvise a different workflow.
