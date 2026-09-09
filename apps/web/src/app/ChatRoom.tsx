@@ -402,6 +402,10 @@ export default function ChatRoom({
   const [typingAuthors, setTypingAuthors] = useState<string[]>([]);
   const isTypingRef = useRef(false);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Bumble's real "save message drafts" (#150) — debounced the same way
+  // as the typing-stop signal above, so navigating away or reloading
+  // before sending doesn't lose what was typed.
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Badoo's real in-app audio/video call (#128, extended to video by
   // #129) — WebRTC signaling relayed over this same socket/room; see
   // calls.ts for the server-side state machine (identical for both call
@@ -476,6 +480,21 @@ export default function ChatRoom({
   useEffect(() => {
     saveQueuedMessages(roomId, queue);
   }, [roomId, queue]);
+
+  // Bumble's real "save message drafts" (#150): restores whatever was
+  // last typed but never sent for this room, the moment the composer
+  // mounts — server-persisted (messageDrafts.ts) so it survives across
+  // devices/browsers, not just a reload of this one.
+  useEffect(() => {
+    if (isGuest) return;
+    fetch(`${API_URL}/api/message-drafts/${encodeURIComponent(author)}/${encodeURIComponent(roomId)}`)
+      .then((res) => res.json())
+      .then((body) => {
+        if (typeof body?.text === "string" && body.text) setText(body.text);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, author]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window) {
@@ -1090,8 +1109,23 @@ export default function ChatRoom({
     }
   };
 
+  // Bumble's real "save message drafts" (#150) — debounced the same way
+  // as the typing-stop signal, so every keystroke doesn't trigger its own
+  // request. An empty draft still gets "saved" (messageDrafts.ts treats
+  // that as clearing it), so deleting everything you'd typed clears the
+  // saved draft too rather than leaving a stale one behind.
+  const DRAFT_SAVE_DELAY_MS = 1000;
+  const saveDraft = (value: string) => {
+    fetch(`${API_URL}/api/message-drafts/${encodeURIComponent(author)}/${encodeURIComponent(roomId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: value }),
+    }).catch(() => {});
+  };
+
   const handleComposerChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value);
+    const value = e.target.value;
+    setText(value);
     if (isGuest) return;
     if (!isTypingRef.current) {
       isTypingRef.current = true;
@@ -1099,6 +1133,9 @@ export default function ChatRoom({
     }
     if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
     typingStopTimerRef.current = setTimeout(stopTyping, TYPING_STOP_DELAY_MS);
+
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = setTimeout(() => saveDraft(value), DRAFT_SAVE_DELAY_MS);
   };
 
   const sendMessage = () => {
@@ -1107,6 +1144,14 @@ export default function ChatRoom({
     if (!trimmed) return;
     setText("");
     stopTyping();
+    // #150's saved draft is spent the moment it's actually sent — cancel
+    // any pending debounced save (it would otherwise resurrect the just-
+    // sent text as tonight's "draft") and clear what's stored.
+    if (draftSaveTimerRef.current) {
+      clearTimeout(draftSaveTimerRef.current);
+      draftSaveTimerRef.current = null;
+    }
+    saveDraft("");
 
     if (socketRef.current?.connected) {
       socketRef.current.emit("message:send", {
