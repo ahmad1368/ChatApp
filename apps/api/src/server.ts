@@ -1800,6 +1800,27 @@ export function createApp(deps?: {
     res.json({ matches });
   });
 
+  // Bumble's real "Unmatch" (#141), unmatching and deleting the chat in a
+  // single call rather than two separate steps. Clears this pair's pin
+  // (#138) and archive (#139) list-state on both sides too, so the match
+  // disappears from both viewers' lists immediately rather than lingering
+  // as a pinned/archived ghost entry — see swipes.ts's unmatch doc comment
+  // for why there's no separate message thread to purge in this app's
+  // current single-shared-room scope.
+  app.delete("/api/matches/:author/:candidate", (req, res) => {
+    const { author, candidate } = req.params;
+    const result = swipeStore.unmatch(author, candidate);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    pinnedChatsStore.unpin(author, candidate);
+    pinnedChatsStore.unpin(candidate, author);
+    archivedChatsStore.unarchive(author, candidate);
+    archivedChatsStore.unarchive(candidate, author);
+    res.json({ success: true });
+  });
+
   // Bumble's real "24-hour timer to respond to the first message before
   // the Match expires" (#136) — lets the client render a live countdown
   // rather than only finding out a match is gone once it disappears.
