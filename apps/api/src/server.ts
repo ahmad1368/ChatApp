@@ -69,6 +69,7 @@ import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
+import { TranslationService } from "./translation";
 import { SpotifyInfoStore } from "./spotifyInfo";
 import { InstagramService } from "./instagramAuth";
 import { InstagramInfoStore } from "./instagramInfo";
@@ -124,6 +125,7 @@ export function createApp(deps?: {
   spotifyService?: SpotifyService;
   giphyService?: GiphyService;
   instagramService?: InstagramService;
+  translationService?: TranslationService;
 }): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
@@ -299,6 +301,7 @@ export function createApp(deps?: {
   const spotifyService = deps?.spotifyService ?? new SpotifyService();
   const giphyService = deps?.giphyService ?? new GiphyService();
   const instagramService = deps?.instagramService ?? new InstagramService();
+  const translationService = deps?.translationService ?? new TranslationService();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -953,6 +956,38 @@ export function createApp(deps?: {
       return;
     }
     res.json({ results });
+  });
+
+  // Bumble's real "See translation" (#145) via an actual Google Cloud
+  // Translation API integration — the server proxies the request so
+  // TRANSLATE_API_KEY never reaches the browser, same "server-only
+  // credential" shape as the Giphy search above. On-demand per message
+  // (the client sends the text it wants translated and its own current
+  // locale as the target — see LocaleProvider.tsx's "en"/"fa" toggle from
+  // #9), not a background bulk-translate of the whole conversation.
+  app.post("/api/translate", async (req, res) => {
+    if (!translationService.isConfigured()) {
+      res.status(503).json({ error: "Translation is not configured on this server" });
+      return;
+    }
+
+    const text = typeof req.body?.text === "string" ? req.body.text : "";
+    const targetLang = typeof req.body?.targetLang === "string" ? req.body.targetLang.trim() : "";
+    if (!text.trim()) {
+      res.status(400).json({ error: "text is required" });
+      return;
+    }
+    if (!targetLang) {
+      res.status(400).json({ error: "targetLang is required" });
+      return;
+    }
+
+    const translated = await translationService.translate(text, targetLang);
+    if (translated === undefined) {
+      res.status(502).json({ error: "Failed to translate this message" });
+      return;
+    }
+    res.json({ translated });
   });
 
   // Connect Instagram to show latest posts (#78), same shape as #77's

@@ -126,6 +126,63 @@ function SelfDestructPhoto({ url, viewer }: { url: string; viewer: string }) {
   );
 }
 
+/**
+ * Bumble's real "See translation" (#145): on-demand per message, into the
+ * viewer's own current app language (see LocaleProvider.tsx's "en"/"fa"
+ * toggle from #9) rather than a background bulk-translate of the whole
+ * conversation — the server proxies a real Google Cloud Translation API
+ * call (translation.ts), so this is a network round trip, not instant.
+ */
+function TranslateButton({ text }: { text: string }) {
+  const { locale } = useLocale();
+  const [translated, setTranslated] = useState<string | null>(null);
+  const [shown, setShown] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = async () => {
+    if (shown) {
+      setShown(false);
+      return;
+    }
+    if (translated) {
+      setShown(true);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/translate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, targetLang: locale }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof body?.error === "string" ? body.error : "Translation failed");
+        return;
+      }
+      setTranslated(body.translated);
+      setShown(true);
+    } catch {
+      setError("Translation failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <button className="chat-app__report-button" onClick={toggle} title="Translate this message" disabled={loading}>
+        🌐
+      </button>
+      {loading && <p className="chat-app__translation">Translating…</p>}
+      {shown && translated && <p className="chat-app__translation">{translated}</p>}
+      {error && <p className="chat-app__translation chat-app__translation--error">{error}</p>}
+    </>
+  );
+}
+
 function MessageRow({
   message,
   highlighted,
@@ -269,6 +326,7 @@ function MessageRow({
             🚫
           </button>
         )}
+        {isPlainTextMessage && !message.deleted && message.text && <TranslateButton text={message.text} />}
         {isOwnMessage && (
           <span
             className={`chat-app__message-status${status === "read" ? " chat-app__message-status--read" : ""}`}
