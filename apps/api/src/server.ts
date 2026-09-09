@@ -89,6 +89,7 @@ import { ProfileVisitsStore } from "./profileVisits";
 import { ProfileBoostStore } from "./profileBoost";
 import { PeakHoursStore } from "./peakHours";
 import { scanCandidateForFakeProfile } from "./fakeProfileDetector";
+import { isSenderPhotoSuspicious } from "./photoWarning";
 import { CrossedPathsStore } from "./crossedPaths";
 import { SquadStore } from "./squads";
 import { PresenceStore } from "./presence";
@@ -3018,6 +3019,18 @@ export async function createChatServer() {
       }
 
       const message: ChatMessage = buildChatMessage(payload);
+
+      // Bumble's real "Private Detector" AI photo warning (#144): flags a
+      // plain image message (not #123's already tap-gated
+      // selfDestructImageUrl) from a sender with enough reports to be a
+      // real safety signal — this app's honest stand-in for a trained
+      // NSFW-image classifier it has no vision model/API key for, same
+      // "reuse an existing signal instead of fabricating one" precedent as
+      // #107's fakeProfileDetector. The client blurs it behind a
+      // tap-to-view warning rather than rendering it immediately.
+      if (message.imageUrl && isSenderPhotoSuspicious(reportStore.countFor(message.author))) {
+        message.suspicious = true;
+      }
 
       if (payload.recipient) {
         matchExpiryStore.recordFirstMessage(payload.author, payload.recipient);

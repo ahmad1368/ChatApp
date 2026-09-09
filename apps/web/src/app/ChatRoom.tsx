@@ -126,6 +126,25 @@ function SelfDestructPhoto({ url, viewer }: { url: string; viewer: string }) {
   );
 }
 
+/**
+ * Bumble's real "Private Detector" AI photo warning (#144): unlike
+ * #123's SelfDestructPhoto (destroyed after viewing), this photo is
+ * still permanently viewable — it's just blurred behind an explicit tap
+ * so the recipient isn't ambushed by it the moment the message arrives.
+ */
+function SuspiciousPhoto({ url }: { url: string }) {
+  const [revealed, setRevealed] = useState(false);
+
+  if (revealed) {
+    return <img src={url} alt="Shared" loading="lazy" className="chat-app__shared-image" />;
+  }
+  return (
+    <button className="chat-app__suspicious-photo-reveal" onClick={() => setRevealed(true)}>
+      ⚠️ This photo was flagged as potentially inappropriate — tap to view
+    </button>
+  );
+}
+
 function MessageRow({
   message,
   highlighted,
@@ -215,7 +234,11 @@ function MessageRow({
             <audio controls src={message.audioUrl} />
           </div>
         ) : message.imageUrl ? (
-          <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+          message.suspicious ? (
+            <SuspiciousPhoto url={message.imageUrl} />
+          ) : (
+            <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+          )
         ) : isEditing ? (
           <span className="chat-app__edit-box">
             <input
