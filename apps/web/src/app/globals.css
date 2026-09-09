@@ -394,6 +394,58 @@ body {
   flex-wrap: wrap;
 }
 
+.chat-app__date-invite-picker {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 8px;
+  background: var(--color-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-app__date-invite-picker-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.chat-app__date-invite {
+  display: block;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-panel);
+  max-width: 260px;
+}
+
+.chat-app__date-invite p {
+  margin: 2px 0;
+}
+
+.chat-app__date-invite-title {
+  font-weight: bold;
+}
+
+.chat-app__date-invite-note {
+  font-style: italic;
+  color: var(--color-muted);
+}
+
+.chat-app__date-invite-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.chat-app__date-invite-status {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
 .chat-app__location {
   display: block;
   margin-top: 4px;

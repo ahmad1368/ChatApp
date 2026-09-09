@@ -50,6 +50,7 @@ import { applyWatermark } from "./watermarkImage";
 import { DuplicateAccountStore } from "./duplicateAccounts";
 import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
+import { createDateInvite, respondToDateInvite } from "./dateInvites";
 import { RecaptchaService } from "./recaptcha";
 import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetector";
 import { PhotoAlbumStore } from "./photoAlbums";
@@ -3049,6 +3050,20 @@ export async function createChatServer() {
         };
       }
 
+      // Bumble's real "send a date invitation within chat" (#146) —
+      // validated server-side (see dateInvites.ts) since the client-sent
+      // fields are just a proposal; the authoritative "pending" status is
+      // set here, the same "server owns the derived truth" stance as the
+      // live-location expiresAt above.
+      if (payload.dateInvite) {
+        const inviteResult = createDateInvite(payload.dateInvite);
+        if (!inviteResult.success) {
+          socket.emit("message:rejected", { reason: "invalid_date_invite", error: inviteResult.error });
+          return;
+        }
+        message.dateInvite = inviteResult.dateInvite;
+      }
+
       // Report spam/promotional content to the monitoring system (#58):
       // unlike the scam check above, this doesn't block the send — Tinder's
       // real behavior is to route it to moderation, not break the
@@ -3134,6 +3149,36 @@ export async function createChatServer() {
       message.edited = true;
       io.to(roomId).emit("message:edited", { messageId, text: message.text, edited: true });
     });
+
+    // Bumble's real "send a date invitation within chat" (#146) — the
+    // recipient's accept/decline, mutating the invite in place (see
+    // dateInvites.ts's respondToDateInvite for the sender-can't-respond/
+    // already-decided rules) the same way message:edit mutates its
+    // message directly above.
+    socket.on(
+      "date-invite:respond",
+      (payload: { roomId?: string; messageId?: string; author?: string; response?: unknown }) => {
+        const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+        const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
+        const author = typeof payload?.author === "string" ? payload.author : "";
+        if (!roomId || !messageId || !author) return;
+
+        const message = messagesByRoom.get(roomId)?.find((m) => m.id === messageId);
+        if (!message?.dateInvite) {
+          socket.emit("date-invite:rejected", { messageId, error: "Date invitation not found" });
+          return;
+        }
+
+        const result = respondToDateInvite(message.dateInvite, message.author, author, payload?.response);
+        if (!result.success) {
+          socket.emit("date-invite:rejected", { messageId, error: result.error });
+          return;
+        }
+
+        message.dateInvite = result.dateInvite;
+        io.to(roomId).emit("date-invite:updated", { messageId, dateInvite: message.dateInvite });
+      }
+    );
 
     // WhatsApp/Bumble's real "Delete for Everyone" (#134) — see
     // messageDeletion.ts for the sender-only/time-window rule. Unlike
