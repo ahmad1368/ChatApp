@@ -19,6 +19,7 @@ import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
+import { WeeklyDigestStore, buildWeeklyDigest } from "./weeklyDigest";
 import { UploadStore } from "./uploads";
 import { VoiceNoteStore } from "./voiceNotes";
 import { SelfDestructPhotoStore } from "./selfDestructPhotos";
@@ -1256,6 +1257,32 @@ export function createApp(deps?: {
   const isBlockedEitherWay = (a: string, b: string) =>
     blockStore.getBlockedAuthors(a).includes(b) || blockStore.getBlockedAuthors(b).includes(a);
 
+  // Tinder's real "Weekly digest emails" (#157) — see weeklyDigest.ts for
+  // why this is keyed by an author-provided email rather than the
+  // separate account-auth email system, and why the content reports
+  // current totals rather than a precise weekly delta. A periodic sweep
+  // (same unref'd-interval pattern as #154/#155) checks every subscribed
+  // author once per check — real cadence enforcement is `needsWeeklyDigest`'s
+  // own 7-day math, not this interval's period, so an hourly check is
+  // just how promptly a due digest gets noticed. No real email provider
+  // credentials exist in this environment, so the send is logged
+  // server-side instead, same stand-in as auth.ts's OTP/recovery.ts's
+  // recovery code.
+  const weeklyDigestStore = new WeeklyDigestStore();
+  const WEEKLY_DIGEST_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+  setInterval(() => {
+    for (const author of weeklyDigestStore.getSubscribedAuthors()) {
+      if (!weeklyDigestStore.needsWeeklyDigest(author)) continue;
+      weeklyDigestStore.markSent(author);
+      const stats = {
+        likeCount: swipeStore.getLikedBy(author, isBlockedEitherWay).length,
+        matchCount: swipeStore.getMatches(author).length,
+      };
+      const { subject, body } = buildWeeklyDigest(stats);
+      console.log(`[weekly-digest] To ${weeklyDigestStore.getEmail(author)}: ${subject} — ${body}`);
+    }
+  }, WEEKLY_DIGEST_SWEEP_INTERVAL_MS).unref();
+
   // OkCupid's real advanced discovery filters (#96, extended by #97 with
   // non-smoking/lifestyle and #98 with verified-only): a candidate who
   // fails the swiper's own filters is excluded the same way a blocked
@@ -2346,6 +2373,26 @@ export function createApp(deps?: {
     }
     pushService.unsubscribe(endpoint);
     res.json({ status: "unsubscribed" });
+  });
+
+  // Tinder's real "Weekly digest emails" (#157) — opt in/out with an
+  // email; see weeklyDigest.ts for the sweep that actually sends one.
+  app.put("/api/weekly-digest-email/:author", (req, res) => {
+    const result = weeklyDigestStore.setEmail(req.params.author, req.body?.email);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ email: weeklyDigestStore.getEmail(req.params.author) });
+  });
+
+  app.delete("/api/weekly-digest-email/:author", (req, res) => {
+    weeklyDigestStore.clearEmail(req.params.author);
+    res.json({ success: true });
+  });
+
+  app.get("/api/weekly-digest-email/:author", (req, res) => {
+    res.json({ email: weeklyDigestStore.getEmail(req.params.author) ?? null });
   });
 
   // Image sharing: the client compresses/downscales before uploading (see
