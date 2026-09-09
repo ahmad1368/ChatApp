@@ -1985,6 +1985,8 @@ export default function ChatRoom({
         <Link href="/settings/profile">Edit profile &rarr;</Link>
         {" · "}
         <Link href="/discover">Discover &rarr;</Link>
+        {" · "}
+        <Link href="/settings/notifications">Notifications &rarr;</Link>
       </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (

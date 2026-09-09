@@ -30,11 +30,9 @@ export class PushService {
     this.subscriptionsByEndpoint.delete(endpoint);
   }
 
-  /** Sends a push message to every subscriber except the message's own author. */
-  async notifyOthers(author: string, payload: { title: string; body: string }): Promise<void> {
-    const recipients = [...this.subscriptionsByEndpoint.values()].filter((s) => s.author !== author);
+  private async sendToSubscriptions(subscriptions: PushSubscription[], payload: { title: string; body: string }): Promise<void> {
     await Promise.all(
-      recipients.map(({ subscription }) =>
+      subscriptions.map((subscription) =>
         webpush.sendNotification(subscription, JSON.stringify(payload)).catch((err) => {
           // 404/410 means the browser dropped the subscription; stop targeting it.
           if (err?.statusCode === 404 || err?.statusCode === 410) {
@@ -45,5 +43,22 @@ export class PushService {
         })
       )
     );
+  }
+
+  /**
+   * Sends a push message to every subscriber except the message's own
+   * author. `recipientAllowed` is #156's per-category preference check
+   * (notificationPreferencesStore.isEnabled) — defaults to "everyone
+   * allowed" so existing callers that don't pass one are unaffected.
+   */
+  async notifyOthers(
+    author: string,
+    payload: { title: string; body: string },
+    recipientAllowed: (recipient: string) => boolean = () => true
+  ): Promise<void> {
+    const recipients = [...this.subscriptionsByEndpoint.values()]
+      .filter((s) => s.author !== author && recipientAllowed(s.author))
+      .map((s) => s.subscription);
+    await this.sendToSubscriptions(recipients, payload);
   }
 }
