@@ -37,6 +37,7 @@ import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
+import { PublicKeyStore } from "./e2eeKeys";
 import { BlockStore } from "./blocks";
 import { ContactBlockStore } from "./contactBlocks";
 import { PinnedChatsStore } from "./pinnedChats";
@@ -225,6 +226,7 @@ export function createApp(deps?: {
   const verificationStore = new VerificationStore();
   const onboardingStore = new OnboardingStore(verificationStore);
   const reportStore = new ReportStore();
+  const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
   const contactBlockStore = new ContactBlockStore();
   const pinnedChatsStore = new PinnedChatsStore();
@@ -354,6 +356,27 @@ export function createApp(deps?: {
       return;
     }
     res.status(201).json({ id: result.report.id });
+  });
+
+  // Feeld's real optional end-to-end encrypted chat (#149) — the server
+  // only relays public keys (see e2eeKeys.ts's PublicKeyStore doc comment
+  // for why it never sees a private key or plaintext).
+  app.put("/api/e2ee/public-key/:author", (req, res) => {
+    const result = publicKeyStore.publish(req.params.author, req.body?.publicKeyJwk);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  app.get("/api/e2ee/public-key/:author", (req, res) => {
+    const publicKeyJwk = publicKeyStore.get(req.params.author);
+    if (!publicKeyJwk) {
+      res.status(404).json({ error: "No public key published for this author" });
+      return;
+    }
+    res.json({ publicKeyJwk });
   });
 
   // Blocking is a safety-critical, high-priority path kept independent of
@@ -3018,6 +3041,22 @@ export async function createChatServer() {
       }
 
       const message: ChatMessage = buildChatMessage(payload);
+
+      // Feeld's real optional end-to-end encrypted chat (#149): the
+      // server only checks the ciphertext/iv shape it's handed — it has
+      // no key, so it can't validate or moderate the plaintext this
+      // represents. That's the real, disclosed tradeoff of genuine E2EE
+      // (same limitation Signal/WhatsApp have): an encrypted message's
+      // `text` is empty, so #56's scam check and #58's spam auto-report
+      // below have nothing to scan for it.
+      if (payload.encrypted) {
+        const { ciphertext, iv } = payload.encrypted;
+        if (typeof ciphertext !== "string" || !ciphertext || typeof iv !== "string" || !iv) {
+          socket.emit("message:rejected", { reason: "invalid_encrypted_payload" });
+          return;
+        }
+        message.encrypted = { ciphertext, iv };
+      }
 
       if (payload.recipient) {
         matchExpiryStore.recordFirstMessage(payload.author, payload.recipient);

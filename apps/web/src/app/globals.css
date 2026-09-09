@@ -324,6 +324,10 @@ body {
   color: var(--color-muted);
 }
 
+.chat-app__encrypted-message--locked {
+  color: var(--color-muted);
+}
+
 .chat-app__gif-picker {
   border: 1px solid var(--color-border);
   border-radius: 8px;

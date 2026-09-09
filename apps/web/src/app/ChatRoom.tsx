@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
-import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import { ChatMessage, DEFAULT_ROOM_ID, EncryptedPayload } from "@chatapp/shared";
+import { getOrCreateKeyPair, exportPublicKeyJwk, deriveSharedKey, encryptText, decryptText } from "./e2ee";
 import { loadDataSaverPreference, saveDataSaverPreference } from "./dataSaverStore";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { compressImage, blobToBase64 } from "./imageCompression";
@@ -126,6 +127,46 @@ function SelfDestructPhoto({ url, viewer }: { url: string; viewer: string }) {
   );
 }
 
+/**
+ * Feeld's real optional end-to-end encrypted chat (#149): decrypts
+ * client-side with the already-derived shared AES key (see e2ee.ts) —
+ * there's no server endpoint to ask for plaintext, because the server
+ * never has it. Shown as a locked placeholder while no key is available
+ * yet (e.g. this browser reloaded and hasn't re-derived the shared key)
+ * or if decryption fails (wrong/rotated key).
+ */
+function EncryptedMessage({ payload, sharedKey }: { payload: EncryptedPayload; sharedKey: CryptoKey | null }) {
+  const [plaintext, setPlaintext] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setPlaintext(null);
+    setFailed(false);
+    if (!sharedKey) return;
+    let cancelled = false;
+    decryptText(sharedKey, payload)
+      .then((text) => {
+        if (!cancelled) setPlaintext(text);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload.ciphertext, payload.iv, sharedKey]);
+
+  if (plaintext !== null) {
+    return <span className="chat-app__encrypted-message">🔒 {plaintext}</span>;
+  }
+  return (
+    <em className="chat-app__encrypted-message chat-app__encrypted-message--locked">
+      {failed ? "🔒 Couldn't decrypt this message" : "🔒 Encrypted message"}
+    </em>
+  );
+}
+
 function MessageRow({
   message,
   highlighted,
@@ -145,6 +186,7 @@ function MessageRow({
   onSaveEdit,
   onCancelEdit,
   onDelete,
+  sharedKey,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -164,11 +206,13 @@ function MessageRow({
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDelete: (messageId: string) => void;
+  sharedKey: CryptoKey | null;
 }) {
   // Mirrors messageEditing.ts/messageDeletion.ts's rules loosely for the
   // UI — the server is the actual source of truth and re-checks all of
   // this on message:edit/message:delete.
-  const isPlainTextMessage = !message.location && !message.selfDestructImageUrl && !message.audioUrl && !message.imageUrl;
+  const isPlainTextMessage =
+    !message.location && !message.selfDestructImageUrl && !message.audioUrl && !message.imageUrl && !message.encrypted;
   const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
   const canEdit = isOwnMessage && isPlainTextMessage && messageAgeMs < 15 * 60 * 1000;
   const canDelete = isOwnMessage && !message.deleted && messageAgeMs < 24 * 60 * 60 * 1000;
@@ -199,6 +243,8 @@ function MessageRow({
         <strong>{message.author}: </strong>
         {message.deleted ? (
           <em className="chat-app__deleted-message">🚫 This message was deleted</em>
+        ) : message.encrypted ? (
+          <EncryptedMessage payload={message.encrypted} sharedKey={sharedKey} />
         ) : message.location ? (
           <LocationMessage location={message.location} liveUpdate={liveLocationUpdate} />
         ) : message.selfDestructImageUrl ? (
@@ -363,6 +409,13 @@ export default function ChatRoom({
   const [showGifPicker, setShowGifPicker] = useState(false);
   // WhatsApp/Bumble's real "send live or text location" (#127).
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  // Feeld's real optional end-to-end encrypted chat (#149) — see e2ee.ts.
+  // `sharedKey` lives in state (not a ref) so MessageRow's decryption
+  // effect re-runs once it's derived, not just on the next unrelated render.
+  const [e2eeEnabled, setE2eeEnabled] = useState(false);
+  const [e2eeBusy, setE2eeBusy] = useState(false);
+  const [e2eeError, setE2eeError] = useState<string | null>(null);
+  const [sharedKey, setSharedKey] = useState<CryptoKey | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [liveLocationUpdates, setLiveLocationUpdates] = useState<Record<string, { latitude: number; longitude: number }>>({});
   const liveShareRef = useRef<{ messageId: string; expiresAt: string; intervalId: ReturnType<typeof setInterval> } | null>(null);
@@ -1101,10 +1154,39 @@ export default function ChatRoom({
     typingStopTimerRef.current = setTimeout(stopTyping, TYPING_STOP_DELAY_MS);
   };
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (isGuest) return;
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    // Feeld's real optional E2EE (#149): an encrypted send needs the live
+    // socket round trip, not the offline queue below — that queue only
+    // knows how to hold plaintext, and silently falling back to sending
+    // this message unencrypted once reconnected would break the very
+    // guarantee the user turned encryption on for.
+    if (e2eeEnabled && sharedKey) {
+      if (!socketRef.current?.connected) {
+        setE2eeError("Can't send an encrypted message while offline — reconnect and try again.");
+        return;
+      }
+      setText("");
+      stopTyping();
+      const encrypted = await encryptText(sharedKey, trimmed);
+      socketRef.current.emit("message:send", {
+        roomId,
+        author,
+        text: "",
+        encrypted,
+        replyToId: replyTarget?.id,
+        replyToAuthor: replyTarget?.author,
+        replyToText: replyTarget?.text,
+        asGuest: isGuest,
+        recipient,
+      });
+      setReplyTarget(null);
+      return;
+    }
+
     setText("");
     stopTyping();
 
@@ -1296,6 +1378,44 @@ export default function ChatRoom({
       asGuest: isGuest,
     });
     setShowLocationPicker(false);
+  };
+
+  // Feeld's real optional end-to-end encrypted chat (#149) — only
+  // offered against a known `recipient` (a fresh 1:1 match): a shared
+  // AES key needs a known second party to derive it with, same reasoning
+  // as #135's gender rule and #148's game only applying with a recipient.
+  const enableE2EE = async () => {
+    if (!recipient) return;
+    setE2eeBusy(true);
+    setE2eeError(null);
+    try {
+      const keyPair = await getOrCreateKeyPair(author);
+      const ownPublicKeyJwk = await exportPublicKeyJwk(keyPair.publicKey);
+      await fetch(`${API_URL}/api/e2ee/public-key/${encodeURIComponent(author)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicKeyJwk: ownPublicKeyJwk }),
+      });
+
+      const res = await fetch(`${API_URL}/api/e2ee/public-key/${encodeURIComponent(recipient)}`);
+      if (!res.ok) {
+        setE2eeError("Your match hasn't turned on encryption yet — ask them to enable it too.");
+        return;
+      }
+      const { publicKeyJwk: peerPublicKeyJwk } = await res.json();
+      const derivedKey = await deriveSharedKey(keyPair.privateKey, peerPublicKeyJwk);
+      setSharedKey(derivedKey);
+      setE2eeEnabled(true);
+    } catch {
+      setE2eeError("Failed to set up encryption — please try again.");
+    } finally {
+      setE2eeBusy(false);
+    }
+  };
+
+  const disableE2EE = () => {
+    setE2eeEnabled(false);
+    setSharedKey(null);
   };
 
   const STUN_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
@@ -1741,6 +1861,7 @@ export default function ChatRoom({
             onSaveEdit={submitEdit}
             onCancelEdit={cancelEdit}
             onDelete={deleteMessage}
+            sharedKey={sharedKey}
           />
         ))}
         {queue.map((q) => (
@@ -1848,6 +1969,16 @@ export default function ChatRoom({
         >
           📍
         </button>
+        {recipient && (
+          <button
+            className="chat-app__image-button"
+            onClick={() => (e2eeEnabled ? disableE2EE() : enableE2EE())}
+            disabled={isGuest || !liveUpdatesEnabled || e2eeBusy}
+            title={e2eeEnabled ? "Turn off end-to-end encryption" : "Turn on end-to-end encryption"}
+          >
+            {e2eeEnabled ? "🔒" : "🔓"}
+          </button>
+        )}
         <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}
         </button>
@@ -1855,6 +1986,8 @@ export default function ChatRoom({
       {showGifPicker && <GifPicker onPick={sendGif} onClose={() => setShowGifPicker(false)} />}
       {showLocationPicker && <LocationPicker onSend={sendLocation} onClose={() => setShowLocationPicker(false)} />}
       {locationError && <p style={{ color: "var(--color-danger)" }}>{locationError}</p>}
+      {e2eeError && <p style={{ color: "var(--color-danger)" }}>{e2eeError}</p>}
+      {e2eeEnabled && <p className="chat-app__status">🔒 End-to-end encryption is on for this chat</p>}
       {blockedAuthors.length > 0 && (
         <div className="chat-app__guest-banner">
           <strong>Blocked users:</strong>

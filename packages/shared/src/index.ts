@@ -35,6 +35,16 @@ export interface ChatMessage {
   // message:delete succeeds; see messageDeletion.ts. The client renders a
   // placeholder instead of whatever content fields were originally set.
   deleted?: boolean;
+  // Feeld's real optional end-to-end encrypted chat (#149) — when set,
+  // `text` is left empty and this carries the real AES-GCM ciphertext
+  // (see apps/web/src/app/e2ee.ts's Web Crypto API usage); the server
+  // only ever relays this opaque blob, it never has the key to read it.
+  encrypted?: EncryptedPayload;
+}
+
+export interface EncryptedPayload {
+  ciphertext: string;
+  iv: string;
 }
 
 export interface ChatLocationShare {
@@ -60,6 +70,10 @@ export interface SendMessagePayload {
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
+  // Feeld's real optional end-to-end encrypted chat (#149) — client sends
+  // only the ciphertext/iv it already computed; the server never touches
+  // plaintext for an encrypted message.
+  encrypted?: EncryptedPayload;
   // Self-reported by the client — see the trust-boundary note in
   // apps/api/src/server.ts (same limitation as #26-#37's :userId trust:
   // there's no merged auth session yet to verify this against). The
