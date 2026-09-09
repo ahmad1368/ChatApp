@@ -35,6 +35,24 @@ export interface ChatMessage {
   // message:delete succeeds; see messageDeletion.ts. The client renders a
   // placeholder instead of whatever content fields were originally set.
   deleted?: boolean;
+  // Snapchat/Bumble's real "play a mini-game within chat to break the
+  // ice" (#148) — a genuinely playable two-player Tic-Tac-Toe game (see
+  // ticTacToe.ts) attached to the message that started it, mutated in
+  // place as moves come in (see server.ts's game:move) the same way
+  // #146's dateInvite is mutated by date-invite:respond.
+  game?: TicTacToeGame;
+}
+
+export const TIC_TAC_TOE_MARKS = ["X", "O"] as const;
+export type TicTacToeMark = (typeof TIC_TAC_TOE_MARKS)[number];
+export type TicTacToeCell = TicTacToeMark | null;
+
+export interface TicTacToeGame {
+  board: TicTacToeCell[];
+  playerX: string;
+  playerO: string;
+  turn: TicTacToeMark;
+  winner: TicTacToeMark | "draw" | null;
 }
 
 export interface ChatLocationShare {
@@ -73,6 +91,11 @@ export interface SendMessagePayload {
   // omitting it (a group room, or an already-started conversation) just
   // skips the check.
   recipient?: string;
+  // Snapchat/Bumble's real "play a mini-game within chat" (#148) — starts
+  // a new Tic-Tac-Toe game against `recipient` (required: a two-player
+  // game needs a known second player, same reasoning as #135 only
+  // applying with a recipient). See ticTacToe.ts's createGame().
+  startGame?: boolean;
 }
 
 export const DEFAULT_ROOM_ID = "general";

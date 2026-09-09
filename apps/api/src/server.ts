@@ -50,6 +50,7 @@ import { applyWatermark } from "./watermarkImage";
 import { DuplicateAccountStore } from "./duplicateAccounts";
 import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
+import { createGame, applyMove } from "./ticTacToe";
 import { RecaptchaService } from "./recaptcha";
 import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetector";
 import { PhotoAlbumStore } from "./photoAlbums";
@@ -3019,6 +3020,20 @@ export async function createChatServer() {
 
       const message: ChatMessage = buildChatMessage(payload);
 
+      // Snapchat/Bumble's real "play a mini-game within chat" (#148) —
+      // needs a known second player, so it's only offered against a
+      // fresh 1:1 match's `recipient` (same "only meaningful with a
+      // recipient" reasoning as #135's gender rule), never in a group
+      // room. See ticTacToe.ts's createGame() for why this is a genuinely
+      // playable game rather than a fabricated one.
+      if (payload.startGame) {
+        if (!payload.recipient) {
+          socket.emit("message:rejected", { reason: "game_requires_recipient" });
+          return;
+        }
+        message.game = createGame(message.author, payload.recipient);
+      }
+
       if (payload.recipient) {
         matchExpiryStore.recordFirstMessage(payload.author, payload.recipient);
       }
@@ -3134,6 +3149,35 @@ export async function createChatServer() {
       message.edited = true;
       io.to(roomId).emit("message:edited", { messageId, text: message.text, edited: true });
     });
+
+    // Snapchat/Bumble's real "play a mini-game within chat" (#148) — one
+    // move at a time, mutated in place (see ticTacToe.ts's applyMove for
+    // the turn/cell/game-over validation) the same way message:edit
+    // mutates its message directly above.
+    socket.on(
+      "game:move",
+      (payload: { roomId?: string; messageId?: string; author?: string; cellIndex?: unknown }) => {
+        const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+        const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
+        const author = typeof payload?.author === "string" ? payload.author : "";
+        if (!roomId || !messageId || !author) return;
+
+        const message = messagesByRoom.get(roomId)?.find((m) => m.id === messageId);
+        if (!message?.game) {
+          socket.emit("game:rejected", { messageId, error: "Game not found" });
+          return;
+        }
+
+        const result = applyMove(message.game, author, payload?.cellIndex);
+        if (!result.success) {
+          socket.emit("game:rejected", { messageId, error: result.error });
+          return;
+        }
+
+        message.game = result.game;
+        io.to(roomId).emit("game:updated", { messageId, game: message.game });
+      }
+    );
 
     // WhatsApp/Bumble's real "Delete for Everyone" (#134) — see
     // messageDeletion.ts for the sender-only/time-window rule. Unlike

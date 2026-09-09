@@ -394,6 +394,43 @@ body {
   flex-wrap: wrap;
 }
 
+.chat-app__tic-tac-toe {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-panel);
+}
+
+.chat-app__tic-tac-toe-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 36px);
+  grid-template-rows: repeat(3, 36px);
+  gap: 4px;
+}
+
+.chat-app__tic-tac-toe-cell {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  font-weight: bold;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface-raised, rgba(0, 0, 0, 0.03));
+  cursor: pointer;
+}
+
+.chat-app__tic-tac-toe-cell:disabled {
+  cursor: default;
+}
+
+.chat-app__tic-tac-toe-status {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
 .chat-app__location {
   display: block;
   margin-top: 4px;
