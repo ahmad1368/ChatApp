@@ -394,6 +394,25 @@ body {
   flex-wrap: wrap;
 }
 
+.chat-app__date-proposal-picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-panel);
+}
+
+.chat-app__date-proposal {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--color-surface-raised, rgba(0, 0, 0, 0.05));
+  font-style: italic;
+}
+
 .chat-app__location {
   display: block;
   margin-top: 4px;

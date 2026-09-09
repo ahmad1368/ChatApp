@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
-import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import { ChatMessage, DEFAULT_ROOM_ID, DATE_PROPOSAL_CATEGORIES, DATE_PROPOSAL_LABELS, DateProposalCategory } from "@chatapp/shared";
 import { loadDataSaverPreference, saveDataSaverPreference } from "./dataSaverStore";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { compressImage, blobToBase64 } from "./imageCompression";
@@ -168,7 +168,8 @@ function MessageRow({
   // Mirrors messageEditing.ts/messageDeletion.ts's rules loosely for the
   // UI — the server is the actual source of truth and re-checks all of
   // this on message:edit/message:delete.
-  const isPlainTextMessage = !message.location && !message.selfDestructImageUrl && !message.audioUrl && !message.imageUrl;
+  const isPlainTextMessage =
+    !message.location && !message.selfDestructImageUrl && !message.audioUrl && !message.imageUrl && !message.dateProposalCategory;
   const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
   const canEdit = isOwnMessage && isPlainTextMessage && messageAgeMs < 15 * 60 * 1000;
   const canDelete = isOwnMessage && !message.deleted && messageAgeMs < 24 * 60 * 60 * 1000;
@@ -216,6 +217,8 @@ function MessageRow({
           </div>
         ) : message.imageUrl ? (
           <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+        ) : message.dateProposalCategory ? (
+          <span className="chat-app__date-proposal">{message.text}</span>
         ) : isEditing ? (
           <span className="chat-app__edit-box">
             <input
@@ -363,6 +366,7 @@ export default function ChatRoom({
   const [showGifPicker, setShowGifPicker] = useState(false);
   // WhatsApp/Bumble's real "send live or text location" (#127).
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [showDateProposalPicker, setShowDateProposalPicker] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [liveLocationUpdates, setLiveLocationUpdates] = useState<Record<string, { latitude: number; longitude: number }>>({});
   const liveShareRef = useRef<{ messageId: string; expiresAt: string; intervalId: ReturnType<typeof setInterval> } | null>(null);
@@ -1298,6 +1302,23 @@ export default function ChatRoom({
     setShowLocationPicker(false);
   };
 
+  // Bumble's real "suggest a type of date" quick-reply chip (#147) — a
+  // lighter-weight sibling to a full date invitation: no location/time
+  // form, just an instant themed conversation starter. The server fills
+  // in the message text from the category's own label (see
+  // dateProposals.ts) if none is sent.
+  const sendDateProposal = (category: DateProposalCategory) => {
+    if (isGuest) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      dateProposalCategory: category,
+      asGuest: isGuest,
+    });
+    setShowDateProposalPicker(false);
+  };
+
   const STUN_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
   const teardownCall = () => {
@@ -1848,12 +1869,30 @@ export default function ChatRoom({
         >
           📍
         </button>
+        <button
+          className="chat-app__image-button"
+          onClick={() => setShowDateProposalPicker((v) => !v)}
+          disabled={isGuest || !liveUpdatesEnabled}
+          title="Suggest a type of date"
+        >
+          💡
+        </button>
         <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}
         </button>
       </div>
       {showGifPicker && <GifPicker onPick={sendGif} onClose={() => setShowGifPicker(false)} />}
       {showLocationPicker && <LocationPicker onSend={sendLocation} onClose={() => setShowLocationPicker(false)} />}
+      {showDateProposalPicker && (
+        <div className="chat-app__date-proposal-picker">
+          {DATE_PROPOSAL_CATEGORIES.map((category: DateProposalCategory) => (
+            <button key={category} onClick={() => sendDateProposal(category)}>
+              {DATE_PROPOSAL_LABELS[category]}
+            </button>
+          ))}
+          <button onClick={() => setShowDateProposalPicker(false)}>✕</button>
+        </div>
+      )}
       {locationError && <p style={{ color: "var(--color-danger)" }}>{locationError}</p>}
       {blockedAuthors.length > 0 && (
         <div className="chat-app__guest-banner">
