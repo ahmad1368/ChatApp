@@ -38,6 +38,7 @@ import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
 import { VerificationStore } from "./verification";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
+import { MessageDraftStore } from "./messageDrafts";
 import { PublicKeyStore } from "./e2eeKeys";
 import { BlockStore } from "./blocks";
 import { ContactBlockStore } from "./contactBlocks";
@@ -236,6 +237,7 @@ export function createApp(deps?: {
   const verificationStore = new VerificationStore();
   const onboardingStore = new OnboardingStore(verificationStore);
   const reportStore = new ReportStore();
+  const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
   const contactBlockStore = new ContactBlockStore();
@@ -367,6 +369,22 @@ export function createApp(deps?: {
       return;
     }
     res.status(201).json({ id: result.report.id });
+  });
+
+  // Bumble's real "save message drafts" (#150) — server-persisted (not
+  // just localStorage) so a draft survives across devices/browsers, same
+  // shape as pinnedChats.ts's per-author preference store.
+  app.put("/api/message-drafts/:author/:roomId", (req, res) => {
+    const result = messageDraftStore.save(req.params.author, req.params.roomId, req.body?.text);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  app.get("/api/message-drafts/:author/:roomId", (req, res) => {
+    res.json({ text: messageDraftStore.get(req.params.author, req.params.roomId) });
   });
 
   // Feeld's real optional end-to-end encrypted chat (#149) — the server
