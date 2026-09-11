@@ -20,6 +20,7 @@ import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
+import { LiveEventStore } from "./liveEvents";
 import { buildNewLikeNotification } from "./likeNotifications";
 import { buildNewMatchNotification } from "./matchNotifications";
 import { UploadStore } from "./uploads";
@@ -222,6 +223,28 @@ export function createApp(deps?: {
   const messagesByRoom = new Map<string, ChatMessage[]>();
   const locations = new LocationStore();
   const pushService = new PushService();
+  const liveEventStore = new LiveEventStore();
+
+  // Match.com's real "Notification for the start of in-app live events"
+  // (#155): a periodic sweep is this app's stand-in for the job-queue/
+  // cron infra a production notification service would use — checks
+  // every event once per interval rather than scheduling a one-off timer
+  // per event. `.unref()` so this never keeps the process (or a test run
+  // that instantiates the app) alive on its own.
+  const LIVE_EVENT_START_SWEEP_INTERVAL_MS = 60 * 1000;
+  setInterval(() => {
+    for (const event of liveEventStore.getEventsNeedingStartNotification()) {
+      liveEventStore.markStartNotificationSent(event.id);
+      pushService
+        .notifyAuthors(liveEventStore.getSubscribers(event.id), {
+          title: `${event.title} is starting now! 🎉`,
+          body: event.description || "Open the app to join.",
+        })
+        .catch((err) => {
+          console.error("Failed to deliver live-event start push notification:", err);
+        });
+    }
+  }, LIVE_EVENT_START_SWEEP_INTERVAL_MS).unref();
   const uploadStore = new UploadStore();
   const voiceNoteStore = new VoiceNoteStore();
   const selfDestructPhotoStore = new SelfDestructPhotoStore();
@@ -1714,6 +1737,41 @@ export function createApp(deps?: {
 
   app.get("/api/squad-matches/:squadId", (req, res) => {
     res.json({ matches: squadStore.getGroupMatches(req.params.squadId) });
+  });
+
+  // Match.com's real "in-app live events" (#155) — no admin role exists
+  // in this app, so any author can schedule one, same scoping call as
+  // #109's squads/#110's double dates letting any author organize a
+  // group activity. See liveEvents.ts for the "it's starting" push sweep.
+  app.post("/api/live-events", (req, res) => {
+    const result = liveEventStore.create(req.body?.createdBy, req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ event: result.event });
+  });
+
+  app.get("/api/live-events", (req, res) => {
+    res.json({ events: liveEventStore.getUpcoming() });
+  });
+
+  app.post("/api/live-events/:eventId/subscribe", (req, res) => {
+    const result = liveEventStore.subscribe(req.body?.author, req.params.eventId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ subscribed: result.subscribed });
+  });
+
+  app.delete("/api/live-events/:eventId/subscribe", (req, res) => {
+    const result = liveEventStore.unsubscribe(req.body?.author, req.params.eventId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ subscribed: result.subscribed });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
