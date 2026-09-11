@@ -188,7 +188,7 @@ export default function DiscoverPage() {
       <p>
         <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/matches">Your matches</Link> &middot;{" "}
         <Link href="/liked-you">Who liked you</Link> &middot; <Link href="/visitors">Profile visitors</Link> &middot;{" "}
-        <Link href="/double-date">Double Date</Link>
+        <Link href="/double-date">Double Date</Link> &middot; <Link href="/live-events">Live Events</Link>
       </p>
       <ProfileBoost author={author} />
       <div style={{ display: "flex", gap: 6, justifyContent: "center", margin: "8px 0" }}>

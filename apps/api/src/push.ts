@@ -61,4 +61,32 @@ export class PushService {
       .map((s) => s.subscription);
     await this.sendToSubscriptions(recipients, payload);
   }
+
+  /**
+   * Sends a push message to every subscription belonging to one specific
+   * author (e.g. Tinder's real "new Match"/"new like"/"expiring chat"
+   * pushes, #151/#153/#154) — unlike notifyOthers()'s broadcast to
+   * everyone else, this targets a single person across however many
+   * devices they've subscribed from.
+   */
+  async notifyAuthor(author: string, payload: { title: string; body: string }): Promise<void> {
+    const recipients = [...this.subscriptionsByEndpoint.values()]
+      .filter((s) => s.author === author)
+      .map((s) => s.subscription);
+    await this.sendToSubscriptions(recipients, payload);
+  }
+
+  /**
+   * Sends a push message to every subscription belonging to any author in
+   * a given set (e.g. Match.com's real "start of an in-app live event"
+   * push, #155, going out to everyone who opted into that specific
+   * event) — unlike notifyOthers()'s broadcast to literally everyone.
+   */
+  async notifyAuthors(authors: Iterable<string>, payload: { title: string; body: string }): Promise<void> {
+    const authorSet = new Set(authors);
+    const recipients = [...this.subscriptionsByEndpoint.values()]
+      .filter((s) => authorSet.has(s.author))
+      .map((s) => s.subscription);
+    await this.sendToSubscriptions(recipients, payload);
+  }
 }
