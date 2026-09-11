@@ -15,7 +15,7 @@ Work exactly **one** GitHub issue per invocation of this command: the lowest-num
 
 ## Steps
 
-1. Pick the lowest-numbered open issue. `gh issue view <n>` for the full body (acceptance criteria, reference app notes).
+1. Pick the lowest-numbered open issue that does **not** already have an open PR against it (`gh pr list --state open --json number,headRefName,body` — skip any issue number referenced by an existing open PR's branch name `issue-<n>-*` or `Refs #<n>` body text). This matters when this command is run repeatedly before earlier PRs have been merged: without the skip, it would just re-pick and duplicate an issue still awaiting review/merge. Also skip any issue number documented in CLAUDE.md's "Known backlog overlap" sections as a duplicate with no separate implementation needed (e.g. #142) — those are left open for the user to close explicitly, not picked up as fresh work. `gh issue view <n>` for the full body (acceptance criteria, reference app notes) once picked.
 2. `git fetch origin staging` and branch from `origin/staging` (not local `main`/`staging`, to avoid stale state).
 3. Implement the issue against the stack and scoping rules in `CLAUDE.md` — read it first if you haven't this session. In particular: this is a web-first (Next.js PWA + Express/Socket.io) implementation; treat "Android/iOS" acceptance-criteria items as deferred-and-noted, not blocking.
 4. Update `README.md`'s "Implemented so far" section with a one-line entry for this issue.
