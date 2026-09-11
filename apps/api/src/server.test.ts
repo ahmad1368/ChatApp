@@ -44,6 +44,7 @@ function listen() {
     matchExpiryStore,
     pinnedChatsStore,
     archivedChatsStore,
+    smsSecurityAlertStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -68,6 +69,7 @@ function listen() {
     matchExpiryStore,
     pinnedChatsStore,
     archivedChatsStore,
+    smsSecurityAlertStore,
   };
 }
 
@@ -1528,6 +1530,102 @@ test("2FA: disables 2FA", async () => {
       headers: { Authorization: `Bearer ${accessToken}` },
     }).then((r) => r.json());
     assert.equal(status.enabled, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("SMS security alerts: signing up via phone+OTP sends a login alert by default", async () => {
+  const { server, baseUrl, otpService, smsSecurityAlertStore } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110004");
+    const decoded = JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString());
+
+    const alerts = smsSecurityAlertStore.getSentAlerts(decoded.sub);
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].category, "login");
+    assert.equal(alerts[0].phoneNumber, "+15551110004");
+  } finally {
+    server.close();
+  }
+});
+
+test("SMS security alerts: no alert is sent once the user opts out of the login category", async () => {
+  const { server, baseUrl, otpService, smsSecurityAlertStore } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110005");
+    const decoded = JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString());
+
+    const optOutRes = await fetch(`${baseUrl}/api/sms-security-alerts/preferences`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ category: "login", enabled: false }),
+    });
+    assert.equal(optOutRes.status, 200);
+    assert.deepEqual(await optOutRes.json(), { preferences: { login: false, accountSecurity: true } });
+
+    // Sign in again via WebAuthn-style re-login isn't wired to phone auth,
+    // so re-trigger the same alert path directly to confirm the opt-out is
+    // enforced at send time, same as disabling 2FA below.
+    const sentAfterOptOut = smsSecurityAlertStore.notify(decoded.sub, "+15551110005", "login", "Second sign-in.");
+    assert.equal(sentAfterOptOut, false);
+    assert.equal(smsSecurityAlertStore.getSentAlerts(decoded.sub).length, 1); // just the signup alert
+  } finally {
+    server.close();
+  }
+});
+
+test("SMS security alerts: disabling 2FA sends an accountSecurity alert", async () => {
+  const { server, baseUrl, otpService, smsSecurityAlertStore } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110006");
+    const decoded = JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString());
+
+    const setupRes = await fetch(`${baseUrl}/api/auth/2fa/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ accountLabel: "dana@example.com" }),
+    }).then((r) => r.json());
+    await fetch(`${baseUrl}/api/auth/2fa/confirm-setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ token: authenticator.generate(setupRes.secret) }),
+    });
+
+    await fetch(`${baseUrl}/api/auth/2fa/disable`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const alerts = smsSecurityAlertStore.getSentAlerts(decoded.sub);
+    const securityAlerts = alerts.filter((a: { category: string }) => a.category === "accountSecurity");
+    assert.equal(securityAlerts.length, 1);
+    assert.match(securityAlerts[0].message, /two-factor authentication was turned off/i);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/sms-security-alerts/preferences rejects a request with no access token", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/sms-security-alerts/preferences`);
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/sms-security-alerts/preferences rejects an invalid category", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110007");
+    const res = await fetch(`${baseUrl}/api/sms-security-alerts/preferences`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ category: "billing", enabled: false }),
+    });
+    assert.equal(res.status, 400);
   } finally {
     server.close();
   }
