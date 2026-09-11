@@ -2521,6 +2521,8 @@ export default function ChatRoom({
         {" · "}
         <Link href="/discover">Discover &rarr;</Link>
         {" · "}
+        <Link href="/settings/weekly-digest">Weekly digest &rarr;</Link>
+        {" · "}
         <Link href="/settings/notifications">Notifications &rarr;</Link>
       </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
