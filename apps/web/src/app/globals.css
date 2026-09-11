@@ -207,6 +207,20 @@ body {
   cursor: pointer;
 }
 
+.chat-app__translation {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--color-muted);
+  border-left: 2px solid var(--color-border);
+}
+
+.chat-app__translation--error {
+  color: var(--color-danger);
+  font-style: normal;
+}
+
 .chat-app__message--queued {
   opacity: 0.6;
 }
