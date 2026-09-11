@@ -26,6 +26,10 @@ Issue #142 ("Report misconduct directly from the chat screen") is an exact dupli
 
 Issue #146 ("Send invitations for real dates within the chat") and #147 ("Share a date proposal (suggest cinema, cafe, restaurant)") are adjacent in the auto-generated backlog and both touch "planning a real date in chat," but they're genuinely different in scope, not a duplicate pair like #46/#47 or #41/#142: #146 is a formal invitation with a specific location, date/time, and an accept/decline RSVP (`dateInvites.ts`'s `DateInvite`, rendered as a `DateInviteCard`). #147 is a lightweight, no-commitment quick-reply chip suggesting a category of activity (cinema/cafe/restaurant/park/drinks, `dateProposals.ts`'s fixed catalog) with no location, no time, and no RSVP — closer to #132's Icebreaker suggestions than to #146's formal invite. Both are implemented and kept as separate features; no reconciliation needed.
 
+## Known backlog overlap: #5 and #152
+
+Issue #152 ("Push notification for a new text message") is an exact duplicate of already-implemented #5 ("Web Push notifications") in the auto-generated backlog — same feature, no differentiating angle. #5 already shipped this: `message:send` calls `pushService.notifyOthers(message.author, { title: message.author, body: message.text })` for every new chat message, delivered via the VAPID-backed subscribe/notify flow and the service worker's `push` handler. No separate implementation was made for #152 — skip it in `/next-issue` picks (see that file's step 1) and close it as a duplicate of #5 once confirmed.
+
 ## Issue workflow
 
 Issues are tracked on GitHub (`gh issue list`) and implemented one at a time via `/next-issue` (`.claude/commands/next-issue.md`). Read that file for the exact branch/PR rules before doing any issue work — do not improvise a different workflow.
