@@ -41,6 +41,28 @@ export interface ChatMessage {
   // place as moves come in (see server.ts's game:move) the same way
   // #146's dateInvite is mutated by date-invite:respond.
   game?: TicTacToeGame;
+  // Bumble's real "suggest a type of date" quick-reply chip (#147) — a
+  // lightweight themed prompt (see dateProposals.ts's catalog), distinct
+  // from #146's dateInvite: no location/time/RSVP, just a low-stakes
+  // conversation-starting suggestion either side can send or ignore.
+  dateProposalCategory?: DateProposalCategory;
+  // Bumble's real "send a date invitation within chat" (#146) — a special
+  // message carrying a proposed real-world meetup instead of plain text.
+  // `status` starts "pending" and is updated in place (see server.ts's
+  // date-invite:respond) once the recipient accepts/declines, so the
+  // card's outcome persists across reloads the same way #133's edited/
+  // #134's deleted messages do.
+  dateInvite?: DateInvite;
+  // Bumble's real "Private Detector" AI photo warning (#144) — set
+  // server-side (see server.ts's message:send) for an `imageUrl` message
+  // whose sender is a real safety signal this app already tracks (enough
+  // reports — fakeProfileDetector.ts's REPORT_THRESHOLD/ReportStore, this
+  // app's honest stand-in for a trained NSFW-image classifier it has no
+  // vision model for), never based on inspecting the actual pixel content.
+  // The client blurs the photo behind a tap-to-view warning instead of
+  // rendering it immediately. Scoped to plain imageUrl messages only —
+  // #123's selfDestructImageUrl already gates behind its own tap-to-reveal.
+  suspicious?: boolean;
 }
 
 export const TIC_TAC_TOE_MARKS = ["X", "O"] as const;
@@ -54,6 +76,32 @@ export interface TicTacToeGame {
   turn: TicTacToeMark;
   winner: TicTacToeMark | "draw" | null;
 }
+
+export const DATE_INVITE_RESPONSES = ["accepted", "declined"] as const;
+export type DateInviteResponse = (typeof DATE_INVITE_RESPONSES)[number];
+export type DateInviteStatus = "pending" | DateInviteResponse;
+
+export interface DateInvite {
+  location: string;
+  proposedAt: string;
+  note?: string;
+  status: DateInviteStatus;
+}
+
+export const DATE_PROPOSAL_CATEGORIES = ["cinema", "cafe", "restaurant", "park", "drinks"] as const;
+export type DateProposalCategory = (typeof DATE_PROPOSAL_CATEGORIES)[number];
+
+// Shared between server (validation + the message-text fallback in
+// server.ts) and client (the composer's suggestion chips) so the two
+// never drift apart, same "labels live alongside the enum" shape as
+// REPORT_REASON_LABELS below.
+export const DATE_PROPOSAL_LABELS: Record<DateProposalCategory, string> = {
+  cinema: "How about a movie? 🎬",
+  cafe: "How about coffee? ☕",
+  restaurant: "How about dinner? 🍽️",
+  park: "How about a walk in the park? 🌳",
+  drinks: "How about drinks? 🍸",
+};
 
 export interface ChatLocationShare {
   latitude: number;
@@ -78,6 +126,15 @@ export interface SendMessagePayload {
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
+  // Bumble's real "suggest a type of date" quick-reply chip (#147) — see
+  // dateProposals.ts for the fixed category catalog this is validated
+  // against.
+  dateProposalCategory?: DateProposalCategory;
+  // Bumble's real "send a date invitation within chat" (#146) — client
+  // sends only the proposal fields; the server validates them and sets
+  // the authoritative `status: "pending"` (see server.ts's message:send
+  // and dateInvites.ts's createDateInvite).
+  dateInvite?: { location: string; proposedAt: string; note?: string };
   // Self-reported by the client — see the trust-boundary note in
   // apps/api/src/server.ts (same limitation as #26-#37's :userId trust:
   // there's no merged auth session yet to verify this against). The
@@ -96,6 +153,11 @@ export interface SendMessagePayload {
   // game needs a known second player, same reasoning as #135 only
   // applying with a recipient). See ticTacToe.ts's createGame().
   startGame?: boolean;
+  // Bumble's real "unkind message" AI warning (#143) — set only by the
+  // client's own "Send anyway" action after the server's message:warning
+  // prompted the sender to confirm a flagged message. Never set by the
+  // initial send attempt.
+  overrideWarning?: boolean;
 }
 
 export const DEFAULT_ROOM_ID = "general";
