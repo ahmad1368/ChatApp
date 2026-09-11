@@ -35,6 +35,13 @@ export interface ChatMessage {
   // message:delete succeeds; see messageDeletion.ts. The client renders a
   // placeholder instead of whatever content fields were originally set.
   deleted?: boolean;
+  // Bumble's real "send a date invitation within chat" (#146) — a special
+  // message carrying a proposed real-world meetup instead of plain text.
+  // `status` starts "pending" and is updated in place (see server.ts's
+  // date-invite:respond) once the recipient accepts/declines, so the
+  // card's outcome persists across reloads the same way #133's edited/
+  // #134's deleted messages do.
+  dateInvite?: DateInvite;
   // Bumble's real "Private Detector" AI photo warning (#144) — set
   // server-side (see server.ts's message:send) for an `imageUrl` message
   // whose sender is a real safety signal this app already tracks (enough
@@ -45,6 +52,17 @@ export interface ChatMessage {
   // rendering it immediately. Scoped to plain imageUrl messages only —
   // #123's selfDestructImageUrl already gates behind its own tap-to-reveal.
   suspicious?: boolean;
+}
+
+export const DATE_INVITE_RESPONSES = ["accepted", "declined"] as const;
+export type DateInviteResponse = (typeof DATE_INVITE_RESPONSES)[number];
+export type DateInviteStatus = "pending" | DateInviteResponse;
+
+export interface DateInvite {
+  location: string;
+  proposedAt: string;
+  note?: string;
+  status: DateInviteStatus;
 }
 
 export interface ChatLocationShare {
@@ -70,6 +88,11 @@ export interface SendMessagePayload {
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
+  // Bumble's real "send a date invitation within chat" (#146) — client
+  // sends only the proposal fields; the server validates them and sets
+  // the authoritative `status: "pending"` (see server.ts's message:send
+  // and dateInvites.ts's createDateInvite).
+  dateInvite?: { location: string; proposedAt: string; note?: string };
   // Self-reported by the client — see the trust-boundary note in
   // apps/api/src/server.ts (same limitation as #26-#37's :userId trust:
   // there's no merged auth session yet to verify this against). The

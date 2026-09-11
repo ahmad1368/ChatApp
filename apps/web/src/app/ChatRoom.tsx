@@ -11,6 +11,7 @@ import { compressImage, blobToBase64 } from "./imageCompression";
 import { computeWaveform } from "./voiceNoteWaveform";
 import GifPicker from "./GifPicker";
 import LocationPicker, { LocationSharePayload } from "./LocationPicker";
+import DateInvitePicker, { DateInviteSharePayload } from "./DateInvitePicker";
 import { applyBeautyFilter, applyBackgroundBlur } from "./beautyFilter";
 import IcebreakerSuggestions from "./IcebreakerSuggestions";
 import LocationMessage from "./LocationMessage";
@@ -127,6 +128,44 @@ function SelfDestructPhoto({ url, viewer }: { url: string; viewer: string }) {
 }
 
 /**
+ * Bumble's real "send a date invitation within chat" (#146): a card
+ * instead of plain text, so the recipient can act on it (Accept/Decline)
+ * rather than just read it. The sender sees their own proposal's status
+ * update live once the recipient responds (see ChatRoom.tsx's
+ * date-invite:updated listener) — no action for them once sent.
+ */
+function DateInviteCard({
+  dateInvite,
+  isOwnMessage,
+  onRespond,
+}: {
+  dateInvite: NonNullable<ChatMessage["dateInvite"]>;
+  isOwnMessage: boolean;
+  onRespond: (response: "accepted" | "declined") => void;
+}) {
+  const proposedAt = new Date(dateInvite.proposedAt);
+  return (
+    <div className="chat-app__date-invite">
+      <p className="chat-app__date-invite-title">📅 Date invitation</p>
+      <p>{dateInvite.location}</p>
+      <p>{proposedAt.toLocaleString()}</p>
+      {dateInvite.note && <p className="chat-app__date-invite-note">{dateInvite.note}</p>}
+      {dateInvite.status === "pending" && !isOwnMessage && (
+        <div className="chat-app__date-invite-actions">
+          <button onClick={() => onRespond("accepted")}>Accept</button>
+          <button onClick={() => onRespond("declined")}>Decline</button>
+        </div>
+      )}
+      {dateInvite.status === "pending" && isOwnMessage && (
+        <p className="chat-app__date-invite-status">Waiting for a response…</p>
+      )}
+      {dateInvite.status === "accepted" && <p className="chat-app__date-invite-status">✅ Accepted</p>}
+      {dateInvite.status === "declined" && <p className="chat-app__date-invite-status">❌ Declined</p>}
+    </div>
+  );
+}
+
+/**
  * Bumble's real "See translation" (#145): on-demand per message, into the
  * viewer's own current app language (see LocaleProvider.tsx's "en"/"fa"
  * toggle from #9) rather than a background bulk-translate of the whole
@@ -221,6 +260,7 @@ function MessageRow({
   onSaveEdit,
   onCancelEdit,
   onDelete,
+  onRespondDateInvite,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -240,11 +280,13 @@ function MessageRow({
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDelete: (messageId: string) => void;
+  onRespondDateInvite: (messageId: string, response: "accepted" | "declined") => void;
 }) {
   // Mirrors messageEditing.ts/messageDeletion.ts's rules loosely for the
   // UI — the server is the actual source of truth and re-checks all of
   // this on message:edit/message:delete.
-  const isPlainTextMessage = !message.location && !message.selfDestructImageUrl && !message.audioUrl && !message.imageUrl;
+  const isPlainTextMessage =
+    !message.location && !message.selfDestructImageUrl && !message.audioUrl && !message.imageUrl && !message.dateInvite;
   const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
   const canEdit = isOwnMessage && isPlainTextMessage && messageAgeMs < 15 * 60 * 1000;
   const canDelete = isOwnMessage && !message.deleted && messageAgeMs < 24 * 60 * 60 * 1000;
@@ -275,6 +317,12 @@ function MessageRow({
         <strong>{message.author}: </strong>
         {message.deleted ? (
           <em className="chat-app__deleted-message">🚫 This message was deleted</em>
+        ) : message.dateInvite ? (
+          <DateInviteCard
+            dateInvite={message.dateInvite}
+            isOwnMessage={isOwnMessage}
+            onRespond={(response) => onRespondDateInvite(message.id, response)}
+          />
         ) : message.location ? (
           <LocationMessage location={message.location} liveUpdate={liveLocationUpdate} />
         ) : message.selfDestructImageUrl ? (
@@ -450,6 +498,7 @@ export default function ChatRoom({
   const [showGifPicker, setShowGifPicker] = useState(false);
   // WhatsApp/Bumble's real "send live or text location" (#127).
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [showDateInvitePicker, setShowDateInvitePicker] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [liveLocationUpdates, setLiveLocationUpdates] = useState<Record<string, { latitude: number; longitude: number }>>({});
   const liveShareRef = useRef<{ messageId: string; expiresAt: string; intervalId: ReturnType<typeof setInterval> } | null>(null);
@@ -956,6 +1005,19 @@ export default function ChatRoom({
         )
       );
     });
+    // Bumble's real "send a date invitation within chat" (#146): the
+    // recipient's accept/decline lands here for both sides (broadcast to
+    // the room), same "server owns the derived truth, client just
+    // reflects it" shape as message:edited above.
+    socket.on(
+      "date-invite:updated",
+      ({ messageId, dateInvite }: { messageId: string; dateInvite: ChatMessage["dateInvite"] }) => {
+        setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, dateInvite } : m)));
+      }
+    );
+    socket.on("date-invite:rejected", ({ error }: { messageId: string; error: string }) => {
+      setEditError(error);
+    });
     socket.on("message:delete-rejected", ({ error }: { messageId: string; error: string }) => {
       setEditError(error);
     });
@@ -1409,6 +1471,22 @@ export default function ChatRoom({
       asGuest: isGuest,
     });
     setShowLocationPicker(false);
+  };
+
+  const sendDateInvite = (payload: DateInviteSharePayload) => {
+    if (isGuest) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      dateInvite: payload,
+      asGuest: isGuest,
+    });
+    setShowDateInvitePicker(false);
+  };
+
+  const respondToDateInvite = (messageId: string, response: "accepted" | "declined") => {
+    socketRef.current?.emit("date-invite:respond", { roomId, messageId, author, response });
   };
 
   const STUN_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
@@ -1870,6 +1948,7 @@ export default function ChatRoom({
             onSaveEdit={submitEdit}
             onCancelEdit={cancelEdit}
             onDelete={deleteMessage}
+            onRespondDateInvite={respondToDateInvite}
           />
         ))}
         {queue.map((q) => (
@@ -1977,12 +2056,23 @@ export default function ChatRoom({
         >
           📍
         </button>
+        <button
+          className="chat-app__image-button"
+          onClick={() => setShowDateInvitePicker((v) => !v)}
+          disabled={isGuest || !liveUpdatesEnabled}
+          title="Propose a real date"
+        >
+          📅
+        </button>
         <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}
         </button>
       </div>
       {showGifPicker && <GifPicker onPick={sendGif} onClose={() => setShowGifPicker(false)} />}
       {showLocationPicker && <LocationPicker onSend={sendLocation} onClose={() => setShowLocationPicker(false)} />}
+      {showDateInvitePicker && (
+        <DateInvitePicker onSend={sendDateInvite} onClose={() => setShowDateInvitePicker(false)} />
+      )}
       {locationError && <p style={{ color: "var(--color-danger)" }}>{locationError}</p>}
       {blockedAuthors.length > 0 && (
         <div className="chat-app__guest-banner">
