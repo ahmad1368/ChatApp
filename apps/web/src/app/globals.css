@@ -207,6 +207,20 @@ body {
   cursor: pointer;
 }
 
+.chat-app__translation {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--color-muted);
+  border-left: 2px solid var(--color-border);
+}
+
+.chat-app__translation--error {
+  color: var(--color-danger);
+  font-style: normal;
+}
+
 .chat-app__message--queued {
   opacity: 0.6;
 }
@@ -322,6 +336,19 @@ body {
   margin: 4px 0 0;
   font-style: italic;
   color: var(--color-muted);
+}
+
+.chat-app__suspicious-photo-reveal {
+  display: block;
+  margin-top: 4px;
+  padding: 12px;
+  background: var(--color-panel);
+  color: var(--color-danger);
+  border: 1px dashed var(--color-danger);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: inherit;
+  text-align: left;
 }
 
 .chat-app__gif-picker {
@@ -643,6 +670,35 @@ body {
 
 .chat-app__status--offline {
   color: var(--color-danger);
+}
+
+.chat-app__content-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 8px 12px;
+  margin: 0 0 8px;
+  border: 1px solid var(--color-danger);
+  border-radius: 8px;
+  background: var(--color-panel);
+  color: var(--color-text);
+}
+
+.chat-app__content-warning p {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.chat-app__content-warning button {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-text);
+  cursor: pointer;
 }
 
 .chat-app__modal-overlay {

@@ -42,6 +42,16 @@ export interface ChatMessage {
   // card's outcome persists across reloads the same way #133's edited/
   // #134's deleted messages do.
   dateInvite?: DateInvite;
+  // Bumble's real "Private Detector" AI photo warning (#144) — set
+  // server-side (see server.ts's message:send) for an `imageUrl` message
+  // whose sender is a real safety signal this app already tracks (enough
+  // reports — fakeProfileDetector.ts's REPORT_THRESHOLD/ReportStore, this
+  // app's honest stand-in for a trained NSFW-image classifier it has no
+  // vision model for), never based on inspecting the actual pixel content.
+  // The client blurs the photo behind a tap-to-view warning instead of
+  // rendering it immediately. Scoped to plain imageUrl messages only —
+  // #123's selfDestructImageUrl already gates behind its own tap-to-reveal.
+  suspicious?: boolean;
 }
 
 export const DATE_INVITE_RESPONSES = ["accepted", "declined"] as const;
@@ -96,6 +106,11 @@ export interface SendMessagePayload {
   // omitting it (a group room, or an already-started conversation) just
   // skips the check.
   recipient?: string;
+  // Bumble's real "unkind message" AI warning (#143) — set only by the
+  // client's own "Send anyway" action after the server's message:warning
+  // prompted the sender to confirm a flagged message. Never set by the
+  // initial send attempt.
+  overrideWarning?: boolean;
 }
 
 export const DEFAULT_ROOM_ID = "general";

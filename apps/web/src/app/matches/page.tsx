@@ -73,6 +73,24 @@ export default function MatchesPage() {
       .catch(() => {});
   };
 
+  const unmatch = (chatAuthor: string) => {
+    if (!window.confirm(`Unmatch ${chatAuthor} and delete this chat? This can't be undone.`)) return;
+    fetch(`${API_URL}/api/matches/${encodeURIComponent(author)}/${encodeURIComponent(chatAuthor)}`, {
+      method: "DELETE",
+    })
+      .then((res) => {
+        if (!res.ok) return;
+        setMatches((prev) => prev.filter((m) => m.author !== chatAuthor));
+        setPinnedChats((prev) => {
+          if (!prev.has(chatAuthor)) return prev;
+          const next = new Set(prev);
+          next.delete(chatAuthor);
+          return next;
+        });
+      })
+      .catch(() => {});
+  };
+
   const togglePin = (chatAuthor: string) => {
     const isPinned = pinnedChats.has(chatAuthor);
     const method = isPinned ? "DELETE" : "POST";
@@ -182,6 +200,21 @@ export default function MatchesPage() {
                   {match.archived ? "Unarchive" : "Archive"}
                 </button>
                 <Link href={`/room/${DEFAULT_ROOM_ID}`}>Chat</Link>
+                <button
+                  type="button"
+                  onClick={() => unmatch(match.author)}
+                  style={{
+                    fontSize: 12,
+                    background: "none",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 6,
+                    padding: "4px 8px",
+                    cursor: "pointer",
+                    color: "var(--color-danger, #c0392b)",
+                  }}
+                >
+                  Unmatch
+                </button>
               </div>
             </li>
           ))}
