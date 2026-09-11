@@ -20,6 +20,7 @@ import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
+import { NotificationPreferencesStore } from "./notificationPreferences";
 import { LiveEventStore } from "./liveEvents";
 import { buildNewLikeNotification } from "./likeNotifications";
 import { buildNewMatchNotification } from "./matchNotifications";
@@ -209,6 +210,7 @@ export function createApp(deps?: {
   videoCallEffectsStore: VideoCallEffectsStore;
   genderInfoStore: GenderInfoStore;
   matchExpiryStore: MatchExpiryStore;
+  notificationPreferencesStore: NotificationPreferencesStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -223,6 +225,7 @@ export function createApp(deps?: {
   const messagesByRoom = new Map<string, ChatMessage[]>();
   const locations = new LocationStore();
   const pushService = new PushService();
+  const notificationPreferencesStore = new NotificationPreferencesStore();
   const liveEventStore = new LiveEventStore();
 
   // Match.com's real "Notification for the start of in-app live events"
@@ -2551,6 +2554,22 @@ export function createApp(deps?: {
     res.json({ status: "unsubscribed" });
   });
 
+  // Tinder's real "Detailed notification category management in
+  // settings" (#156) — see notificationPreferences.ts for the actual
+  // enforcement point (isEnabled()) and which push send sites consult it.
+  app.get("/api/notification-preferences/:author", (req, res) => {
+    res.json({ preferences: notificationPreferencesStore.get(req.params.author) });
+  });
+
+  app.put("/api/notification-preferences/:author", (req, res) => {
+    const result = notificationPreferencesStore.update(req.params.author, req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ preferences: result.preferences });
+  });
+
   // Image sharing: the client compresses/downscales before uploading (see
   // imageCompression.ts), so this just validates mime type and size.
   app.post("/api/uploads", (req, res) => {
@@ -3185,6 +3204,7 @@ export function createApp(deps?: {
     videoCallEffectsStore,
     genderInfoStore,
     matchExpiryStore,
+    notificationPreferencesStore,
   };
 }
 
@@ -3202,6 +3222,7 @@ export async function createChatServer() {
     blockStore,
     genderInfoStore,
     matchExpiryStore,
+    notificationPreferencesStore,
   } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -3436,9 +3457,17 @@ export async function createChatServer() {
       // presence:online was never announced on this socket (see presence.ts).
       presenceStore.recordActivity(message.author);
       io.to(roomId).emit("message:new", message);
-      pushService.notifyOthers(message.author, { title: message.author, body: message.text }).catch((err) => {
-        console.error("Failed to deliver push notifications:", err);
-      });
+      // #156's "newMessage" category preference — recipients who turned
+      // this off in /settings/notifications are skipped.
+      pushService
+        .notifyOthers(
+          message.author,
+          { title: message.author, body: message.text },
+          (recipient) => notificationPreferencesStore.isEnabled(recipient, "newMessage")
+        )
+        .catch((err) => {
+          console.error("Failed to deliver push notifications:", err);
+        });
     });
 
     // Bumble's real sent/delivered/read message status (#125): the client
