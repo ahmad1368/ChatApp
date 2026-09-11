@@ -1,10 +1,20 @@
 // Bumble's real 24-hour "say something before the match expires" window.
 export const MATCH_RESPONSE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+// Tinder's real practice of nudging users before a closing window shuts —
+// a few hours' notice: early enough to actually leave time to act, late
+// enough that it reads as "running out" rather than a premature nag.
+export const MATCH_EXPIRY_REMINDER_LEAD_MS = 4 * 60 * 60 * 1000;
+
 export interface MatchExpiryState {
   matchedAt: string;
   firstMessageSentAt?: string;
   extended?: boolean;
+  // Tinder's real "Reminder notification to respond to expiring chats"
+  // (#154) — set the first (and only) time a reminder fires for this
+  // pair, same "state tracked so it only ever happens once" shape as
+  // `extended` above.
+  reminderSentAt?: string;
 }
 
 export interface ExtendMatchResult {
@@ -80,5 +90,34 @@ export class MatchExpiryStore {
     state.extended = true;
     state.matchedAt = new Date(new Date(state.matchedAt).getTime() + MATCH_RESPONSE_WINDOW_MS).toISOString();
     return { allowed: true };
+  }
+
+  /**
+   * Tinder's real "Reminder notification to respond to expiring chats"
+   * (#154) — true once per match, in the lead-time window before #136's
+   * 24-hour deadline, only while nobody's said anything yet and this
+   * pair hasn't already been reminded. A periodic sweep (see server.ts)
+   * calls this for every tracked pair rather than scheduling a one-off
+   * timer per match, the same "poll a store" shape the rest of this app
+   * uses instead of a job queue it has no infra for.
+   */
+  needsExpiryReminder(a: string, b: string, now: number = Date.now()): boolean {
+    const state = this.statesByPairKey.get(this.pairKey(a, b));
+    if (!state || state.firstMessageSentAt || state.reminderSentAt) return false;
+    if (this.isExpired(a, b, now)) return false;
+    const deadline = new Date(state.matchedAt).getTime() + MATCH_RESPONSE_WINDOW_MS;
+    return deadline - now <= MATCH_EXPIRY_REMINDER_LEAD_MS;
+  }
+
+  markReminderSent(a: string, b: string, now: number = Date.now()): void {
+    const state = this.statesByPairKey.get(this.pairKey(a, b));
+    if (state) {
+      state.reminderSentAt = new Date(now).toISOString();
+    }
+  }
+
+  /** Every tracked pair, as [a, b] tuples, for a periodic sweep to check each for reminder eligibility. */
+  getAllPairs(): [string, string][] {
+    return [...this.statesByPairKey.keys()].map((key) => key.split("::") as [string, string]);
   }
 }
