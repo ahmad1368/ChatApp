@@ -35,6 +35,11 @@ export interface ChatMessage {
   // message:delete succeeds; see messageDeletion.ts. The client renders a
   // placeholder instead of whatever content fields were originally set.
   deleted?: boolean;
+  // Feeld's real optional end-to-end encrypted chat (#149) — when set,
+  // `text` is left empty and this carries the real AES-GCM ciphertext
+  // (see apps/web/src/app/e2ee.ts's Web Crypto API usage); the server
+  // only ever relays this opaque blob, it never has the key to read it.
+  encrypted?: EncryptedPayload;
   // Snapchat/Bumble's real "play a mini-game within chat to break the
   // ice" (#148) — a genuinely playable two-player Tic-Tac-Toe game (see
   // ticTacToe.ts) attached to the message that started it, mutated in
@@ -63,6 +68,11 @@ export interface ChatMessage {
   // rendering it immediately. Scoped to plain imageUrl messages only —
   // #123's selfDestructImageUrl already gates behind its own tap-to-reveal.
   suspicious?: boolean;
+}
+
+export interface EncryptedPayload {
+  ciphertext: string;
+  iv: string;
 }
 
 export const TIC_TAC_TOE_MARKS = ["X", "O"] as const;
@@ -126,6 +136,10 @@ export interface SendMessagePayload {
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
+  // Feeld's real optional end-to-end encrypted chat (#149) — client sends
+  // only the ciphertext/iv it already computed; the server never touches
+  // plaintext for an encrypted message.
+  encrypted?: EncryptedPayload;
   // Bumble's real "suggest a type of date" quick-reply chip (#147) — see
   // dateProposals.ts for the fixed category catalog this is validated
   // against.

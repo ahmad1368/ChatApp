@@ -338,6 +338,10 @@ body {
   color: var(--color-muted);
 }
 
+.chat-app__encrypted-message--locked {
+  color: var(--color-muted);
+}
+
 .chat-app__suspicious-photo-reveal {
   display: block;
   margin-top: 4px;
