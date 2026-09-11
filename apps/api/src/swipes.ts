@@ -12,6 +12,7 @@ export const DAILY_LIKE_LIMIT = 100;
 export type RecordSwipeResult = { success: true; matched: boolean } | { success: false; error: string };
 export type JoinDiscoveryResult = { success: true } | { success: false; error: string };
 export type UndoLastSwipeResult = { success: true; swiped: string } | { success: false; error: string };
+export type UnmatchResult = { success: true } | { success: false; error: string };
 
 export interface SwipeCandidate {
   author: string;
@@ -258,6 +259,34 @@ export class SwipeStore {
     }
 
     return { success: true, swiped };
+  }
+
+  /**
+   * Bumble's real "Unmatch" (#141), combined with deleting the chat in one
+   * action rather than two separate steps. Mutual, unlike #138's pin/#139's
+   * archive (deliberately one-sided per-viewer list preferences) — an
+   * unmatch removes the match for both authors at once. Requires an
+   * existing match; each side's prior swipe record is left untouched
+   * afterward so the pair doesn't immediately re-match by swiping again,
+   * same guard #117's queue recycling already relies on (only "pass" is
+   * ever re-swipeable). The "delete chat" half is handled at the route
+   * level (see server.ts) by also clearing this pair's pin/archive
+   * list-state — this app's match core still has one shared chat room,
+   * not per-match DM threads (see matches/page.tsx), so there's no
+   * separate message thread to purge; the concrete, honest equivalent is
+   * an instant, atomic disappearance from both sides' matches list.
+   */
+  unmatch(a: unknown, b: unknown): UnmatchResult {
+    const authorA = typeof a === "string" ? a.trim() : "";
+    const authorB = typeof b === "string" ? b.trim() : "";
+    if (!authorA || !authorB) {
+      return { success: false, error: "Both authors are required" };
+    }
+    if (!this.matchesByAuthor.get(authorA)?.has(authorB)) {
+      return { success: false, error: "No match between these two authors" };
+    }
+    this.revokeMatch(authorA, authorB);
+    return { success: true };
   }
 
   private recordMatch(a: string, b: string): void {
