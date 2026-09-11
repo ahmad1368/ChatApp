@@ -207,6 +207,20 @@ body {
   cursor: pointer;
 }
 
+.chat-app__translation {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--color-muted);
+  border-left: 2px solid var(--color-border);
+}
+
+.chat-app__translation--error {
+  color: var(--color-danger);
+  font-style: normal;
+}
+
 .chat-app__message--queued {
   opacity: 0.6;
 }
@@ -324,6 +338,19 @@ body {
   color: var(--color-muted);
 }
 
+.chat-app__suspicious-photo-reveal {
+  display: block;
+  margin-top: 4px;
+  padding: 12px;
+  background: var(--color-panel);
+  color: var(--color-danger);
+  border: 1px dashed var(--color-danger);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: inherit;
+  text-align: left;
+}
+
 .chat-app__gif-picker {
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -411,6 +438,58 @@ body {
   border-radius: 12px;
   background: var(--color-surface-raised, rgba(0, 0, 0, 0.05));
   font-style: italic;
+}
+
+.chat-app__date-invite-picker {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 8px;
+  background: var(--color-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-app__date-invite-picker-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.chat-app__date-invite {
+  display: block;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-panel);
+  max-width: 260px;
+}
+
+.chat-app__date-invite p {
+  margin: 2px 0;
+}
+
+.chat-app__date-invite-title {
+  font-weight: bold;
+}
+
+.chat-app__date-invite-note {
+  font-style: italic;
+  color: var(--color-muted);
+}
+
+.chat-app__date-invite-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.chat-app__date-invite-status {
+  font-size: 13px;
+  color: var(--color-muted);
 }
 
 .chat-app__location {
@@ -610,6 +689,35 @@ body {
 
 .chat-app__status--offline {
   color: var(--color-danger);
+}
+
+.chat-app__content-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 8px 12px;
+  margin: 0 0 8px;
+  border: 1px solid var(--color-danger);
+  border-radius: 8px;
+  background: var(--color-panel);
+  color: var(--color-text);
+}
+
+.chat-app__content-warning p {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.chat-app__content-warning button {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-text);
+  cursor: pointer;
 }
 
 .chat-app__modal-overlay {

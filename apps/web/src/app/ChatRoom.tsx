@@ -4,13 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
-import { ChatMessage, DEFAULT_ROOM_ID, DATE_PROPOSAL_CATEGORIES, DATE_PROPOSAL_LABELS, DateProposalCategory } from "@chatapp/shared";
+import {
+  ChatMessage,
+  DEFAULT_ROOM_ID,
+  DATE_PROPOSAL_CATEGORIES,
+  DATE_PROPOSAL_LABELS,
+  DateProposalCategory,
+  SendMessagePayload,
+} from "@chatapp/shared";
 import { loadDataSaverPreference, saveDataSaverPreference } from "./dataSaverStore";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { compressImage, blobToBase64 } from "./imageCompression";
 import { computeWaveform } from "./voiceNoteWaveform";
 import GifPicker from "./GifPicker";
 import LocationPicker, { LocationSharePayload } from "./LocationPicker";
+import DateInvitePicker, { DateInviteSharePayload } from "./DateInvitePicker";
 import { applyBeautyFilter, applyBackgroundBlur } from "./beautyFilter";
 import IcebreakerSuggestions from "./IcebreakerSuggestions";
 import LocationMessage from "./LocationMessage";
@@ -126,6 +134,120 @@ function SelfDestructPhoto({ url, viewer }: { url: string; viewer: string }) {
   );
 }
 
+/**
+ * Bumble's real "send a date invitation within chat" (#146): a card
+ * instead of plain text, so the recipient can act on it (Accept/Decline)
+ * rather than just read it. The sender sees their own proposal's status
+ * update live once the recipient responds (see ChatRoom.tsx's
+ * date-invite:updated listener) — no action for them once sent.
+ */
+function DateInviteCard({
+  dateInvite,
+  isOwnMessage,
+  onRespond,
+}: {
+  dateInvite: NonNullable<ChatMessage["dateInvite"]>;
+  isOwnMessage: boolean;
+  onRespond: (response: "accepted" | "declined") => void;
+}) {
+  const proposedAt = new Date(dateInvite.proposedAt);
+  return (
+    <div className="chat-app__date-invite">
+      <p className="chat-app__date-invite-title">📅 Date invitation</p>
+      <p>{dateInvite.location}</p>
+      <p>{proposedAt.toLocaleString()}</p>
+      {dateInvite.note && <p className="chat-app__date-invite-note">{dateInvite.note}</p>}
+      {dateInvite.status === "pending" && !isOwnMessage && (
+        <div className="chat-app__date-invite-actions">
+          <button onClick={() => onRespond("accepted")}>Accept</button>
+          <button onClick={() => onRespond("declined")}>Decline</button>
+        </div>
+      )}
+      {dateInvite.status === "pending" && isOwnMessage && (
+        <p className="chat-app__date-invite-status">Waiting for a response…</p>
+      )}
+      {dateInvite.status === "accepted" && <p className="chat-app__date-invite-status">✅ Accepted</p>}
+      {dateInvite.status === "declined" && <p className="chat-app__date-invite-status">❌ Declined</p>}
+    </div>
+  );
+}
+
+/**
+ * Bumble's real "See translation" (#145): on-demand per message, into the
+ * viewer's own current app language (see LocaleProvider.tsx's "en"/"fa"
+ * toggle from #9) rather than a background bulk-translate of the whole
+ * conversation — the server proxies a real Google Cloud Translation API
+ * call (translation.ts), so this is a network round trip, not instant.
+ */
+function TranslateButton({ text }: { text: string }) {
+  const { locale } = useLocale();
+  const [translated, setTranslated] = useState<string | null>(null);
+  const [shown, setShown] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = async () => {
+    if (shown) {
+      setShown(false);
+      return;
+    }
+    if (translated) {
+      setShown(true);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/translate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, targetLang: locale }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof body?.error === "string" ? body.error : "Translation failed");
+        return;
+      }
+      setTranslated(body.translated);
+      setShown(true);
+    } catch {
+      setError("Translation failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <button className="chat-app__report-button" onClick={toggle} title="Translate this message" disabled={loading}>
+        🌐
+      </button>
+      {loading && <p className="chat-app__translation">Translating…</p>}
+      {shown && translated && <p className="chat-app__translation">{translated}</p>}
+      {error && <p className="chat-app__translation chat-app__translation--error">{error}</p>}
+    </>
+  );
+}
+
+/**
+ * Bumble's real "Private Detector" AI photo warning (#144): unlike
+ * #123's SelfDestructPhoto (destroyed after viewing), this photo is
+ * still permanently viewable — it's just blurred behind an explicit tap
+ * so the recipient isn't ambushed by it the moment the message arrives.
+ */
+function SuspiciousPhoto({ url }: { url: string }) {
+  const [revealed, setRevealed] = useState(false);
+
+  if (revealed) {
+    return <img src={url} alt="Shared" loading="lazy" className="chat-app__shared-image" />;
+  }
+  return (
+    <button className="chat-app__suspicious-photo-reveal" onClick={() => setRevealed(true)}>
+      ⚠️ This photo was flagged as potentially inappropriate — tap to view
+    </button>
+  );
+}
+
 function MessageRow({
   message,
   highlighted,
@@ -145,6 +267,7 @@ function MessageRow({
   onSaveEdit,
   onCancelEdit,
   onDelete,
+  onRespondDateInvite,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -164,12 +287,18 @@ function MessageRow({
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDelete: (messageId: string) => void;
+  onRespondDateInvite: (messageId: string, response: "accepted" | "declined") => void;
 }) {
   // Mirrors messageEditing.ts/messageDeletion.ts's rules loosely for the
   // UI — the server is the actual source of truth and re-checks all of
   // this on message:edit/message:delete.
   const isPlainTextMessage =
-    !message.location && !message.selfDestructImageUrl && !message.audioUrl && !message.imageUrl && !message.dateProposalCategory;
+    !message.location &&
+    !message.selfDestructImageUrl &&
+    !message.audioUrl &&
+    !message.imageUrl &&
+    !message.dateProposalCategory &&
+    !message.dateInvite;
   const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
   const canEdit = isOwnMessage && isPlainTextMessage && messageAgeMs < 15 * 60 * 1000;
   const canDelete = isOwnMessage && !message.deleted && messageAgeMs < 24 * 60 * 60 * 1000;
@@ -200,6 +329,12 @@ function MessageRow({
         <strong>{message.author}: </strong>
         {message.deleted ? (
           <em className="chat-app__deleted-message">🚫 This message was deleted</em>
+        ) : message.dateInvite ? (
+          <DateInviteCard
+            dateInvite={message.dateInvite}
+            isOwnMessage={isOwnMessage}
+            onRespond={(response) => onRespondDateInvite(message.id, response)}
+          />
         ) : message.location ? (
           <LocationMessage location={message.location} liveUpdate={liveLocationUpdate} />
         ) : message.selfDestructImageUrl ? (
@@ -216,7 +351,11 @@ function MessageRow({
             <audio controls src={message.audioUrl} />
           </div>
         ) : message.imageUrl ? (
-          <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+          message.suspicious ? (
+            <SuspiciousPhoto url={message.imageUrl} />
+          ) : (
+            <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+          )
         ) : message.dateProposalCategory ? (
           <span className="chat-app__date-proposal">{message.text}</span>
         ) : isEditing ? (
@@ -272,6 +411,7 @@ function MessageRow({
             🚫
           </button>
         )}
+        {isPlainTextMessage && !message.deleted && message.text && <TranslateButton text={message.text} />}
         {isOwnMessage && (
           <span
             className={`chat-app__message-status${status === "read" ? " chat-app__message-status--read" : ""}`}
@@ -345,6 +485,12 @@ export default function ChatRoom({
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
+  // Bumble's real AI "unkind message" warning (#143): holds the message
+  // the server flagged so the composer can offer "Edit" (restores the
+  // text) or "Send anyway" (re-emits the same payload with
+  // overrideWarning: true) rather than silently dropping it.
+  const [pendingWarning, setPendingWarning] = useState<{ payload: SendMessagePayload; reason?: string } | null>(null);
+  const lastSendPayloadRef = useRef<SendMessagePayload | null>(null);
   const [reportTarget, setReportTarget] = useState<{ author: string; messageId: string } | null>(null);
   const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
   const [watermarkLabel, setWatermarkLabel] = useState<string | null>(null);
@@ -367,6 +513,7 @@ export default function ChatRoom({
   // WhatsApp/Bumble's real "send live or text location" (#127).
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [showDateProposalPicker, setShowDateProposalPicker] = useState(false);
+  const [showDateInvitePicker, setShowDateInvitePicker] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [liveLocationUpdates, setLiveLocationUpdates] = useState<Record<string, { latitude: number; longitude: number }>>({});
   const liveShareRef = useRef<{ messageId: string; expiresAt: string; intervalId: ReturnType<typeof setInterval> } | null>(null);
@@ -873,6 +1020,19 @@ export default function ChatRoom({
         )
       );
     });
+    // Bumble's real "send a date invitation within chat" (#146): the
+    // recipient's accept/decline lands here for both sides (broadcast to
+    // the room), same "server owns the derived truth, client just
+    // reflects it" shape as message:edited above.
+    socket.on(
+      "date-invite:updated",
+      ({ messageId, dateInvite }: { messageId: string; dateInvite: ChatMessage["dateInvite"] }) => {
+        setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, dateInvite } : m)));
+      }
+    );
+    socket.on("date-invite:rejected", ({ error }: { messageId: string; error: string }) => {
+      setEditError(error);
+    });
     socket.on("message:delete-rejected", ({ error }: { messageId: string; error: string }) => {
       setEditError(error);
     });
@@ -971,6 +1131,14 @@ export default function ChatRoom({
     socket.on("call:rejected", ({ reason }: { reason?: string }) => {
       setCallError(reason ?? "Call failed");
       setCallState("idle");
+    });
+    // Bumble's real AI "unkind message" warning (#143) — a soft nudge, not
+    // a rejection: the server held the message back and is asking the
+    // sender to confirm before it goes through.
+    socket.on("message:warning", (payload: { reason?: string }) => {
+      if (lastSendPayloadRef.current) {
+        setPendingWarning({ payload: lastSendPayloadRef.current, reason: payload?.reason });
+      }
     });
     socket.on("message:rejected", (payload: { reason?: string; error?: string }) => {
       if (payload?.reason === "scam_content") {
@@ -1113,7 +1281,7 @@ export default function ChatRoom({
     stopTyping();
 
     if (socketRef.current?.connected) {
-      socketRef.current.emit("message:send", {
+      const payload: SendMessagePayload = {
         roomId,
         author,
         text: trimmed,
@@ -1122,7 +1290,9 @@ export default function ChatRoom({
         replyToText: replyTarget?.text,
         asGuest: isGuest,
         recipient,
-      });
+      };
+      lastSendPayloadRef.current = payload;
+      socketRef.current.emit("message:send", payload);
       setReplyTarget(null);
       return;
     }
@@ -1134,6 +1304,22 @@ export default function ChatRoom({
       { clientId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, author, text: trimmed, queuedAt: new Date().toISOString() },
     ]);
     setReplyTarget(null);
+  };
+
+  // #143's "Send anyway": re-emits the exact payload the server warned
+  // about, with overrideWarning set so it isn't held back a second time.
+  const sendWarnedMessageAnyway = () => {
+    if (!pendingWarning) return;
+    socketRef.current?.emit("message:send", { ...pendingWarning.payload, overrideWarning: true });
+    setPendingWarning(null);
+  };
+
+  // #143's "Edit": restores the flagged text to the composer instead of
+  // sending it, so the user can revise it.
+  const editWarnedMessage = () => {
+    if (!pendingWarning) return;
+    setText(pendingWarning.payload.text);
+    setPendingWarning(null);
   };
 
   const copyMessageLink = (messageId: string) => {
@@ -1317,6 +1503,22 @@ export default function ChatRoom({
       asGuest: isGuest,
     });
     setShowDateProposalPicker(false);
+  };
+
+  const sendDateInvite = (payload: DateInviteSharePayload) => {
+    if (isGuest) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      dateInvite: payload,
+      asGuest: isGuest,
+    });
+    setShowDateInvitePicker(false);
+  };
+
+  const respondToDateInvite = (messageId: string, response: "accepted" | "declined") => {
+    socketRef.current?.emit("date-invite:respond", { roomId, messageId, author, response });
   };
 
   const STUN_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
@@ -1666,6 +1868,22 @@ export default function ChatRoom({
       {callError && <p style={{ color: "var(--color-danger)" }}>{callError}</p>}
       {editError && <p style={{ color: "var(--color-danger)" }}>{editError}</p>}
       {imageError && <p className="chat-app__status chat-app__status--offline">{imageError}</p>}
+      {pendingWarning && (
+        <div className="chat-app__content-warning" role="alert">
+          <p>
+            {pendingWarning.reason === "harassment"
+              ? "This message may come across as threatening or unkind."
+              : "This message may come across as inappropriate."}{" "}
+            Are you sure you want to send it?
+          </p>
+          <button type="button" onClick={editWarnedMessage}>
+            Edit message
+          </button>
+          <button type="button" onClick={sendWarnedMessageAnyway}>
+            Send anyway
+          </button>
+        </div>
+      )}
       {liveUpdatesEnabled ? (
         <p
           role="status"
@@ -1762,6 +1980,7 @@ export default function ChatRoom({
             onSaveEdit={submitEdit}
             onCancelEdit={cancelEdit}
             onDelete={deleteMessage}
+            onRespondDateInvite={respondToDateInvite}
           />
         ))}
         {queue.map((q) => (
@@ -1877,6 +2096,14 @@ export default function ChatRoom({
         >
           💡
         </button>
+        <button
+          className="chat-app__image-button"
+          onClick={() => setShowDateInvitePicker((v) => !v)}
+          disabled={isGuest || !liveUpdatesEnabled}
+          title="Propose a real date"
+        >
+          📅
+        </button>
         <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}
         </button>
@@ -1892,6 +2119,9 @@ export default function ChatRoom({
           ))}
           <button onClick={() => setShowDateProposalPicker(false)}>✕</button>
         </div>
+      )}
+      {showDateInvitePicker && (
+        <DateInvitePicker onSend={sendDateInvite} onClose={() => setShowDateInvitePicker(false)} />
       )}
       {locationError && <p style={{ color: "var(--color-danger)" }}>{locationError}</p>}
       {blockedAuthors.length > 0 && (

@@ -88,6 +88,14 @@ export class UserStore {
   private usersByAppleId = new Map<string, AuthUser>();
   private usersByFacebookId = new Map<string, AuthUser>();
   private usersByEmail = new Map<string, AuthUser>();
+  private usersById = new Map<string, AuthUser>();
+
+  /** Looks up a user by id alone, for call sites (2FA disable, session
+   * revocation) that only have a verified userId, not the original
+   * sign-in identifier. */
+  getById(id: string): AuthUser | undefined {
+    return this.usersById.get(id);
+  }
 
   findOrCreate(phoneNumber: string): AuthUser {
     const existing = this.usersByPhone.get(phoneNumber);
@@ -100,6 +108,7 @@ export class UserStore {
       createdAt: new Date().toISOString(),
     };
     this.usersByPhone.set(phoneNumber, user);
+    this.usersById.set(user.id, user);
     return user;
   }
 
@@ -116,6 +125,7 @@ export class UserStore {
       createdAt: new Date().toISOString(),
     };
     this.usersByGoogleId.set(profile.googleId, user);
+    this.usersById.set(user.id, user);
     return user;
   }
 
@@ -131,6 +141,7 @@ export class UserStore {
       createdAt: new Date().toISOString(),
     };
     this.usersByAppleId.set(profile.appleId, user);
+    this.usersById.set(user.id, user);
     return user;
   }
 
@@ -147,6 +158,7 @@ export class UserStore {
       createdAt: new Date().toISOString(),
     };
     this.usersByFacebookId.set(profile.facebookId, user);
+    this.usersById.set(user.id, user);
     return user;
   }
 
@@ -164,6 +176,7 @@ export class UserStore {
       createdAt: new Date().toISOString(),
     };
     this.usersByEmail.set(email, user);
+    this.usersById.set(user.id, user);
     return user;
   }
 }

@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import { ChatMessage, DEFAULT_ROOM_ID, ONBOARDING_STEPS, OnboardingStep, SendMessagePayload } from "@chatapp/shared";
 import { describeUserAgent, normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
 import { TwoFactorService } from "./twoFactor";
+import { SmsSecurityAlertStore } from "./smsSecurityAlerts";
 import { WebAuthnService, WebAuthnStore } from "./webauthn";
 import { OnboardingStore } from "./onboarding";
 import { GoogleAuthService } from "./googleAuth";
@@ -51,8 +52,10 @@ import { DuplicateAccountStore } from "./duplicateAccounts";
 import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
 import { DATE_PROPOSAL_LABELS, isDateProposalCategory } from "./dateProposals";
+import { createDateInvite, respondToDateInvite } from "./dateInvites";
 import { RecaptchaService } from "./recaptcha";
 import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetector";
+import { scanForInappropriateContent, CONTENT_WARNING_REPORTER_AUTHOR } from "./contentWarning";
 import { PhotoAlbumStore } from "./photoAlbums";
 import { IntroVideoStore } from "./introVideo";
 import { VoiceIntroStore } from "./voiceIntro";
@@ -70,6 +73,7 @@ import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
+import { TranslationService } from "./translation";
 import { SpotifyInfoStore } from "./spotifyInfo";
 import { InstagramService } from "./instagramAuth";
 import { InstagramInfoStore } from "./instagramInfo";
@@ -90,6 +94,7 @@ import { ProfileVisitsStore } from "./profileVisits";
 import { ProfileBoostStore } from "./profileBoost";
 import { PeakHoursStore } from "./peakHours";
 import { scanCandidateForFakeProfile } from "./fakeProfileDetector";
+import { isSenderPhotoSuspicious } from "./photoWarning";
 import { CrossedPathsStore } from "./crossedPaths";
 import { SquadStore } from "./squads";
 import { PresenceStore } from "./presence";
@@ -125,6 +130,7 @@ export function createApp(deps?: {
   spotifyService?: SpotifyService;
   giphyService?: GiphyService;
   instagramService?: InstagramService;
+  translationService?: TranslationService;
 }): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
@@ -133,6 +139,7 @@ export function createApp(deps?: {
   otpService: OtpService;
   recoveryCodeService: RecoveryCodeService;
   twoFactorService: TwoFactorService;
+  smsSecurityAlertStore: SmsSecurityAlertStore;
   webAuthnService: WebAuthnService;
   onboardingStore: OnboardingStore;
   verificationStore: VerificationStore;
@@ -219,6 +226,7 @@ export function createApp(deps?: {
   const userStore = new UserStore();
   const tokenService = new TokenService();
   const twoFactorService = new TwoFactorService();
+  const smsSecurityAlertStore = new SmsSecurityAlertStore();
   const webAuthnService = new WebAuthnService({
     rpId: process.env.WEBAUTHN_RP_ID ?? "localhost",
     origin: process.env.WEBAUTHN_ORIGIN ?? "http://localhost:3000",
@@ -300,6 +308,7 @@ export function createApp(deps?: {
   const spotifyService = deps?.spotifyService ?? new SpotifyService();
   const giphyService = deps?.giphyService ?? new GiphyService();
   const instagramService = deps?.instagramService ?? new InstagramService();
+  const translationService = deps?.translationService ?? new TranslationService();
 
   const accountDeletion = new AccountDeletionCoordinator();
   accountDeletion.register((author) => deleteMessagesForAuthor(messagesByRoom, author));
@@ -954,6 +963,38 @@ export function createApp(deps?: {
       return;
     }
     res.json({ results });
+  });
+
+  // Bumble's real "See translation" (#145) via an actual Google Cloud
+  // Translation API integration — the server proxies the request so
+  // TRANSLATE_API_KEY never reaches the browser, same "server-only
+  // credential" shape as the Giphy search above. On-demand per message
+  // (the client sends the text it wants translated and its own current
+  // locale as the target — see LocaleProvider.tsx's "en"/"fa" toggle from
+  // #9), not a background bulk-translate of the whole conversation.
+  app.post("/api/translate", async (req, res) => {
+    if (!translationService.isConfigured()) {
+      res.status(503).json({ error: "Translation is not configured on this server" });
+      return;
+    }
+
+    const text = typeof req.body?.text === "string" ? req.body.text : "";
+    const targetLang = typeof req.body?.targetLang === "string" ? req.body.targetLang.trim() : "";
+    if (!text.trim()) {
+      res.status(400).json({ error: "text is required" });
+      return;
+    }
+    if (!targetLang) {
+      res.status(400).json({ error: "targetLang is required" });
+      return;
+    }
+
+    const translated = await translationService.translate(text, targetLang);
+    if (translated === undefined) {
+      res.status(502).json({ error: "Failed to translate this message" });
+      return;
+    }
+    res.json({ translated });
   });
 
   // Connect Instagram to show latest posts (#78), same shape as #77's
@@ -1801,6 +1842,27 @@ export function createApp(deps?: {
     res.json({ matches });
   });
 
+  // Bumble's real "Unmatch" (#141), unmatching and deleting the chat in a
+  // single call rather than two separate steps. Clears this pair's pin
+  // (#138) and archive (#139) list-state on both sides too, so the match
+  // disappears from both viewers' lists immediately rather than lingering
+  // as a pinned/archived ghost entry — see swipes.ts's unmatch doc comment
+  // for why there's no separate message thread to purge in this app's
+  // current single-shared-room scope.
+  app.delete("/api/matches/:author/:candidate", (req, res) => {
+    const { author, candidate } = req.params;
+    const result = swipeStore.unmatch(author, candidate);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    pinnedChatsStore.unpin(author, candidate);
+    pinnedChatsStore.unpin(candidate, author);
+    archivedChatsStore.unarchive(author, candidate);
+    archivedChatsStore.unarchive(candidate, author);
+    res.json({ success: true });
+  });
+
   // Bumble's real "24-hour timer to respond to the first message before
   // the Match expires" (#136) — lets the client render a live countdown
   // rather than only finding out a match is gone once it disappears.
@@ -2482,7 +2544,9 @@ export function createApp(deps?: {
 
     const user = userStore.findOrCreateByGoogle(profile);
     duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
-    const tokens = tokenService.issueTokens(user.id, describeUserAgent(req.get("user-agent")));
+    const deviceLabel = describeUserAgent(req.get("user-agent"));
+    const tokens = tokenService.issueTokens(user.id, deviceLabel);
+    smsSecurityAlertStore.notify(user.id, user.phoneNumber, "login", `New sign-in to your ChatApp account from ${deviceLabel}.`);
     res.json({ user, tokens });
   });
 
@@ -2509,7 +2573,9 @@ export function createApp(deps?: {
 
     const user = userStore.findOrCreateByApple(profile);
     duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
-    const tokens = tokenService.issueTokens(user.id, describeUserAgent(req.get("user-agent")));
+    const deviceLabel = describeUserAgent(req.get("user-agent"));
+    const tokens = tokenService.issueTokens(user.id, deviceLabel);
+    smsSecurityAlertStore.notify(user.id, user.phoneNumber, "login", `New sign-in to your ChatApp account from ${deviceLabel}.`);
     res.json({ user, tokens });
   });
 
@@ -2536,7 +2602,9 @@ export function createApp(deps?: {
 
     const user = userStore.findOrCreateByFacebook(profile);
     duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
-    const tokens = tokenService.issueTokens(user.id, describeUserAgent(req.get("user-agent")));
+    const deviceLabel = describeUserAgent(req.get("user-agent"));
+    const tokens = tokenService.issueTokens(user.id, deviceLabel);
+    smsSecurityAlertStore.notify(user.id, user.phoneNumber, "login", `New sign-in to your ChatApp account from ${deviceLabel}.`);
     res.json({ user, tokens });
   });
 
@@ -2579,7 +2647,9 @@ export function createApp(deps?: {
     }
 
     const user = userStore.findOrCreateByEmail(email);
-    const tokens = tokenService.issueTokens(user.id, describeUserAgent(req.get("user-agent")));
+    const deviceLabel = describeUserAgent(req.get("user-agent"));
+    const tokens = tokenService.issueTokens(user.id, deviceLabel);
+    smsSecurityAlertStore.notify(user.id, user.phoneNumber, "login", `New sign-in to your ChatApp account from ${deviceLabel}.`);
     res.status(200).json({ user, tokens });
   });
 
@@ -2646,6 +2716,12 @@ export function createApp(deps?: {
     const userId = requireAuth(req, res);
     if (!userId) return;
     twoFactorService.disable(userId);
+    smsSecurityAlertStore.notify(
+      userId,
+      userStore.getById(userId)?.phoneNumber,
+      "accountSecurity",
+      "Two-factor authentication was turned off on your ChatApp account."
+    );
     res.json({ enabled: false });
   });
 
@@ -2706,7 +2782,14 @@ export function createApp(deps?: {
       res.status(401).json({ error: "Biometric verification failed" });
       return;
     }
-    const tokens = tokenService.issueTokens(userId, describeUserAgent(req.get("user-agent")));
+    const deviceLabel = describeUserAgent(req.get("user-agent"));
+    const tokens = tokenService.issueTokens(userId, deviceLabel);
+    smsSecurityAlertStore.notify(
+      userId,
+      userStore.getById(userId)?.phoneNumber,
+      "login",
+      `New sign-in to your ChatApp account from ${deviceLabel}.`
+    );
     res.json({ tokens });
   });
 
@@ -2764,7 +2847,9 @@ export function createApp(deps?: {
 
     const user = userStore.findOrCreate(phoneNumber);
     duplicateAccountStore.recordSignIn(user.id, req.ip, req.body?.deviceFingerprint);
-    const tokens = tokenService.issueTokens(user.id, describeUserAgent(req.get("user-agent")));
+    const deviceLabel = describeUserAgent(req.get("user-agent"));
+    const tokens = tokenService.issueTokens(user.id, deviceLabel);
+    smsSecurityAlertStore.notify(user.id, user.phoneNumber, "login", `New sign-in to your ChatApp account from ${deviceLabel}.`);
     res.status(200).json({ user, tokens });
   });
 
@@ -2833,6 +2918,14 @@ export function createApp(deps?: {
     const auth = requireAuthWithSession(req, res);
     if (!auth) return;
     const revokedCount = tokenService.revokeOtherSessions(auth.userId, auth.sessionId);
+    if (revokedCount > 0) {
+      smsSecurityAlertStore.notify(
+        auth.userId,
+        userStore.getById(auth.userId)?.phoneNumber,
+        "accountSecurity",
+        `You were logged out of ${revokedCount} other device${revokedCount === 1 ? "" : "s"}.`
+      );
+    }
     res.json({ revokedCount });
   });
 
@@ -2851,6 +2944,35 @@ export function createApp(deps?: {
     res.status(204).send();
   });
 
+  // SMS security alerts (#158): Bumble/Tinder-style texts on login and
+  // account-security-lowering events (2FA disabled, other devices logged
+  // out — see the trigger points above), gated behind requireAuth same as
+  // 2FA management since this is the caller's own notification settings.
+  // Delivery itself is stubbed (see smsSecurityAlerts.ts) — no real SMS
+  // provider credentials exist in this environment.
+  app.get("/api/sms-security-alerts/preferences", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    res.json({ preferences: smsSecurityAlertStore.getPreferences(userId) });
+  });
+
+  app.put("/api/sms-security-alerts/preferences", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    const result = smsSecurityAlertStore.setPreference(userId, req.body?.category, req.body?.enabled);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ preferences: smsSecurityAlertStore.getPreferences(userId) });
+  });
+
+  app.get("/api/sms-security-alerts/history", (req, res) => {
+    const userId = requireAuth(req, res);
+    if (!userId) return;
+    res.json({ alerts: smsSecurityAlertStore.getSentAlerts(userId) });
+  });
+
   return {
     app,
     messagesByRoom,
@@ -2859,6 +2981,7 @@ export function createApp(deps?: {
     otpService,
     recoveryCodeService,
     twoFactorService,
+    smsSecurityAlertStore,
     webAuthnService,
     onboardingStore,
     verificationStore,
@@ -2987,6 +3110,18 @@ export async function createChatServer() {
         return;
       }
 
+      // Bumble's real AI "unkind message" warning (#143): unlike the scam
+      // check above (a hard block) or spam below (silent auto-report),
+      // this is a soft nudge — the sender gets a chance to edit or confirm
+      // "send anyway" rather than the message being silently rejected or
+      // silently let through. `overrideWarning` is only ever set by the
+      // client's own confirm action, never by the initial send attempt.
+      const contentWarning = scanForInappropriateContent(payload.text ?? "");
+      if (contentWarning.flagged && !payload.overrideWarning) {
+        socket.emit("message:warning", { reason: contentWarning.reason });
+        return;
+      }
+
       const roomId = payload.roomId || DEFAULT_ROOM_ID;
 
       // Both of these are only checked when the client tells us who this
@@ -3039,6 +3174,18 @@ export async function createChatServer() {
         }
       }
 
+      // Bumble's real "Private Detector" AI photo warning (#144): flags a
+      // plain image message (not #123's already tap-gated
+      // selfDestructImageUrl) from a sender with enough reports to be a
+      // real safety signal — this app's honest stand-in for a trained
+      // NSFW-image classifier it has no vision model/API key for, same
+      // "reuse an existing signal instead of fabricating one" precedent as
+      // #107's fakeProfileDetector. The client blurs it behind a
+      // tap-to-view warning rather than rendering it immediately.
+      if (message.imageUrl && isSenderPhotoSuspicious(reportStore.countFor(message.author))) {
+        message.suspicious = true;
+      }
+
       if (payload.recipient) {
         matchExpiryStore.recordFirstMessage(payload.author, payload.recipient);
       }
@@ -3069,6 +3216,20 @@ export async function createChatServer() {
         };
       }
 
+      // Bumble's real "send a date invitation within chat" (#146) —
+      // validated server-side (see dateInvites.ts) since the client-sent
+      // fields are just a proposal; the authoritative "pending" status is
+      // set here, the same "server owns the derived truth" stance as the
+      // live-location expiresAt above.
+      if (payload.dateInvite) {
+        const inviteResult = createDateInvite(payload.dateInvite);
+        if (!inviteResult.success) {
+          socket.emit("message:rejected", { reason: "invalid_date_invite", error: inviteResult.error });
+          return;
+        }
+        message.dateInvite = inviteResult.dateInvite;
+      }
+
       // Report spam/promotional content to the monitoring system (#58):
       // unlike the scam check above, this doesn't block the send — Tinder's
       // real behavior is to route it to moderation, not break the
@@ -3080,6 +3241,21 @@ export async function createChatServer() {
           messageId: message.id,
           reason: "spam",
           details: `Auto-flagged by spam detector (${spamScan.reason})`,
+        });
+      }
+
+      // A sender who confirms "send anyway" past #143's warning still gets
+      // auto-flagged to moderation (#41's ReportStore) rather than the
+      // override silently making the flag disappear — Bumble's real policy
+      // reviews repeated overrides even though the individual message
+      // isn't blocked, same "warn, don't silently allow" precedent as
+      // #58's spam auto-report above.
+      if (contentWarning.flagged && payload.overrideWarning) {
+        reportStore.submit(CONTENT_WARNING_REPORTER_AUTHOR, {
+          reportedAuthor: message.author,
+          messageId: message.id,
+          reason: contentWarning.reason === "harassment" ? "harassment" : "inappropriateContent",
+          details: `Sent after an inappropriate-content warning (${contentWarning.reason}) was overridden`,
         });
       }
 
@@ -3154,6 +3330,36 @@ export async function createChatServer() {
       message.edited = true;
       io.to(roomId).emit("message:edited", { messageId, text: message.text, edited: true });
     });
+
+    // Bumble's real "send a date invitation within chat" (#146) — the
+    // recipient's accept/decline, mutating the invite in place (see
+    // dateInvites.ts's respondToDateInvite for the sender-can't-respond/
+    // already-decided rules) the same way message:edit mutates its
+    // message directly above.
+    socket.on(
+      "date-invite:respond",
+      (payload: { roomId?: string; messageId?: string; author?: string; response?: unknown }) => {
+        const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+        const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
+        const author = typeof payload?.author === "string" ? payload.author : "";
+        if (!roomId || !messageId || !author) return;
+
+        const message = messagesByRoom.get(roomId)?.find((m) => m.id === messageId);
+        if (!message?.dateInvite) {
+          socket.emit("date-invite:rejected", { messageId, error: "Date invitation not found" });
+          return;
+        }
+
+        const result = respondToDateInvite(message.dateInvite, message.author, author, payload?.response);
+        if (!result.success) {
+          socket.emit("date-invite:rejected", { messageId, error: result.error });
+          return;
+        }
+
+        message.dateInvite = result.dateInvite;
+        io.to(roomId).emit("date-invite:updated", { messageId, dateInvite: message.dateInvite });
+      }
+    );
 
     // WhatsApp/Bumble's real "Delete for Everyone" (#134) — see
     // messageDeletion.ts for the sender-only/time-window rule. Unlike
