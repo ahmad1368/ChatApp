@@ -324,6 +324,19 @@ body {
   color: var(--color-muted);
 }
 
+.chat-app__suspicious-photo-reveal {
+  display: block;
+  margin-top: 4px;
+  padding: 12px;
+  background: var(--color-panel);
+  color: var(--color-danger);
+  border: 1px dashed var(--color-danger);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: inherit;
+  text-align: left;
+}
+
 .chat-app__gif-picker {
   border: 1px solid var(--color-border);
   border-radius: 8px;
