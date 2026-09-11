@@ -4,13 +4,23 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
-import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import {
+  ChatMessage,
+  DEFAULT_ROOM_ID,
+  DATE_PROPOSAL_CATEGORIES,
+  DATE_PROPOSAL_LABELS,
+  DateProposalCategory,
+  SendMessagePayload,
+  EncryptedPayload,
+} from "@chatapp/shared";
+import { getOrCreateKeyPair, exportPublicKeyJwk, deriveSharedKey, encryptText, decryptText } from "./e2ee";
 import { loadDataSaverPreference, saveDataSaverPreference } from "./dataSaverStore";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { compressImage, blobToBase64 } from "./imageCompression";
 import { computeWaveform } from "./voiceNoteWaveform";
 import GifPicker from "./GifPicker";
 import LocationPicker, { LocationSharePayload } from "./LocationPicker";
+import DateInvitePicker, { DateInviteSharePayload } from "./DateInvitePicker";
 import { applyBeautyFilter, applyBackgroundBlur } from "./beautyFilter";
 import IcebreakerSuggestions from "./IcebreakerSuggestions";
 import LocationMessage from "./LocationMessage";
@@ -126,6 +136,203 @@ function SelfDestructPhoto({ url, viewer }: { url: string; viewer: string }) {
   );
 }
 
+/**
+ * Feeld's real optional end-to-end encrypted chat (#149): decrypts
+ * client-side with the already-derived shared AES key (see e2ee.ts) —
+ * there's no server endpoint to ask for plaintext, because the server
+ * never has it. Shown as a locked placeholder while no key is available
+ * yet (e.g. this browser reloaded and hasn't re-derived the shared key)
+ * or if decryption fails (wrong/rotated key).
+ */
+function EncryptedMessage({ payload, sharedKey }: { payload: EncryptedPayload; sharedKey: CryptoKey | null }) {
+  const [plaintext, setPlaintext] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setPlaintext(null);
+    setFailed(false);
+    if (!sharedKey) return;
+    let cancelled = false;
+    decryptText(sharedKey, payload)
+      .then((text) => {
+        if (!cancelled) setPlaintext(text);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload.ciphertext, payload.iv, sharedKey]);
+
+  if (plaintext !== null) {
+    return <span className="chat-app__encrypted-message">🔒 {plaintext}</span>;
+  }
+  return (
+    <em className="chat-app__encrypted-message chat-app__encrypted-message--locked">
+      {failed ? "🔒 Couldn't decrypt this message" : "🔒 Encrypted message"}
+    </em>
+  );
+}
+
+/**
+ * Snapchat/Bumble's real "play a mini-game within chat to break the ice"
+ * (#148): a genuinely playable Tic-Tac-Toe board attached to the message
+ * that started the game (see server.ts's game:move for the authoritative
+ * turn/win validation this only mirrors for the UI).
+ */
+function TicTacToeBoard({
+  game,
+  viewer,
+  onMove,
+}: {
+  game: NonNullable<ChatMessage["game"]>;
+  viewer: string;
+  onMove: (cellIndex: number) => void;
+}) {
+  const isViewerTurn = (game.turn === "X" ? game.playerX : game.playerO) === viewer;
+  return (
+    <div className="chat-app__tic-tac-toe">
+      <div className="chat-app__tic-tac-toe-grid">
+        {game.board.map((cell, i) => (
+          <button
+            key={i}
+            className="chat-app__tic-tac-toe-cell"
+            onClick={() => onMove(i)}
+            disabled={Boolean(cell) || Boolean(game.winner) || !isViewerTurn}
+          >
+            {cell ?? ""}
+          </button>
+        ))}
+      </div>
+      <p className="chat-app__tic-tac-toe-status">
+        {game.winner === "draw"
+          ? "It's a draw!"
+          : game.winner
+          ? `${game.winner} wins!`
+          : isViewerTurn
+          ? "Your turn"
+          : "Waiting for opponent…"}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Bumble's real "send a date invitation within chat" (#146): a card
+ * instead of plain text, so the recipient can act on it (Accept/Decline)
+ * rather than just read it. The sender sees their own proposal's status
+ * update live once the recipient responds (see ChatRoom.tsx's
+ * date-invite:updated listener) — no action for them once sent.
+ */
+function DateInviteCard({
+  dateInvite,
+  isOwnMessage,
+  onRespond,
+}: {
+  dateInvite: NonNullable<ChatMessage["dateInvite"]>;
+  isOwnMessage: boolean;
+  onRespond: (response: "accepted" | "declined") => void;
+}) {
+  const proposedAt = new Date(dateInvite.proposedAt);
+  return (
+    <div className="chat-app__date-invite">
+      <p className="chat-app__date-invite-title">📅 Date invitation</p>
+      <p>{dateInvite.location}</p>
+      <p>{proposedAt.toLocaleString()}</p>
+      {dateInvite.note && <p className="chat-app__date-invite-note">{dateInvite.note}</p>}
+      {dateInvite.status === "pending" && !isOwnMessage && (
+        <div className="chat-app__date-invite-actions">
+          <button onClick={() => onRespond("accepted")}>Accept</button>
+          <button onClick={() => onRespond("declined")}>Decline</button>
+        </div>
+      )}
+      {dateInvite.status === "pending" && isOwnMessage && (
+        <p className="chat-app__date-invite-status">Waiting for a response…</p>
+      )}
+      {dateInvite.status === "accepted" && <p className="chat-app__date-invite-status">✅ Accepted</p>}
+      {dateInvite.status === "declined" && <p className="chat-app__date-invite-status">❌ Declined</p>}
+    </div>
+  );
+}
+
+/**
+ * Bumble's real "See translation" (#145): on-demand per message, into the
+ * viewer's own current app language (see LocaleProvider.tsx's "en"/"fa"
+ * toggle from #9) rather than a background bulk-translate of the whole
+ * conversation — the server proxies a real Google Cloud Translation API
+ * call (translation.ts), so this is a network round trip, not instant.
+ */
+function TranslateButton({ text }: { text: string }) {
+  const { locale } = useLocale();
+  const [translated, setTranslated] = useState<string | null>(null);
+  const [shown, setShown] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = async () => {
+    if (shown) {
+      setShown(false);
+      return;
+    }
+    if (translated) {
+      setShown(true);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/translate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, targetLang: locale }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof body?.error === "string" ? body.error : "Translation failed");
+        return;
+      }
+      setTranslated(body.translated);
+      setShown(true);
+    } catch {
+      setError("Translation failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <button className="chat-app__report-button" onClick={toggle} title="Translate this message" disabled={loading}>
+        🌐
+      </button>
+      {loading && <p className="chat-app__translation">Translating…</p>}
+      {shown && translated && <p className="chat-app__translation">{translated}</p>}
+      {error && <p className="chat-app__translation chat-app__translation--error">{error}</p>}
+    </>
+  );
+}
+
+/**
+ * Bumble's real "Private Detector" AI photo warning (#144): unlike
+ * #123's SelfDestructPhoto (destroyed after viewing), this photo is
+ * still permanently viewable — it's just blurred behind an explicit tap
+ * so the recipient isn't ambushed by it the moment the message arrives.
+ */
+function SuspiciousPhoto({ url }: { url: string }) {
+  const [revealed, setRevealed] = useState(false);
+
+  if (revealed) {
+    return <img src={url} alt="Shared" loading="lazy" className="chat-app__shared-image" />;
+  }
+  return (
+    <button className="chat-app__suspicious-photo-reveal" onClick={() => setRevealed(true)}>
+      ⚠️ This photo was flagged as potentially inappropriate — tap to view
+    </button>
+  );
+}
+
 function MessageRow({
   message,
   highlighted,
@@ -145,6 +352,9 @@ function MessageRow({
   onSaveEdit,
   onCancelEdit,
   onDelete,
+  sharedKey,
+  onGameMove,
+  onRespondDateInvite,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -164,11 +374,22 @@ function MessageRow({
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDelete: (messageId: string) => void;
+  sharedKey: CryptoKey | null;
+  onGameMove: (messageId: string, cellIndex: number) => void;
+  onRespondDateInvite: (messageId: string, response: "accepted" | "declined") => void;
 }) {
   // Mirrors messageEditing.ts/messageDeletion.ts's rules loosely for the
   // UI — the server is the actual source of truth and re-checks all of
   // this on message:edit/message:delete.
-  const isPlainTextMessage = !message.location && !message.selfDestructImageUrl && !message.audioUrl && !message.imageUrl;
+  const isPlainTextMessage =
+    !message.location &&
+    !message.selfDestructImageUrl &&
+    !message.audioUrl &&
+    !message.imageUrl &&
+    !message.encrypted &&
+    !message.game &&
+    !message.dateProposalCategory &&
+    !message.dateInvite;
   const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
   const canEdit = isOwnMessage && isPlainTextMessage && messageAgeMs < 15 * 60 * 1000;
   const canDelete = isOwnMessage && !message.deleted && messageAgeMs < 24 * 60 * 60 * 1000;
@@ -199,6 +420,16 @@ function MessageRow({
         <strong>{message.author}: </strong>
         {message.deleted ? (
           <em className="chat-app__deleted-message">🚫 This message was deleted</em>
+        ) : message.encrypted ? (
+          <EncryptedMessage payload={message.encrypted} sharedKey={sharedKey} />
+        ) : message.game ? (
+          <TicTacToeBoard game={message.game} viewer={viewer} onMove={(cellIndex) => onGameMove(message.id, cellIndex)} />
+        ) : message.dateInvite ? (
+          <DateInviteCard
+            dateInvite={message.dateInvite}
+            isOwnMessage={isOwnMessage}
+            onRespond={(response) => onRespondDateInvite(message.id, response)}
+          />
         ) : message.location ? (
           <LocationMessage location={message.location} liveUpdate={liveLocationUpdate} />
         ) : message.selfDestructImageUrl ? (
@@ -215,7 +446,13 @@ function MessageRow({
             <audio controls src={message.audioUrl} />
           </div>
         ) : message.imageUrl ? (
-          <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+          message.suspicious ? (
+            <SuspiciousPhoto url={message.imageUrl} />
+          ) : (
+            <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+          )
+        ) : message.dateProposalCategory ? (
+          <span className="chat-app__date-proposal">{message.text}</span>
         ) : isEditing ? (
           <span className="chat-app__edit-box">
             <input
@@ -269,6 +506,7 @@ function MessageRow({
             🚫
           </button>
         )}
+        {isPlainTextMessage && !message.deleted && message.text && <TranslateButton text={message.text} />}
         {isOwnMessage && (
           <span
             className={`chat-app__message-status${status === "read" ? " chat-app__message-status--read" : ""}`}
@@ -342,6 +580,12 @@ export default function ChatRoom({
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
+  // Bumble's real AI "unkind message" warning (#143): holds the message
+  // the server flagged so the composer can offer "Edit" (restores the
+  // text) or "Send anyway" (re-emits the same payload with
+  // overrideWarning: true) rather than silently dropping it.
+  const [pendingWarning, setPendingWarning] = useState<{ payload: SendMessagePayload; reason?: string } | null>(null);
+  const lastSendPayloadRef = useRef<SendMessagePayload | null>(null);
   const [reportTarget, setReportTarget] = useState<{ author: string; messageId: string } | null>(null);
   const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
   const [watermarkLabel, setWatermarkLabel] = useState<string | null>(null);
@@ -363,6 +607,15 @@ export default function ChatRoom({
   const [showGifPicker, setShowGifPicker] = useState(false);
   // WhatsApp/Bumble's real "send live or text location" (#127).
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  // Feeld's real optional end-to-end encrypted chat (#149) — see e2ee.ts.
+  // `sharedKey` lives in state (not a ref) so MessageRow's decryption
+  // effect re-runs once it's derived, not just on the next unrelated render.
+  const [e2eeEnabled, setE2eeEnabled] = useState(false);
+  const [e2eeBusy, setE2eeBusy] = useState(false);
+  const [e2eeError, setE2eeError] = useState<string | null>(null);
+  const [sharedKey, setSharedKey] = useState<CryptoKey | null>(null);
+  const [showDateProposalPicker, setShowDateProposalPicker] = useState(false);
+  const [showDateInvitePicker, setShowDateInvitePicker] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [liveLocationUpdates, setLiveLocationUpdates] = useState<Record<string, { latitude: number; longitude: number }>>({});
   const liveShareRef = useRef<{ messageId: string; expiresAt: string; intervalId: ReturnType<typeof setInterval> } | null>(null);
@@ -878,6 +1131,15 @@ export default function ChatRoom({
     socket.on("message:edit-rejected", ({ error }: { messageId: string; error: string }) => {
       setEditError(error);
     });
+    // Snapchat/Bumble's real "play a mini-game within chat" (#148) — each
+    // move lands here for both players, same "server owns the derived
+    // truth, client just reflects it" shape as message:edited above.
+    socket.on("game:updated", ({ messageId, game }: { messageId: string; game: ChatMessage["game"] }) => {
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, game } : m)));
+    });
+    socket.on("game:rejected", ({ error }: { messageId: string; error: string }) => {
+      setEditError(error);
+    });
     // WhatsApp/Bumble's real "Delete for Everyone" (#134).
     socket.on("message:deleted", ({ messageId }: { messageId: string }) => {
       setMessages((prev) =>
@@ -887,6 +1149,19 @@ export default function ChatRoom({
             : m
         )
       );
+    });
+    // Bumble's real "send a date invitation within chat" (#146): the
+    // recipient's accept/decline lands here for both sides (broadcast to
+    // the room), same "server owns the derived truth, client just
+    // reflects it" shape as message:edited above.
+    socket.on(
+      "date-invite:updated",
+      ({ messageId, dateInvite }: { messageId: string; dateInvite: ChatMessage["dateInvite"] }) => {
+        setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, dateInvite } : m)));
+      }
+    );
+    socket.on("date-invite:rejected", ({ error }: { messageId: string; error: string }) => {
+      setEditError(error);
     });
     socket.on("message:delete-rejected", ({ error }: { messageId: string; error: string }) => {
       setEditError(error);
@@ -986,6 +1261,14 @@ export default function ChatRoom({
     socket.on("call:rejected", ({ reason }: { reason?: string }) => {
       setCallError(reason ?? "Call failed");
       setCallState("idle");
+    });
+    // Bumble's real AI "unkind message" warning (#143) — a soft nudge, not
+    // a rejection: the server held the message back and is asking the
+    // sender to confirm before it goes through.
+    socket.on("message:warning", (payload: { reason?: string }) => {
+      if (lastSendPayloadRef.current) {
+        setPendingWarning({ payload: lastSendPayloadRef.current, reason: payload?.reason });
+      }
     });
     socket.on("message:rejected", (payload: { reason?: string; error?: string }) => {
       if (payload?.reason === "scam_content") {
@@ -1138,10 +1421,39 @@ export default function ChatRoom({
     draftSaveTimerRef.current = setTimeout(() => saveDraft(value), DRAFT_SAVE_DELAY_MS);
   };
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (isGuest) return;
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    // Feeld's real optional E2EE (#149): an encrypted send needs the live
+    // socket round trip, not the offline queue below — that queue only
+    // knows how to hold plaintext, and silently falling back to sending
+    // this message unencrypted once reconnected would break the very
+    // guarantee the user turned encryption on for.
+    if (e2eeEnabled && sharedKey) {
+      if (!socketRef.current?.connected) {
+        setE2eeError("Can't send an encrypted message while offline — reconnect and try again.");
+        return;
+      }
+      setText("");
+      stopTyping();
+      const encrypted = await encryptText(sharedKey, trimmed);
+      socketRef.current.emit("message:send", {
+        roomId,
+        author,
+        text: "",
+        encrypted,
+        replyToId: replyTarget?.id,
+        replyToAuthor: replyTarget?.author,
+        replyToText: replyTarget?.text,
+        asGuest: isGuest,
+        recipient,
+      });
+      setReplyTarget(null);
+      return;
+    }
+
     setText("");
     stopTyping();
     // #150's saved draft is spent the moment it's actually sent — cancel
@@ -1154,7 +1466,7 @@ export default function ChatRoom({
     saveDraft("");
 
     if (socketRef.current?.connected) {
-      socketRef.current.emit("message:send", {
+      const payload: SendMessagePayload = {
         roomId,
         author,
         text: trimmed,
@@ -1163,7 +1475,9 @@ export default function ChatRoom({
         replyToText: replyTarget?.text,
         asGuest: isGuest,
         recipient,
-      });
+      };
+      lastSendPayloadRef.current = payload;
+      socketRef.current.emit("message:send", payload);
       setReplyTarget(null);
       return;
     }
@@ -1175,6 +1489,22 @@ export default function ChatRoom({
       { clientId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, author, text: trimmed, queuedAt: new Date().toISOString() },
     ]);
     setReplyTarget(null);
+  };
+
+  // #143's "Send anyway": re-emits the exact payload the server warned
+  // about, with overrideWarning set so it isn't held back a second time.
+  const sendWarnedMessageAnyway = () => {
+    if (!pendingWarning) return;
+    socketRef.current?.emit("message:send", { ...pendingWarning.payload, overrideWarning: true });
+    setPendingWarning(null);
+  };
+
+  // #143's "Edit": restores the flagged text to the composer instead of
+  // sending it, so the user can revise it.
+  const editWarnedMessage = () => {
+    if (!pendingWarning) return;
+    setText(pendingWarning.payload.text);
+    setPendingWarning(null);
   };
 
   const copyMessageLink = (messageId: string) => {
@@ -1341,6 +1671,96 @@ export default function ChatRoom({
       asGuest: isGuest,
     });
     setShowLocationPicker(false);
+  };
+
+  // Feeld's real optional end-to-end encrypted chat (#149) — only
+  // offered against a known `recipient` (a fresh 1:1 match): a shared
+  // AES key needs a known second party to derive it with, same reasoning
+  // as #135's gender rule and #148's game only applying with a recipient.
+  const enableE2EE = async () => {
+    if (!recipient) return;
+    setE2eeBusy(true);
+    setE2eeError(null);
+    try {
+      const keyPair = await getOrCreateKeyPair(author);
+      const ownPublicKeyJwk = await exportPublicKeyJwk(keyPair.publicKey);
+      await fetch(`${API_URL}/api/e2ee/public-key/${encodeURIComponent(author)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicKeyJwk: ownPublicKeyJwk }),
+      });
+
+      const res = await fetch(`${API_URL}/api/e2ee/public-key/${encodeURIComponent(recipient)}`);
+      if (!res.ok) {
+        setE2eeError("Your match hasn't turned on encryption yet — ask them to enable it too.");
+        return;
+      }
+      const { publicKeyJwk: peerPublicKeyJwk } = await res.json();
+      const derivedKey = await deriveSharedKey(keyPair.privateKey, peerPublicKeyJwk);
+      setSharedKey(derivedKey);
+      setE2eeEnabled(true);
+    } catch {
+      setE2eeError("Failed to set up encryption — please try again.");
+    } finally {
+      setE2eeBusy(false);
+    }
+  };
+
+  const disableE2EE = () => {
+    setE2eeEnabled(false);
+    setSharedKey(null);
+  };
+
+  // Snapchat/Bumble's real "play a mini-game within chat" (#148) — only
+  // offered against a known `recipient` (a fresh 1:1 match), same as the
+  // server-side requirement in server.ts's message:send.
+  const startGame = () => {
+    if (isGuest || !recipient) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      startGame: true,
+      recipient,
+      asGuest: isGuest,
+    });
+  };
+
+  const makeGameMove = (messageId: string, cellIndex: number) => {
+    socketRef.current?.emit("game:move", { roomId, messageId, author, cellIndex });
+  };
+
+  // Bumble's real "suggest a type of date" quick-reply chip (#147) — a
+  // lighter-weight sibling to a full date invitation: no location/time
+  // form, just an instant themed conversation starter. The server fills
+  // in the message text from the category's own label (see
+  // dateProposals.ts) if none is sent.
+  const sendDateProposal = (category: DateProposalCategory) => {
+    if (isGuest) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      dateProposalCategory: category,
+      asGuest: isGuest,
+    });
+    setShowDateProposalPicker(false);
+  };
+
+  const sendDateInvite = (payload: DateInviteSharePayload) => {
+    if (isGuest) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      dateInvite: payload,
+      asGuest: isGuest,
+    });
+    setShowDateInvitePicker(false);
+  };
+
+  const respondToDateInvite = (messageId: string, response: "accepted" | "declined") => {
+    socketRef.current?.emit("date-invite:respond", { roomId, messageId, author, response });
   };
 
   const STUN_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
@@ -1690,6 +2110,22 @@ export default function ChatRoom({
       {callError && <p style={{ color: "var(--color-danger)" }}>{callError}</p>}
       {editError && <p style={{ color: "var(--color-danger)" }}>{editError}</p>}
       {imageError && <p className="chat-app__status chat-app__status--offline">{imageError}</p>}
+      {pendingWarning && (
+        <div className="chat-app__content-warning" role="alert">
+          <p>
+            {pendingWarning.reason === "harassment"
+              ? "This message may come across as threatening or unkind."
+              : "This message may come across as inappropriate."}{" "}
+            Are you sure you want to send it?
+          </p>
+          <button type="button" onClick={editWarnedMessage}>
+            Edit message
+          </button>
+          <button type="button" onClick={sendWarnedMessageAnyway}>
+            Send anyway
+          </button>
+        </div>
+      )}
       {liveUpdatesEnabled ? (
         <p
           role="status"
@@ -1786,6 +2222,9 @@ export default function ChatRoom({
             onSaveEdit={submitEdit}
             onCancelEdit={cancelEdit}
             onDelete={deleteMessage}
+            sharedKey={sharedKey}
+            onGameMove={makeGameMove}
+            onRespondDateInvite={respondToDateInvite}
           />
         ))}
         {queue.map((q) => (
@@ -1893,13 +2332,64 @@ export default function ChatRoom({
         >
           📍
         </button>
+        {recipient && (
+          <button
+            className="chat-app__image-button"
+            onClick={() => (e2eeEnabled ? disableE2EE() : enableE2EE())}
+            disabled={isGuest || !liveUpdatesEnabled || e2eeBusy}
+            title={e2eeEnabled ? "Turn off end-to-end encryption" : "Turn on end-to-end encryption"}
+          >
+            {e2eeEnabled ? "🔒" : "🔓"}
+          </button>
+        )}
+        {recipient && (
+          <button
+            className="chat-app__image-button"
+            onClick={startGame}
+            disabled={isGuest || !liveUpdatesEnabled}
+            title="Play Tic-Tac-Toe to break the ice"
+          >
+            🎮
+          </button>
+        )}
+        <button
+          className="chat-app__image-button"
+          onClick={() => setShowDateProposalPicker((v) => !v)}
+          disabled={isGuest || !liveUpdatesEnabled}
+          title="Suggest a type of date"
+        >
+          💡
+        </button>
+        <button
+          className="chat-app__image-button"
+          onClick={() => setShowDateInvitePicker((v) => !v)}
+          disabled={isGuest || !liveUpdatesEnabled}
+          title="Propose a real date"
+        >
+          📅
+        </button>
         <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}
         </button>
       </div>
       {showGifPicker && <GifPicker onPick={sendGif} onClose={() => setShowGifPicker(false)} />}
       {showLocationPicker && <LocationPicker onSend={sendLocation} onClose={() => setShowLocationPicker(false)} />}
+      {showDateProposalPicker && (
+        <div className="chat-app__date-proposal-picker">
+          {DATE_PROPOSAL_CATEGORIES.map((category: DateProposalCategory) => (
+            <button key={category} onClick={() => sendDateProposal(category)}>
+              {DATE_PROPOSAL_LABELS[category]}
+            </button>
+          ))}
+          <button onClick={() => setShowDateProposalPicker(false)}>✕</button>
+        </div>
+      )}
+      {showDateInvitePicker && (
+        <DateInvitePicker onSend={sendDateInvite} onClose={() => setShowDateInvitePicker(false)} />
+      )}
       {locationError && <p style={{ color: "var(--color-danger)" }}>{locationError}</p>}
+      {e2eeError && <p style={{ color: "var(--color-danger)" }}>{e2eeError}</p>}
+      {e2eeEnabled && <p className="chat-app__status">🔒 End-to-end encryption is on for this chat</p>}
       {blockedAuthors.length > 0 && (
         <div className="chat-app__guest-banner">
           <strong>Blocked users:</strong>
