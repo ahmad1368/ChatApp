@@ -35,6 +35,11 @@ export interface ChatMessage {
   // message:delete succeeds; see messageDeletion.ts. The client renders a
   // placeholder instead of whatever content fields were originally set.
   deleted?: boolean;
+  // Bumble's real "suggest a type of date" quick-reply chip (#147) — a
+  // lightweight themed prompt (see dateProposals.ts's catalog), distinct
+  // from #146's dateInvite: no location/time/RSVP, just a low-stakes
+  // conversation-starting suggestion either side can send or ignore.
+  dateProposalCategory?: DateProposalCategory;
   // Bumble's real "send a date invitation within chat" (#146) — a special
   // message carrying a proposed real-world meetup instead of plain text.
   // `status` starts "pending" and is updated in place (see server.ts's
@@ -65,6 +70,21 @@ export interface DateInvite {
   status: DateInviteStatus;
 }
 
+export const DATE_PROPOSAL_CATEGORIES = ["cinema", "cafe", "restaurant", "park", "drinks"] as const;
+export type DateProposalCategory = (typeof DATE_PROPOSAL_CATEGORIES)[number];
+
+// Shared between server (validation + the message-text fallback in
+// server.ts) and client (the composer's suggestion chips) so the two
+// never drift apart, same "labels live alongside the enum" shape as
+// REPORT_REASON_LABELS below.
+export const DATE_PROPOSAL_LABELS: Record<DateProposalCategory, string> = {
+  cinema: "How about a movie? 🎬",
+  cafe: "How about coffee? ☕",
+  restaurant: "How about dinner? 🍽️",
+  park: "How about a walk in the park? 🌳",
+  drinks: "How about drinks? 🍸",
+};
+
 export interface ChatLocationShare {
   latitude: number;
   longitude: number;
@@ -88,6 +108,10 @@ export interface SendMessagePayload {
   replyToId?: string;
   replyToAuthor?: string;
   replyToText?: string;
+  // Bumble's real "suggest a type of date" quick-reply chip (#147) — see
+  // dateProposals.ts for the fixed category catalog this is validated
+  // against.
+  dateProposalCategory?: DateProposalCategory;
   // Bumble's real "send a date invitation within chat" (#146) — client
   // sends only the proposal fields; the server validates them and sets
   // the authoritative `status: "pending"` (see server.ts's message:send

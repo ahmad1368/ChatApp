@@ -51,6 +51,7 @@ import { applyWatermark } from "./watermarkImage";
 import { DuplicateAccountStore } from "./duplicateAccounts";
 import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
+import { DATE_PROPOSAL_LABELS, isDateProposalCategory } from "./dateProposals";
 import { createDateInvite, respondToDateInvite } from "./dateInvites";
 import { RecaptchaService } from "./recaptcha";
 import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetector";
@@ -3153,6 +3154,25 @@ export async function createChatServer() {
       }
 
       const message: ChatMessage = buildChatMessage(payload);
+
+      // Bumble's real "suggest a type of date" quick-reply chip (#147) —
+      // see dateProposals.ts for why this is a deliberately lighter-weight
+      // sibling to #146's dateInvite rather than a duplicate of it. Falls
+      // back to the category's own label as the message text so search
+      // (#140) and notifications still have something meaningful to show,
+      // same "server fills in the text a themed message didn't carry"
+      // shape as #124's GIF messages leaving text empty by design — here
+      // it isn't empty because there's no separate media to point at.
+      if (payload.dateProposalCategory !== undefined) {
+        if (!isDateProposalCategory(payload.dateProposalCategory)) {
+          socket.emit("message:rejected", { reason: "invalid_date_proposal" });
+          return;
+        }
+        message.dateProposalCategory = payload.dateProposalCategory;
+        if (!message.text) {
+          message.text = DATE_PROPOSAL_LABELS[payload.dateProposalCategory];
+        }
+      }
 
       // Bumble's real "Private Detector" AI photo warning (#144): flags a
       // plain image message (not #123's already tap-gated

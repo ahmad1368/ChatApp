@@ -22,6 +22,10 @@ Issue #46 ("Safety Center and guide for safe meetups") and #47 ("Share My Date")
 
 Issue #142 ("Report misconduct directly from the chat screen") is an exact duplicate of already-merged #41 ("User reporting system") in the auto-generated backlog — same feature, same reference app (Bumble), same acceptance criteria, with no differentiating angle like #46/#47 had (that pair had genuinely different scopes to build; this pair doesn't). #41 already shipped exactly what #142 asks for: a per-message "Report" button in `ChatRoom.tsx` (see `ReportDialog`), categorized report reasons, and the dependency-free `ReportStore` (`apps/api/src/reports.ts`) behind `POST /api/reports`. No separate implementation was made for #142 — skip it in `/next-issue` picks (see that file's step 1) rather than rebuilding the same feature, and close it as a duplicate of #41 once confirmed.
 
+## Known backlog overlap: #146 and #147
+
+Issue #146 ("Send invitations for real dates within the chat") and #147 ("Share a date proposal (suggest cinema, cafe, restaurant)") are adjacent in the auto-generated backlog and both touch "planning a real date in chat," but they're genuinely different in scope, not a duplicate pair like #46/#47 or #41/#142: #146 is a formal invitation with a specific location, date/time, and an accept/decline RSVP (`dateInvites.ts`'s `DateInvite`, rendered as a `DateInviteCard`). #147 is a lightweight, no-commitment quick-reply chip suggesting a category of activity (cinema/cafe/restaurant/park/drinks, `dateProposals.ts`'s fixed catalog) with no location, no time, and no RSVP — closer to #132's Icebreaker suggestions than to #146's formal invite. Both are implemented and kept as separate features; no reconciliation needed.
+
 ## Issue workflow
 
 Issues are tracked on GitHub (`gh issue list`) and implemented one at a time via `/next-issue` (`.claude/commands/next-issue.md`). Read that file for the exact branch/PR rules before doing any issue work — do not improvise a different workflow.
