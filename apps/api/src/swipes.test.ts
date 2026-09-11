@@ -478,3 +478,41 @@ test("hasLiked() is false after a pass", () => {
   store.recordSwipe("alice", "bob", "pass");
   assert.equal(store.hasLiked("alice", "bob"), false);
 });
+
+test("unmatch() rejects a missing author", () => {
+  const store = new SwipeStore();
+  const result = store.unmatch("alice", "");
+  assert.equal(result.success, false);
+});
+
+test("unmatch() rejects a pair that was never matched", () => {
+  const store = new SwipeStore();
+  const result = store.unmatch("alice", "bob");
+  assert.equal(result.success, false);
+});
+
+test("unmatch() removes an existing match for both authors", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "like");
+  store.recordSwipe("bob", "alice", "like");
+  assert.deepEqual(store.getMatches("alice"), ["bob"]);
+  assert.deepEqual(store.getMatches("bob"), ["alice"]);
+
+  const result = store.unmatch("alice", "bob");
+  assert.equal(result.success, true);
+  assert.deepEqual(store.getMatches("alice"), []);
+  assert.deepEqual(store.getMatches("bob"), []);
+});
+
+test("unmatch() doesn't let the pair immediately re-match by swiping again", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.recordSwipe("alice", "bob", "like");
+  store.recordSwipe("bob", "alice", "like");
+  store.unmatch("alice", "bob");
+
+  assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED)), []);
+  const result = store.recordSwipe("alice", "bob", "like");
+  assert.equal(result.success, false);
+});
