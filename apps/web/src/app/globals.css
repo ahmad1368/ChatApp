@@ -606,6 +606,35 @@ body {
   color: var(--color-danger);
 }
 
+.chat-app__content-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 8px 12px;
+  margin: 0 0 8px;
+  border: 1px solid var(--color-danger);
+  border-radius: 8px;
+  background: var(--color-panel);
+  color: var(--color-text);
+}
+
+.chat-app__content-warning p {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.chat-app__content-warning button {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
 .chat-app__modal-overlay {
   position: fixed;
   inset: 0;
