@@ -55,9 +55,10 @@ export class PushService {
 
   /**
    * Sends a push message to every subscription belonging to one specific
-   * author (e.g. Tinder's real "new Match"/"new like" pushes, #151/#153)
-   * — unlike notifyOthers()'s broadcast to everyone else, this targets a
-   * single person across however many devices they've subscribed from.
+   * author (e.g. Tinder's real "new Match"/"new like"/"expiring chat"
+   * pushes, #151/#153/#154) — unlike notifyOthers()'s broadcast to
+   * everyone else, this targets a single person across however many
+   * devices they've subscribed from.
    */
   async notifyAuthor(author: string, payload: { title: string; body: string }): Promise<void> {
     const recipients = [...this.subscriptionsByEndpoint.values()]
