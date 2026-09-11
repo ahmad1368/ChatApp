@@ -53,6 +53,7 @@ import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
 import { RecaptchaService } from "./recaptcha";
 import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetector";
+import { scanForInappropriateContent, CONTENT_WARNING_REPORTER_AUTHOR } from "./contentWarning";
 import { PhotoAlbumStore } from "./photoAlbums";
 import { IntroVideoStore } from "./introVideo";
 import { VoiceIntroStore } from "./voiceIntro";
@@ -3071,6 +3072,18 @@ export async function createChatServer() {
         return;
       }
 
+      // Bumble's real AI "unkind message" warning (#143): unlike the scam
+      // check above (a hard block) or spam below (silent auto-report),
+      // this is a soft nudge — the sender gets a chance to edit or confirm
+      // "send anyway" rather than the message being silently rejected or
+      // silently let through. `overrideWarning` is only ever set by the
+      // client's own confirm action, never by the initial send attempt.
+      const contentWarning = scanForInappropriateContent(payload.text ?? "");
+      if (contentWarning.flagged && !payload.overrideWarning) {
+        socket.emit("message:warning", { reason: contentWarning.reason });
+        return;
+      }
+
       const roomId = payload.roomId || DEFAULT_ROOM_ID;
 
       // Both of these are only checked when the client tells us who this
@@ -3145,6 +3158,21 @@ export async function createChatServer() {
           messageId: message.id,
           reason: "spam",
           details: `Auto-flagged by spam detector (${spamScan.reason})`,
+        });
+      }
+
+      // A sender who confirms "send anyway" past #143's warning still gets
+      // auto-flagged to moderation (#41's ReportStore) rather than the
+      // override silently making the flag disappear — Bumble's real policy
+      // reviews repeated overrides even though the individual message
+      // isn't blocked, same "warn, don't silently allow" precedent as
+      // #58's spam auto-report above.
+      if (contentWarning.flagged && payload.overrideWarning) {
+        reportStore.submit(CONTENT_WARNING_REPORTER_AUTHOR, {
+          reportedAuthor: message.author,
+          messageId: message.id,
+          reason: contentWarning.reason === "harassment" ? "harassment" : "inappropriateContent",
+          details: `Sent after an inappropriate-content warning (${contentWarning.reason}) was overridden`,
         });
       }
 

@@ -73,6 +73,11 @@ export interface SendMessagePayload {
   // omitting it (a group room, or an already-started conversation) just
   // skips the check.
   recipient?: string;
+  // Bumble's real "unkind message" AI warning (#143) — set only by the
+  // client's own "Send anyway" action after the server's message:warning
+  // prompted the sender to confirm a flagged message. Never set by the
+  // initial send attempt.
+  overrideWarning?: boolean;
 }
 
 export const DEFAULT_ROOM_ID = "general";
