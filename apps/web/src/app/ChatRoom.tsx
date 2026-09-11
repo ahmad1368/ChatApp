@@ -135,6 +135,49 @@ function SelfDestructPhoto({ url, viewer }: { url: string; viewer: string }) {
 }
 
 /**
+ * Snapchat/Bumble's real "play a mini-game within chat to break the ice"
+ * (#148): a genuinely playable Tic-Tac-Toe board attached to the message
+ * that started the game (see server.ts's game:move for the authoritative
+ * turn/win validation this only mirrors for the UI).
+ */
+function TicTacToeBoard({
+  game,
+  viewer,
+  onMove,
+}: {
+  game: NonNullable<ChatMessage["game"]>;
+  viewer: string;
+  onMove: (cellIndex: number) => void;
+}) {
+  const isViewerTurn = (game.turn === "X" ? game.playerX : game.playerO) === viewer;
+  return (
+    <div className="chat-app__tic-tac-toe">
+      <div className="chat-app__tic-tac-toe-grid">
+        {game.board.map((cell, i) => (
+          <button
+            key={i}
+            className="chat-app__tic-tac-toe-cell"
+            onClick={() => onMove(i)}
+            disabled={Boolean(cell) || Boolean(game.winner) || !isViewerTurn}
+          >
+            {cell ?? ""}
+          </button>
+        ))}
+      </div>
+      <p className="chat-app__tic-tac-toe-status">
+        {game.winner === "draw"
+          ? "It's a draw!"
+          : game.winner
+          ? `${game.winner} wins!`
+          : isViewerTurn
+          ? "Your turn"
+          : "Waiting for opponent…"}
+      </p>
+    </div>
+  );
+}
+
+/**
  * Bumble's real "send a date invitation within chat" (#146): a card
  * instead of plain text, so the recipient can act on it (Accept/Decline)
  * rather than just read it. The sender sees their own proposal's status
@@ -267,6 +310,7 @@ function MessageRow({
   onSaveEdit,
   onCancelEdit,
   onDelete,
+  onGameMove,
   onRespondDateInvite,
 }: {
   message: ChatMessage;
@@ -287,6 +331,7 @@ function MessageRow({
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDelete: (messageId: string) => void;
+  onGameMove: (messageId: string, cellIndex: number) => void;
   onRespondDateInvite: (messageId: string, response: "accepted" | "declined") => void;
 }) {
   // Mirrors messageEditing.ts/messageDeletion.ts's rules loosely for the
@@ -297,6 +342,7 @@ function MessageRow({
     !message.selfDestructImageUrl &&
     !message.audioUrl &&
     !message.imageUrl &&
+    !message.game &&
     !message.dateProposalCategory &&
     !message.dateInvite;
   const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
@@ -329,6 +375,8 @@ function MessageRow({
         <strong>{message.author}: </strong>
         {message.deleted ? (
           <em className="chat-app__deleted-message">🚫 This message was deleted</em>
+        ) : message.game ? (
+          <TicTacToeBoard game={message.game} viewer={viewer} onMove={(cellIndex) => onGameMove(message.id, cellIndex)} />
         ) : message.dateInvite ? (
           <DateInviteCard
             dateInvite={message.dateInvite}
@@ -1010,6 +1058,15 @@ export default function ChatRoom({
     socket.on("message:edit-rejected", ({ error }: { messageId: string; error: string }) => {
       setEditError(error);
     });
+    // Snapchat/Bumble's real "play a mini-game within chat" (#148) — each
+    // move lands here for both players, same "server owns the derived
+    // truth, client just reflects it" shape as message:edited above.
+    socket.on("game:updated", ({ messageId, game }: { messageId: string; game: ChatMessage["game"] }) => {
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, game } : m)));
+    });
+    socket.on("game:rejected", ({ error }: { messageId: string; error: string }) => {
+      setEditError(error);
+    });
     // WhatsApp/Bumble's real "Delete for Everyone" (#134).
     socket.on("message:deleted", ({ messageId }: { messageId: string }) => {
       setMessages((prev) =>
@@ -1486,6 +1543,25 @@ export default function ChatRoom({
       asGuest: isGuest,
     });
     setShowLocationPicker(false);
+  };
+
+  // Snapchat/Bumble's real "play a mini-game within chat" (#148) — only
+  // offered against a known `recipient` (a fresh 1:1 match), same as the
+  // server-side requirement in server.ts's message:send.
+  const startGame = () => {
+    if (isGuest || !recipient) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      startGame: true,
+      recipient,
+      asGuest: isGuest,
+    });
+  };
+
+  const makeGameMove = (messageId: string, cellIndex: number) => {
+    socketRef.current?.emit("game:move", { roomId, messageId, author, cellIndex });
   };
 
   // Bumble's real "suggest a type of date" quick-reply chip (#147) — a
@@ -1980,6 +2056,7 @@ export default function ChatRoom({
             onSaveEdit={submitEdit}
             onCancelEdit={cancelEdit}
             onDelete={deleteMessage}
+            onGameMove={makeGameMove}
             onRespondDateInvite={respondToDateInvite}
           />
         ))}
@@ -2088,6 +2165,16 @@ export default function ChatRoom({
         >
           📍
         </button>
+        {recipient && (
+          <button
+            className="chat-app__image-button"
+            onClick={startGame}
+            disabled={isGuest || !liveUpdatesEnabled}
+            title="Play Tic-Tac-Toe to break the ice"
+          >
+            🎮
+          </button>
+        )}
         <button
           className="chat-app__image-button"
           onClick={() => setShowDateProposalPicker((v) => !v)}
