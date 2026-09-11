@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { io, Socket } from "socket.io-client";
-import { ChatMessage, DEFAULT_ROOM_ID } from "@chatapp/shared";
+import { ChatMessage, DEFAULT_ROOM_ID, SendMessagePayload } from "@chatapp/shared";
 import { loadDataSaverPreference, saveDataSaverPreference } from "./dataSaverStore";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import { compressImage, blobToBase64 } from "./imageCompression";
@@ -183,6 +183,25 @@ function TranslateButton({ text }: { text: string }) {
   );
 }
 
+/**
+ * Bumble's real "Private Detector" AI photo warning (#144): unlike
+ * #123's SelfDestructPhoto (destroyed after viewing), this photo is
+ * still permanently viewable — it's just blurred behind an explicit tap
+ * so the recipient isn't ambushed by it the moment the message arrives.
+ */
+function SuspiciousPhoto({ url }: { url: string }) {
+  const [revealed, setRevealed] = useState(false);
+
+  if (revealed) {
+    return <img src={url} alt="Shared" loading="lazy" className="chat-app__shared-image" />;
+  }
+  return (
+    <button className="chat-app__suspicious-photo-reveal" onClick={() => setRevealed(true)}>
+      ⚠️ This photo was flagged as potentially inappropriate — tap to view
+    </button>
+  );
+}
+
 function MessageRow({
   message,
   highlighted,
@@ -272,7 +291,11 @@ function MessageRow({
             <audio controls src={message.audioUrl} />
           </div>
         ) : message.imageUrl ? (
-          <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+          message.suspicious ? (
+            <SuspiciousPhoto url={message.imageUrl} />
+          ) : (
+            <img src={message.imageUrl} alt="Shared" loading="lazy" className="chat-app__shared-image" />
+          )
         ) : isEditing ? (
           <span className="chat-app__edit-box">
             <input
@@ -400,6 +423,12 @@ export default function ChatRoom({
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
+  // Bumble's real AI "unkind message" warning (#143): holds the message
+  // the server flagged so the composer can offer "Edit" (restores the
+  // text) or "Send anyway" (re-emits the same payload with
+  // overrideWarning: true) rather than silently dropping it.
+  const [pendingWarning, setPendingWarning] = useState<{ payload: SendMessagePayload; reason?: string } | null>(null);
+  const lastSendPayloadRef = useRef<SendMessagePayload | null>(null);
   const [reportTarget, setReportTarget] = useState<{ author: string; messageId: string } | null>(null);
   const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
   const [watermarkLabel, setWatermarkLabel] = useState<string | null>(null);
@@ -1026,6 +1055,14 @@ export default function ChatRoom({
       setCallError(reason ?? "Call failed");
       setCallState("idle");
     });
+    // Bumble's real AI "unkind message" warning (#143) — a soft nudge, not
+    // a rejection: the server held the message back and is asking the
+    // sender to confirm before it goes through.
+    socket.on("message:warning", (payload: { reason?: string }) => {
+      if (lastSendPayloadRef.current) {
+        setPendingWarning({ payload: lastSendPayloadRef.current, reason: payload?.reason });
+      }
+    });
     socket.on("message:rejected", (payload: { reason?: string; error?: string }) => {
       if (payload?.reason === "scam_content") {
         setImageError("That message looks like it violates ChatApp's policy against financial and crypto scams, so it wasn't sent.");
@@ -1167,7 +1204,7 @@ export default function ChatRoom({
     stopTyping();
 
     if (socketRef.current?.connected) {
-      socketRef.current.emit("message:send", {
+      const payload: SendMessagePayload = {
         roomId,
         author,
         text: trimmed,
@@ -1176,7 +1213,9 @@ export default function ChatRoom({
         replyToText: replyTarget?.text,
         asGuest: isGuest,
         recipient,
-      });
+      };
+      lastSendPayloadRef.current = payload;
+      socketRef.current.emit("message:send", payload);
       setReplyTarget(null);
       return;
     }
@@ -1188,6 +1227,22 @@ export default function ChatRoom({
       { clientId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, author, text: trimmed, queuedAt: new Date().toISOString() },
     ]);
     setReplyTarget(null);
+  };
+
+  // #143's "Send anyway": re-emits the exact payload the server warned
+  // about, with overrideWarning set so it isn't held back a second time.
+  const sendWarnedMessageAnyway = () => {
+    if (!pendingWarning) return;
+    socketRef.current?.emit("message:send", { ...pendingWarning.payload, overrideWarning: true });
+    setPendingWarning(null);
+  };
+
+  // #143's "Edit": restores the flagged text to the composer instead of
+  // sending it, so the user can revise it.
+  const editWarnedMessage = () => {
+    if (!pendingWarning) return;
+    setText(pendingWarning.payload.text);
+    setPendingWarning(null);
   };
 
   const copyMessageLink = (messageId: string) => {
@@ -1703,6 +1758,22 @@ export default function ChatRoom({
       {callError && <p style={{ color: "var(--color-danger)" }}>{callError}</p>}
       {editError && <p style={{ color: "var(--color-danger)" }}>{editError}</p>}
       {imageError && <p className="chat-app__status chat-app__status--offline">{imageError}</p>}
+      {pendingWarning && (
+        <div className="chat-app__content-warning" role="alert">
+          <p>
+            {pendingWarning.reason === "harassment"
+              ? "This message may come across as threatening or unkind."
+              : "This message may come across as inappropriate."}{" "}
+            Are you sure you want to send it?
+          </p>
+          <button type="button" onClick={editWarnedMessage}>
+            Edit message
+          </button>
+          <button type="button" onClick={sendWarnedMessageAnyway}>
+            Send anyway
+          </button>
+        </div>
+      )}
       {liveUpdatesEnabled ? (
         <p
           role="status"

@@ -338,6 +338,19 @@ body {
   color: var(--color-muted);
 }
 
+.chat-app__suspicious-photo-reveal {
+  display: block;
+  margin-top: 4px;
+  padding: 12px;
+  background: var(--color-panel);
+  color: var(--color-danger);
+  border: 1px dashed var(--color-danger);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: inherit;
+  text-align: left;
+}
+
 .chat-app__gif-picker {
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -605,6 +618,35 @@ body {
 
 .chat-app__status--offline {
   color: var(--color-danger);
+}
+
+.chat-app__content-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 8px 12px;
+  margin: 0 0 8px;
+  border: 1px solid var(--color-danger);
+  border-radius: 8px;
+  background: var(--color-panel);
+  color: var(--color-text);
+}
+
+.chat-app__content-warning p {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.chat-app__content-warning button {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-panel);
+  color: var(--color-text);
+  cursor: pointer;
 }
 
 .chat-app__modal-overlay {
