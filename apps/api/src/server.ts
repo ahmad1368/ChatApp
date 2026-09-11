@@ -20,6 +20,7 @@ import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
+import { buildNewLikeNotification } from "./likeNotifications";
 import { buildNewMatchNotification } from "./matchNotifications";
 import { UploadStore } from "./uploads";
 import { VoiceNoteStore } from "./voiceNotes";
@@ -1862,6 +1863,14 @@ export function createApp(deps?: {
       });
       pushService.notifyAuthor(swipedName, buildNewMatchNotification(swiperName)).catch((err) => {
         console.error("Failed to deliver new-match push notification:", err);
+      });
+    } else if (liked) {
+      // Tinder's real "Notification for a new like" (#153) — only for a
+      // one-sided like that didn't already become a mutual match; a
+      // match gets its own, differently-worded notification instead
+      // (see #151), not both for the same swipe.
+      pushService.notifyAuthor(swipedName, buildNewLikeNotification(req.body?.direction === "superlike")).catch((err) => {
+        console.error("Failed to deliver new-like push notification:", err);
       });
     }
     res.status(201).json({ matched: result.matched });
