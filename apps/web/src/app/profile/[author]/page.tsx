@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getOrCreateGuestIdentity } from "../../guestIdentity";
 import ProfilePhotoGallery from "../../ProfilePhotoGallery";
+import { formatHeightCm, MeasurementSystem } from "../../measurementUnits";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -47,7 +48,7 @@ const FIELD_LABELS: Record<keyof ProfilePreviewData, string> = {
   jobTitle: "Job title",
   company: "Company",
   school: "School",
-  heightCm: "Height (cm)",
+  heightCm: "Height",
   smoking: "Smoking",
   drinking: "Drinking",
   familyPlans: "Family plans",
@@ -74,6 +75,7 @@ export default function ViewProfilePage({ params }: { params: { author: string }
   const [viewer] = useState(() => getOrCreateGuestIdentity());
   const [preview, setPreview] = useState<ProfilePreviewData | null>(null);
   const [presence, setPresence] = useState<PresenceStatus | null>(null);
+  const [measurementSystem, setMeasurementSystem] = useState<MeasurementSystem>("metric");
 
   useEffect(() => {
     fetch(`${API_URL}/api/profile-preview/${encodeURIComponent(params.author)}?viewer=${encodeURIComponent(viewer)}`)
@@ -81,6 +83,16 @@ export default function ViewProfilePage({ params }: { params: { author: string }
       .then((body) => setPreview(body.preview ?? {}))
       .catch(() => {});
   }, [params.author, viewer]);
+
+  // #163's "Set measurement units" — the viewer's own preference, so
+  // heightCm below is formatted the way *they* chose to see it, not the
+  // profile owner's.
+  useEffect(() => {
+    fetch(`${API_URL}/api/measurement-units/${encodeURIComponent(viewer)}`)
+      .then((res) => res.json())
+      .then((body) => body?.system && setMeasurementSystem(body.system))
+      .catch(() => {});
+  }, [viewer]);
 
   // Badoo's real online/last-active indicator (#110): a plain snapshot
   // fetch is enough here since this page doesn't already hold a socket
@@ -124,7 +136,13 @@ export default function ViewProfilePage({ params }: { params: { author: string }
           {(Object.entries(preview) as [keyof ProfilePreviewData, unknown][]).map(([key, value]) => (
             <div key={key} style={{ marginTop: 4 }}>
               <dt style={{ fontWeight: "bold", display: "inline" }}>{FIELD_LABELS[key]}: </dt>
-              <dd style={{ display: "inline" }}>{Array.isArray(value) ? value.join(", ") : String(value)}</dd>
+              <dd style={{ display: "inline" }}>
+                {key === "heightCm" && typeof value === "number"
+                  ? formatHeightCm(value, measurementSystem)
+                  : Array.isArray(value)
+                    ? value.join(", ")
+                    : String(value)}
+              </dd>
             </div>
           ))}
           {Object.keys(preview).length === 0 && <p style={{ color: "var(--color-muted)" }}>Nothing shared yet.</p>}
