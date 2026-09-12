@@ -7652,6 +7652,111 @@ test("POST /api/admin/photo-review/:photoId 404s for an unknown photo", async ()
   }
 });
 
+test("GET /api/admin/reported-users (#173) groups pending reports by reported author, highest count first", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "bob", reason: "spam" }),
+    });
+    await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "carol", reportedAuthor: "dave", reason: "harassment" }),
+    });
+    await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "erin", reportedAuthor: "dave", reason: "scam" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/reported-users`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(res.status, 200);
+    const { queue } = await res.json();
+    assert.deepEqual(
+      queue.map((e: { reportedAuthor: string; pendingCount: number }) => ({
+        reportedAuthor: e.reportedAuthor,
+        pendingCount: e.pendingCount,
+      })),
+      [
+        { reportedAuthor: "dave", pendingCount: 2 },
+        { reportedAuthor: "bob", pendingCount: 1 },
+      ]
+    );
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("GET /api/admin/reported-users requires the admin key", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/reported-users`);
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("POST /api/admin/reports/:reportId/review (#173) dismisses a report and removes it from the queue", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const submitRes = await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "bob", reason: "spam" }),
+    });
+    const { id } = await submitRes.json();
+
+    const reviewRes = await fetch(`${baseUrl}/api/admin/reports/${id}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "dismissed", note: "No violation found" }),
+    });
+    assert.equal(reviewRes.status, 200);
+    const { report } = await reviewRes.json();
+    assert.equal(report.status, "dismissed");
+    assert.equal(report.reviewedBy, "admin-1");
+    assert.equal(report.resolutionNote, "No violation found");
+
+    const queueRes = await fetch(`${baseUrl}/api/admin/reported-users`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.deepEqual((await queueRes.json()).queue, []);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("POST /api/admin/reports/:reportId/review 404s for an unknown report", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/reports/nope/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "resolved" }),
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 async function addAlbumPhoto(baseUrl: string, photoStore: import("./photos").PhotoStore, owner: string) {
   const uploaded = photoStore.upload(owner, "image/png", TINY_PNG_BASE64);
   const id = uploaded.success ? uploaded.photo.id : "";
