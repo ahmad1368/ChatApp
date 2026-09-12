@@ -23,6 +23,7 @@ import { PushService } from "./push";
 import { WeeklyDigestStore, buildWeeklyDigest } from "./weeklyDigest";
 import { NotificationPreferencesStore } from "./notificationPreferences";
 import { NotificationInboxStore } from "./notificationInbox";
+import { NotificationSoundStore, VIBRATION_PATTERNS } from "./notificationSound";
 import { LiveEventStore } from "./liveEvents";
 import { buildNewLikeNotification } from "./likeNotifications";
 import { buildNewMatchNotification } from "./matchNotifications";
@@ -214,6 +215,7 @@ export function createApp(deps?: {
   matchExpiryStore: MatchExpiryStore;
   notificationPreferencesStore: NotificationPreferencesStore;
   notificationInboxStore: NotificationInboxStore;
+  notificationSoundStore: NotificationSoundStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -230,6 +232,7 @@ export function createApp(deps?: {
   const pushService = new PushService();
   const notificationPreferencesStore = new NotificationPreferencesStore();
   const notificationInboxStore = new NotificationInboxStore();
+  const notificationSoundStore = new NotificationSoundStore();
   const liveEventStore = new LiveEventStore();
 
   // Match.com's real "Notification for the start of in-app live events"
@@ -352,9 +355,14 @@ export function createApp(deps?: {
       matchExpiryStore.markReminderSent(a, b);
       const payload = { title: "Your match is about to expire! ⏳", body: "Say something before the 24-hour window closes." };
       for (const author of [a, b]) {
-        pushService.notifyAuthor(author, payload).catch((err) => {
-          console.error("Failed to deliver match-expiry reminder push notification:", err);
-        });
+        pushService
+          .notifyAuthor(author, {
+            ...payload,
+            vibrate: notificationSoundStore.getVibrationPattern(author, VIBRATION_PATTERNS.matchExpiryReminder),
+          })
+          .catch((err) => {
+            console.error("Failed to deliver match-expiry reminder push notification:", err);
+          });
         // Tinder's real in-app Notifications tab (#159) — see notificationInbox.ts.
         notificationInboxStore.record(author, "matchExpiryReminder", payload.title, payload.body);
       }
@@ -1976,12 +1984,22 @@ export function createApp(deps?: {
       // block the response on delivery.
       const swiperNotification = buildNewMatchNotification(swipedName);
       const swipedNotification = buildNewMatchNotification(swiperName);
-      pushService.notifyAuthor(swiperName, swiperNotification).catch((err) => {
-        console.error("Failed to deliver new-match push notification:", err);
-      });
-      pushService.notifyAuthor(swipedName, swipedNotification).catch((err) => {
-        console.error("Failed to deliver new-match push notification:", err);
-      });
+      pushService
+        .notifyAuthor(swiperName, {
+          ...swiperNotification,
+          vibrate: notificationSoundStore.getVibrationPattern(swiperName, VIBRATION_PATTERNS.newMatch),
+        })
+        .catch((err) => {
+          console.error("Failed to deliver new-match push notification:", err);
+        });
+      pushService
+        .notifyAuthor(swipedName, {
+          ...swipedNotification,
+          vibrate: notificationSoundStore.getVibrationPattern(swipedName, VIBRATION_PATTERNS.newMatch),
+        })
+        .catch((err) => {
+          console.error("Failed to deliver new-match push notification:", err);
+        });
       // Tinder's real in-app Notifications tab (#159) — see notificationInbox.ts.
       notificationInboxStore.record(swiperName, "newMatch", swiperNotification.title, swiperNotification.body);
       notificationInboxStore.record(swipedName, "newMatch", swipedNotification.title, swipedNotification.body);
@@ -1991,9 +2009,14 @@ export function createApp(deps?: {
       // match gets its own, differently-worded notification instead
       // (see #151), not both for the same swipe.
       const likeNotification = buildNewLikeNotification(req.body?.direction === "superlike");
-      pushService.notifyAuthor(swipedName, likeNotification).catch((err) => {
-        console.error("Failed to deliver new-like push notification:", err);
-      });
+      pushService
+        .notifyAuthor(swipedName, {
+          ...likeNotification,
+          vibrate: notificationSoundStore.getVibrationPattern(swipedName, VIBRATION_PATTERNS.newLike),
+        })
+        .catch((err) => {
+          console.error("Failed to deliver new-like push notification:", err);
+        });
       notificationInboxStore.record(swipedName, "newLike", likeNotification.title, likeNotification.body);
     }
     res.status(201).json({ matched: result.matched });
@@ -2658,6 +2681,24 @@ export function createApp(deps?: {
     res.json({ success: true });
   });
 
+  // Tinder's real "Custom ringtone and vibration for app notifications"
+  // (#160) — see notificationSound.ts for the honest scoping (a real
+  // background vibration pattern, a real synthesized-in-browser ringtone
+  // for foreground use, no cross-browser way to attach a custom sound to
+  // a system push notification).
+  app.get("/api/notification-sound/:author", (req, res) => {
+    res.json({ preference: notificationSoundStore.get(req.params.author) });
+  });
+
+  app.put("/api/notification-sound/:author", (req, res) => {
+    const result = notificationSoundStore.update(req.params.author, req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ preference: result.preference });
+  });
+
   // Image sharing: the client compresses/downscales before uploading (see
   // imageCompression.ts), so this just validates mime type and size.
   app.post("/api/uploads", (req, res) => {
@@ -3294,6 +3335,7 @@ export function createApp(deps?: {
     matchExpiryStore,
     notificationPreferencesStore,
     notificationInboxStore,
+    notificationSoundStore,
   };
 }
 
