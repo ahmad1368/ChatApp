@@ -38,6 +38,10 @@ Issue #162 ("Manage connected and active devices") is an exact duplicate of alre
 
 Issue #165 ("Set custom ringtones and alerts for the app") is an exact duplicate of already-implemented #160 ("Custom ringtone and vibration for app notifications") in the auto-generated backlog — same feature, no differentiating angle. #160 already shipped this: `NotificationSoundStore` (`apps/api/src/notificationSound.ts`) covers a real synthesized-in-browser ringtone (foreground only, since the Push API has no cross-browser custom-sound option) plus a real background vibration pattern, with `/settings/notification-sound` as the UI — "alerts" in #165's title doesn't add anything beyond what #160's ringtone+vibration pair and #156's per-category notification preferences (`/settings/notifications`) already cover. No separate implementation was made for #165 — skip it in `/next-issue` picks (see that file's step 1) and close it as a duplicate of #160 once confirmed.
 
+## Known backlog overlap: #9 and #168
+
+Issue #168 ("Quickly change the app language") is an exact duplicate of already-implemented #9 ("Multilingual (i18n) and RTL/LTR support") in the auto-generated backlog — same feature, no differentiating angle. #9 already shipped exactly this: `LocaleToggle` (`apps/web/src/app/LocaleProvider.tsx`) is a one-tap dropdown always visible in the chat header, switching language instantly (flips `lang`/`dir` on `<html>`, persists to `localStorage`) — as "quick" as a language switcher gets. No separate implementation was made for #168 — skip it in `/next-issue` picks (see that file's step 1) and close it as a duplicate of #9 once confirmed.
+
 ## Issue workflow
 
 Issues are tracked on GitHub (`gh issue list`) and implemented one at a time via `/next-issue` (`.claude/commands/next-issue.md`). Read that file for the exact branch/PR rules before doing any issue work — do not improvise a different workflow.
