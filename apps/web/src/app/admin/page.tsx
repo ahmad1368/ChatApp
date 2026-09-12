@@ -75,6 +75,8 @@ export default function AdminDashboardPage() {
         <Link href="/admin/broadcasts">Broadcast messages &rarr;</Link>
         {" · "}
         <Link href="/admin/analytics">User behavior & conversion &rarr;</Link>
+        {" · "}
+        <Link href="/admin/support">Support tickets &rarr;</Link>
       </p>
 
       <form

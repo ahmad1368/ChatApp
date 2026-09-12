@@ -47,6 +47,7 @@ import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
 import { BroadcastStore } from "./broadcasts";
+import { SupportTicketStore } from "./supportTickets";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
 import { MessageDraftStore } from "./messageDrafts";
@@ -300,6 +301,7 @@ export function createApp(deps?: {
   const pricingPlanStore = new PricingPlanStore();
   const discountCodeStore = new DiscountCodeStore();
   const broadcastStore = new BroadcastStore();
+  const supportTicketStore = new SupportTicketStore();
   const onboardingStore = new OnboardingStore(verificationStore);
   const reportStore = new ReportStore();
   const messageDraftStore = new MessageDraftStore();
@@ -2288,6 +2290,75 @@ export function createApp(deps?: {
   app.get("/api/admin/broadcasts", (req, res) => {
     if (!requireAdmin(req, res)) return;
     res.json({ broadcasts: broadcastStore.list() });
+  });
+
+  // Bumble's real "Live admin support for users via ticket or chat"
+  // (#180) — an asynchronous support ticket thread, not a live-staffed
+  // chat this app has no real support team behind (see
+  // supportTickets.ts). User-facing routes take a plain author param
+  // the same way this app's other guest-chat-identity features do;
+  // admin routes are gated the same way as #171-179.
+  app.post("/api/support/tickets", (req, res) => {
+    const result = supportTicketStore.create(req.body?.author, req.body?.subject, req.body?.message);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ ticket: result.ticket });
+  });
+
+  app.get("/api/support/tickets/:author", (req, res) => {
+    res.json({ tickets: supportTicketStore.listForAuthor(req.params.author) });
+  });
+
+  app.get("/api/support/tickets/:author/:ticketId", (req, res) => {
+    const ticket = supportTicketStore.get(req.params.ticketId);
+    if (!ticket || ticket.author !== req.params.author) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+    res.json({ ticket });
+  });
+
+  app.post("/api/support/tickets/:author/:ticketId/reply", (req, res) => {
+    const ticket = supportTicketStore.get(req.params.ticketId);
+    if (!ticket || ticket.author !== req.params.author) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+    const result = supportTicketStore.reply(req.params.ticketId, "user", req.params.author, req.body?.text);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ ticket: result.ticket });
+  });
+
+  app.get("/api/admin/support-tickets", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ tickets: supportTicketStore.getAdminQueue() });
+  });
+
+  app.post("/api/admin/support-tickets/:ticketId/reply", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = supportTicketStore.reply(req.params.ticketId, "admin", req.body?.senderName, req.body?.text);
+    if (!result.success) {
+      const status = result.error === "Ticket not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ ticket: result.ticket });
+  });
+
+  app.put("/api/admin/support-tickets/:ticketId/status", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = supportTicketStore.updateStatus(req.params.ticketId, req.body?.status);
+    if (!result.success) {
+      const status = result.error === "Ticket not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ ticket: result.ticket });
   });
 
   // Hinge's real "like or comment on one specific photo" (#112): gated the

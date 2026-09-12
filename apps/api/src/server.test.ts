@@ -2842,6 +2842,94 @@ test("Analytics funnel (#179): GET /api/admin/analytics/funnel reflects real sig
   }
 });
 
+test("Support tickets (#180): user creates a ticket, admin replies and resolves it, and the user sees the update", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/support/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", subject: "Can't log in", message: "My account is stuck loading" }),
+    });
+    assert.equal(createRes.status, 201);
+    const { ticket } = await createRes.json();
+    assert.equal(ticket.status, "open");
+
+    const listRes = await fetch(`${baseUrl}/api/support/tickets/alice`);
+    assert.equal((await listRes.json()).tickets.length, 1);
+
+    const noKeyQueueRes = await fetch(`${baseUrl}/api/admin/support-tickets`);
+    assert.equal(noKeyQueueRes.status, 401);
+
+    const queueRes = await fetch(`${baseUrl}/api/admin/support-tickets`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const { tickets } = await queueRes.json();
+    assert.equal(tickets.length, 1);
+
+    const replyRes = await fetch(`${baseUrl}/api/admin/support-tickets/${ticket.id}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ senderName: "admin-1", text: "Try clearing your cache" }),
+    });
+    assert.equal(replyRes.status, 200);
+    assert.equal((await replyRes.json()).ticket.status, "inProgress");
+
+    const userReplyRes = await fetch(`${baseUrl}/api/support/tickets/alice/${ticket.id}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "That fixed it, thanks!" }),
+    });
+    assert.equal(userReplyRes.status, 200);
+
+    const resolveRes = await fetch(`${baseUrl}/api/admin/support-tickets/${ticket.id}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ status: "resolved" }),
+    });
+    assert.equal(resolveRes.status, 200);
+
+    const detailRes = await fetch(`${baseUrl}/api/support/tickets/alice/${ticket.id}`);
+    const { ticket: finalTicket } = await detailRes.json();
+    assert.equal(finalTicket.status, "resolved");
+    assert.equal(finalTicket.messages.length, 3);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Support tickets (#180): GET /api/support/tickets/:author/:ticketId 404s for another author's ticket", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/support/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", subject: "Help", message: "message" }),
+    });
+    const { ticket } = await createRes.json();
+
+    const res = await fetch(`${baseUrl}/api/support/tickets/bob/${ticket.id}`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("Support tickets (#180): POST /api/support/tickets rejects a missing subject or message", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/support/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", subject: "", message: "message" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/users/:userId/badge is independent per user", async () => {
   const { server, baseUrl } = listen();
   try {
