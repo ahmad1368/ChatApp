@@ -112,6 +112,7 @@ import { PresenceVisibilityStore } from "./presenceVisibility";
 import { MeasurementUnitsStore } from "./measurementUnits";
 import { VanishModeStore } from "./vanishMode";
 import { SnoozeAccountStore } from "./snoozeAccount";
+import { PermissionsStatusStore } from "./permissionsStatus";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
@@ -208,6 +209,7 @@ export function createApp(deps?: {
   measurementUnitsStore: MeasurementUnitsStore;
   vanishModeStore: VanishModeStore;
   snoozeAccountStore: SnoozeAccountStore;
+  permissionsStatusStore: PermissionsStatusStore;
   photoInteractionStore: PhotoInteractionStore;
   contactsGraphStore: ContactsGraphStore;
   viewModeStore: ViewModeStore;
@@ -339,6 +341,7 @@ export function createApp(deps?: {
   const measurementUnitsStore = new MeasurementUnitsStore();
   const vanishModeStore = new VanishModeStore();
   const snoozeAccountStore = new SnoozeAccountStore();
+  const permissionsStatusStore = new PermissionsStatusStore();
   const photoInteractionStore = new PhotoInteractionStore();
   const contactsGraphStore = new ContactsGraphStore();
   const viewModeStore = new ViewModeStore();
@@ -1913,6 +1916,23 @@ export function createApp(deps?: {
     res.json({ enabled: snoozeAccountStore.isEnabled(req.params.author) });
   });
 
+  // Tinder's real "Manage access permissions (location, camera,
+  // microphone access)" (#166) — see permissionsStatus.ts for why this
+  // is a server-side mirror of what the client's own Permissions API
+  // actually observed, not something the server can query or revoke.
+  app.get("/api/permissions-status/:author", (req, res) => {
+    res.json({ permissions: permissionsStatusStore.get(req.params.author) });
+  });
+
+  app.put("/api/permissions-status/:author", (req, res) => {
+    const result = permissionsStatusStore.report(req.params.author, req.body?.type, req.body?.state);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ permissions: result.snapshot });
+  });
+
   // Hinge's real "like or comment on one specific photo" (#112): gated the
   // same way #45's photo serve is (block check + #59's album access level)
   // plus confirming photoId is actually in owner's album, ahead of
@@ -3400,6 +3420,7 @@ export function createApp(deps?: {
     presenceStore,
     vanishModeStore,
     snoozeAccountStore,
+    permissionsStatusStore,
     photoInteractionStore,
     contactsGraphStore,
     viewModeStore,

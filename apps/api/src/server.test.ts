@@ -7325,6 +7325,51 @@ test("Snooze Mode (#164): an existing match stays visible to the snoozed author 
   }
 });
 
+test("GET /api/permissions-status/:author defaults every permission to prompt", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/permissions-status/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { permissions: { location: "prompt", camera: "prompt", microphone: "prompt" } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/permissions-status/:author reports a permission and persists it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/permissions-status/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "camera", state: "granted" }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      permissions: { location: "prompt", camera: "granted", microphone: "prompt" },
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/permissions-status/alice`).then((r) => r.json());
+    assert.equal(getRes.permissions.camera, "granted");
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/permissions-status/:author rejects an unknown permission type", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/permissions-status/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "bluetooth", state: "granted" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 async function addAlbumPhoto(baseUrl: string, photoStore: import("./photos").PhotoStore, owner: string) {
   const uploaded = photoStore.upload(owner, "image/png", TINY_PNG_BASE64);
   const id = uploaded.success ? uploaded.photo.id : "";
