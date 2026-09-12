@@ -60,3 +60,48 @@ test("ignores a missing userId, IP, or fingerprint without throwing", () => {
   store.recordSignIn("user-1", undefined, undefined);
   assert.deepEqual(store.getStatus("user-1"), { flagged: false, matchedUserIds: [] });
 });
+
+test("getFlaggedClusters() (#181) is empty with no shared signals", () => {
+  const store = new DuplicateAccountStore();
+  store.recordSignIn("user-1", "1.2.3.4", "fingerprint-a");
+  assert.deepEqual(store.getFlaggedClusters(), []);
+});
+
+test("getFlaggedClusters() (#181) groups accounts sharing an IP into one cluster", () => {
+  const store = new DuplicateAccountStore();
+  store.recordSignIn("user-1", "1.2.3.4", "fingerprint-a");
+  store.recordSignIn("user-2", "1.2.3.4", "fingerprint-b");
+
+  const clusters = store.getFlaggedClusters();
+  assert.equal(clusters.length, 1);
+  assert.equal(clusters[0].signal, "ipAddress");
+  assert.deepEqual(new Set(clusters[0].userIds), new Set(["user-1", "user-2"]));
+});
+
+test("getFlaggedClusters() (#181) reports both an IP cluster and a separate device cluster", () => {
+  const store = new DuplicateAccountStore();
+  store.recordSignIn("user-1", "1.2.3.4", "fingerprint-a");
+  store.recordSignIn("user-2", "1.2.3.4", "fingerprint-b");
+  store.recordSignIn("user-3", "9.9.9.9", "fingerprint-shared");
+  store.recordSignIn("user-4", "8.8.8.8", "fingerprint-shared");
+
+  const clusters = store.getFlaggedClusters();
+  assert.equal(clusters.length, 2);
+  assert.deepEqual(
+    new Set(clusters.map((c) => c.signal)),
+    new Set(["ipAddress", "deviceFingerprint"])
+  );
+});
+
+test("getFlaggedClusters() (#181) sorts the largest cluster first", () => {
+  const store = new DuplicateAccountStore();
+  store.recordSignIn("user-1", "1.2.3.4", "fingerprint-a");
+  store.recordSignIn("user-2", "1.2.3.4", "fingerprint-b");
+  store.recordSignIn("user-3", "9.9.9.9", "fingerprint-shared");
+  store.recordSignIn("user-4", "8.8.8.8", "fingerprint-shared");
+  store.recordSignIn("user-5", "8.8.8.8", "fingerprint-shared");
+
+  const clusters = store.getFlaggedClusters();
+  assert.equal(clusters[0].userIds.length, 3);
+  assert.equal(clusters[0].signal, "deviceFingerprint");
+});

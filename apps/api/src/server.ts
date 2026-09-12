@@ -3686,6 +3686,15 @@ export function createApp(deps?: {
     res.json(duplicateAccountStore.getStatus(userId));
   });
 
+  // Tinder's real "Smart detection of multiple accounts created from one
+  // device" (#181) — the admin review queue this store's own doc comment
+  // said was missing, gated the same admin-key way as #171-180. See
+  // duplicateAccounts.ts's getFlaggedClusters() for the grouping.
+  app.get("/api/admin/duplicate-accounts", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ clusters: duplicateAccountStore.getFlaggedClusters() });
+  });
+
   // "Don't show my profile to people from my city/workplace" (#54): stores
   // the preference and the pure matching check a future discovery/matching
   // feature would call before showing this profile to another — same

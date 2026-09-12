@@ -77,6 +77,8 @@ export default function AdminDashboardPage() {
         <Link href="/admin/analytics">User behavior & conversion &rarr;</Link>
         {" · "}
         <Link href="/admin/support">Support tickets &rarr;</Link>
+        {" · "}
+        <Link href="/admin/duplicate-accounts">Multi-account detection &rarr;</Link>
       </p>
 
       <form

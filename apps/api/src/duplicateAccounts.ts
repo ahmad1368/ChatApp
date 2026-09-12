@@ -9,6 +9,13 @@ export interface DuplicateAccountStatus {
   matchedUserIds: string[];
 }
 
+export type SharedSignal = "ipAddress" | "deviceFingerprint";
+
+export interface SharedSignalCluster {
+  signal: SharedSignal;
+  userIds: string[];
+}
+
 /**
  * Duplicate/intrusive-account detection: flags an account that shares a
  * network address or a client-declared device fingerprint with another
@@ -57,5 +64,26 @@ export class DuplicateAccountStore {
   getStatus(userId: string): DuplicateAccountStatus {
     const matched = this.matchedUserIdsByUserId.get(userId);
     return { flagged: !!matched && matched.size > 0, matchedUserIds: matched ? Array.from(matched) : [] };
+  }
+
+  /**
+   * Tinder's real "Smart detection of multiple accounts created from one
+   * device" (#181) — the admin-review half DuplicateAccountNotice.tsx's
+   * own doc comment flagged as missing ("no moderator/review UI in this
+   * app yet"). Groups by the raw hash bucket rather than getStatus()'s
+   * per-user pairwise view, so an admin sees each shared-signal cluster
+   * once — sorted largest first, the same real "more accounts sharing
+   * one signal is a stronger signal" severity #172/#173's report-count
+   * sort already uses, not a fabricated ML score.
+   */
+  getFlaggedClusters(): SharedSignalCluster[] {
+    const clusters: SharedSignalCluster[] = [];
+    for (const userIds of this.userIdsByIpHash.values()) {
+      if (userIds.size > 1) clusters.push({ signal: "ipAddress", userIds: [...userIds] });
+    }
+    for (const userIds of this.userIdsByDeviceHash.values()) {
+      if (userIds.size > 1) clusters.push({ signal: "deviceFingerprint", userIds: [...userIds] });
+    }
+    return clusters.sort((a, b) => b.userIds.length - a.userIds.length);
   }
 }

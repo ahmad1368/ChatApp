@@ -3893,6 +3893,30 @@ test("GET /api/auth/duplicate-status flags two accounts that signed up from the 
   }
 });
 
+test("Duplicate accounts (#181): GET /api/admin/duplicate-accounts lists a shared-IP cluster and requires the admin key", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl, otpService } = listen();
+  try {
+    await signUpAndGetAccessToken(baseUrl, otpService, "+15551110061");
+    await signUpAndGetAccessToken(baseUrl, otpService, "+15551110062");
+
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/duplicate-accounts`);
+    assert.equal(noKeyRes.status, 401);
+
+    const res = await fetch(`${baseUrl}/api/admin/duplicate-accounts`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(res.status, 200);
+    const { clusters } = await res.json();
+    assert.equal(clusters.length, 1);
+    assert.equal(clusters[0].signal, "ipAddress");
+    assert.equal(clusters[0].userIds.length, 2);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/discovery-visibility requires a valid access token", async () => {
   const { server, baseUrl } = listen();
   try {
