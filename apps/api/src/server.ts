@@ -116,6 +116,7 @@ import { PermissionsStatusStore } from "./permissionsStatus";
 import { CacheClearLogStore } from "./cacheClearLog";
 import { TermsAcceptanceStore } from "./termsAcceptance";
 import { buildAdminMetrics, isAdminConfigured, isValidAdminKey } from "./adminMetrics";
+import { PhotoReviewStore } from "./photoReview";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
@@ -307,6 +308,7 @@ export function createApp(deps?: {
   const duplicateAccountStore = new DuplicateAccountStore();
   const discoveryVisibilityStore = new DiscoveryVisibilityStore();
   const photoAlbumStore = new PhotoAlbumStore();
+  const photoReviewStore = new PhotoReviewStore();
   const introVideoStore = new IntroVideoStore();
   const voiceIntroStore = new VoiceIntroStore();
   const bioStore = new BioStore();
@@ -428,6 +430,23 @@ export function createApp(deps?: {
       return undefined;
     }
     return { userId: verified.userId, sessionId: verified.sessionId };
+  }
+
+  // #171's shared admin-key gate, reused by every admin-only route (#172's
+  // photo review queue, and future Admin Panel & Moderation issues) —
+  // fails closed (503) when ADMIN_API_KEY isn't set, same as an
+  // unconfigured OAuth credential elsewhere in this file, rather than
+  // 401ing into what looks like a working-but-locked endpoint.
+  function requireAdmin(req: express.Request, res: express.Response): boolean {
+    if (!isAdminConfigured()) {
+      res.status(503).json({ error: "Admin dashboard is not configured on this server" });
+      return false;
+    }
+    if (!isValidAdminKey(req.get("x-admin-key"))) {
+      res.status(401).json({ error: "Invalid or missing admin key" });
+      return false;
+    }
+    return true;
   }
 
   app.get("/health", (_req, res) => {
@@ -633,6 +652,9 @@ export function createApp(deps?: {
       res.status(400).json({ error: result.error });
       return;
     }
+    // Bumble's real "Smart and manual review of uploaded photos" (#172)
+    // — every upload joins the admin review queue; see photoReview.ts.
+    photoReviewStore.enqueue(result.photo.id, result.photo.author);
     res.status(201).json({ id: result.photo.id });
   });
 
@@ -1978,14 +2000,7 @@ export function createApp(deps?: {
   // ADMIN_API_KEY rather than a full RBAC system this environment has no
   // role infrastructure to build). Fails closed if unconfigured.
   app.get("/api/admin/metrics", (req, res) => {
-    if (!isAdminConfigured()) {
-      res.status(503).json({ error: "Admin dashboard is not configured on this server" });
-      return;
-    }
-    if (!isValidAdminKey(req.get("x-admin-key"))) {
-      res.status(401).json({ error: "Invalid or missing admin key" });
-      return;
-    }
+    if (!requireAdmin(req, res)) return;
     let totalMessages = 0;
     for (const messages of messagesByRoom.values()) {
       totalMessages += messages.length;
@@ -1999,6 +2014,29 @@ export function createApp(deps?: {
         totalBlocks: blockStore.getTotalBlockCount(),
       }),
     });
+  });
+
+  // Bumble's real "Smart and manual review of uploaded photos" (#172) —
+  // see photoReview.ts for the honest "smart" scoping (reused report-
+  // count signal, not a fabricated ML classifier) and why a rejection
+  // also removes the photo from the owner's album, not just flags it.
+  app.get("/api/admin/photo-review-queue", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ queue: photoReviewStore.getPendingQueue((author) => reportStore.countFor(author)) });
+  });
+
+  app.post("/api/admin/photo-review/:photoId", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = photoReviewStore.decide(req.params.photoId, req.body?.reviewer, req.body?.status, req.body?.reason);
+    if (!result.success) {
+      const status = result.error === "Photo not found in the review queue" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    if (result.entry.status === "rejected") {
+      photoAlbumStore.removePhoto(result.entry.author, result.entry.photoId);
+    }
+    res.json({ entry: result.entry });
   });
 
   // Hinge's real "like or comment on one specific photo" (#112): gated the
