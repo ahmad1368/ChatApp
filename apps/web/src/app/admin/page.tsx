@@ -69,6 +69,8 @@ export default function AdminDashboardPage() {
         <Link href="/admin/verification">Verification badge queue &rarr;</Link>
         {" · "}
         <Link href="/admin/bans">Ban / shadowban queue &rarr;</Link>
+        {" · "}
+        <Link href="/admin/pricing">Pricing plans & discount codes &rarr;</Link>
       </p>
 
       <form
