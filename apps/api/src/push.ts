@@ -1,5 +1,15 @@
 import webpush, { PushSubscription } from "web-push";
 
+// `vibrate` is #160's real background vibration pattern — honored by
+// sw.js's showNotification() even when the app isn't focused, unlike a
+// custom ringtone/sound which the Push API has no cross-browser way to
+// carry at all (see notificationSound.ts's doc comment).
+export interface PushPayload {
+  title: string;
+  body: string;
+  vibrate?: number[];
+}
+
 function loadVapidKeys() {
   const { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY } = process.env;
   if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
@@ -30,7 +40,7 @@ export class PushService {
     this.subscriptionsByEndpoint.delete(endpoint);
   }
 
-  private async sendToSubscriptions(subscriptions: PushSubscription[], payload: { title: string; body: string }): Promise<void> {
+  private async sendToSubscriptions(subscriptions: PushSubscription[], payload: PushPayload): Promise<void> {
     await Promise.all(
       subscriptions.map((subscription) =>
         webpush.sendNotification(subscription, JSON.stringify(payload)).catch((err) => {
@@ -53,7 +63,7 @@ export class PushService {
    */
   async notifyOthers(
     author: string,
-    payload: { title: string; body: string },
+    payload: PushPayload,
     recipientAllowed: (recipient: string) => boolean = () => true
   ): Promise<void> {
     const recipients = [...this.subscriptionsByEndpoint.values()]
@@ -69,7 +79,7 @@ export class PushService {
    * everyone else, this targets a single person across however many
    * devices they've subscribed from.
    */
-  async notifyAuthor(author: string, payload: { title: string; body: string }): Promise<void> {
+  async notifyAuthor(author: string, payload: PushPayload): Promise<void> {
     const recipients = [...this.subscriptionsByEndpoint.values()]
       .filter((s) => s.author === author)
       .map((s) => s.subscription);
@@ -82,7 +92,7 @@ export class PushService {
    * push, #155, going out to everyone who opted into that specific
    * event) — unlike notifyOthers()'s broadcast to literally everyone.
    */
-  async notifyAuthors(authors: Iterable<string>, payload: { title: string; body: string }): Promise<void> {
+  async notifyAuthors(authors: Iterable<string>, payload: PushPayload): Promise<void> {
     const authorSet = new Set(authors);
     const recipients = [...this.subscriptionsByEndpoint.values()]
       .filter((s) => authorSet.has(s.author))

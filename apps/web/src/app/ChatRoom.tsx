@@ -2526,6 +2526,8 @@ export default function ChatRoom({
         <Link href="/settings/weekly-digest">Weekly digest &rarr;</Link>
         {" · "}
         <Link href="/settings/notifications">Notifications &rarr;</Link>
+        {" · "}
+        <Link href="/settings/notification-sound">Ringtone &amp; vibration &rarr;</Link>
       </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (

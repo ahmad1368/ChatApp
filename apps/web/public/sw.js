@@ -82,7 +82,16 @@ self.addEventListener("push", (event) => {
       payload.body = event.data.text();
     }
   }
-  event.waitUntil(self.registration.showNotification(payload.title, { body: payload.body }));
+  // #160's real background vibration pattern: the Push API has no
+  // cross-browser "custom sound" option at all, but `vibrate` here is
+  // genuinely honored by supporting browsers even while the app isn't
+  // focused — see notificationSound.ts for why ringtone stays a
+  // foreground-only, client-synthesized feature instead.
+  const options = { body: payload.body };
+  if (Array.isArray(payload.vibrate) && payload.vibrate.length > 0) {
+    options.vibrate = payload.vibrate;
+  }
+  event.waitUntil(self.registration.showNotification(payload.title, options));
 });
 
 self.addEventListener("notificationclick", (event) => {

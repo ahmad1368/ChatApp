@@ -46,6 +46,7 @@ function listen() {
     archivedChatsStore,
     smsSecurityAlertStore,
     notificationInboxStore,
+    notificationSoundStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -72,6 +73,7 @@ function listen() {
     archivedChatsStore,
     smsSecurityAlertStore,
     notificationInboxStore,
+    notificationSoundStore,
   };
 }
 
@@ -5638,6 +5640,84 @@ test("POST /api/notification-inbox/:author/:id/read 404s for an unknown id", asy
   try {
     const res = await fetch(`${baseUrl}/api/notification-inbox/alice/nope/read`, { method: "POST" });
     assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/notification-sound/:author defaults to the default ringtone with vibration on", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/notification-sound/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { preference: { ringtone: "default", vibrationEnabled: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/notification-sound/:author updates the ringtone and persists it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/notification-sound/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ringtone: "chime" }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { preference: { ringtone: "chime", vibrationEnabled: true } });
+
+    const getRes = await fetch(`${baseUrl}/api/notification-sound/alice`).then((r) => r.json());
+    assert.equal(getRes.preference.ringtone, "chime");
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/notification-sound/:author rejects an invalid ringtone id", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/notification-sound/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ringtone: "airhorn" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/notification-sound/:author turns off vibration independently of ringtone", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/notification-sound/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vibrationEnabled: false }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { preference: { ringtone: "default", vibrationEnabled: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("Notification sound (#160): a match/like push honors a per-author vibration-off preference", async () => {
+  const { server, baseUrl, notificationSoundStore } = listen();
+  try {
+    notificationSoundStore.update("bob", { vibrationEnabled: false });
+
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+
+    // bob turned vibration off; alice never did — the store, not the
+    // route, is what server.ts's push-send sites consult per recipient.
+    assert.equal(notificationSoundStore.getVibrationPattern("bob", [1, 2, 3]), undefined);
+    assert.deepEqual(notificationSoundStore.getVibrationPattern("alice", [1, 2, 3]), [1, 2, 3]);
   } finally {
     server.close();
   }

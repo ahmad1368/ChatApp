@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { playRingtone, vibrateForeground, vibrationPatternForCategory, RingtoneId } from "./notificationSound";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -20,18 +21,50 @@ interface InboxEntry {
  * browser ever granted push permission or has a live subscription.
  * Opening the panel marks everything read, the same "viewing it is what
  * clears the badge" behavior real Tinder's bell icon has.
+ *
+ * #160's foreground ringtone/vibration: polling (not a push event) is
+ * what notices a newly-arrived entry here, so this works the same
+ * whether or not the browser ever granted push permission — see
+ * notificationSound.ts (web) for the real synthesized tone and
+ * apps/api/src/notificationSound.ts for why background push can only
+ * ever carry a vibration pattern, never a custom sound.
  */
 export default function NotificationInbox({ author }: { author: string }) {
   const [entries, setEntries] = useState<InboxEntry[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
+  const ringtoneRef = useRef<RingtoneId>("default");
+  const vibrationEnabledRef = useRef(true);
+  const lastSeenIdRef = useRef<string | null>(null);
+  const hasLoadedOnceRef = useRef(false);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/notification-sound/${encodeURIComponent(author)}`)
+      .then((res) => (res.ok ? res.json() : undefined))
+      .then((body) => {
+        if (!body?.preference) return;
+        ringtoneRef.current = body.preference.ringtone;
+        vibrationEnabledRef.current = body.preference.vibrationEnabled;
+      })
+      .catch(() => undefined);
+  }, [author]);
 
   const refresh = () => {
     fetch(`${API_URL}/api/notification-inbox/${encodeURIComponent(author)}`)
       .then((res) => (res.ok ? res.json() : undefined))
       .then((body) => {
         if (!body) return;
-        setEntries(body.entries ?? []);
+        const nextEntries: InboxEntry[] = body.entries ?? [];
+        const newestId = nextEntries[0]?.id ?? null;
+        if (hasLoadedOnceRef.current && newestId && newestId !== lastSeenIdRef.current) {
+          playRingtone(ringtoneRef.current);
+          if (vibrationEnabledRef.current) {
+            vibrateForeground(vibrationPatternForCategory(nextEntries[0].category));
+          }
+        }
+        lastSeenIdRef.current = newestId;
+        hasLoadedOnceRef.current = true;
+        setEntries(nextEntries);
         setUnreadCount(body.unreadCount ?? 0);
       })
       .catch(() => undefined);
