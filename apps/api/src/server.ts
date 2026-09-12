@@ -44,6 +44,8 @@ import { GenderInfoStore } from "./genderInfo";
 import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
 import { VerificationStore } from "./verification";
 import { BanStore } from "./bans";
+import { PricingPlanStore } from "./pricingPlans";
+import { DiscountCodeStore } from "./discountCodes";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
 import { MessageDraftStore } from "./messageDrafts";
@@ -163,6 +165,8 @@ export function createApp(deps?: {
   onboardingStore: OnboardingStore;
   verificationStore: VerificationStore;
   banStore: BanStore;
+  pricingPlanStore: PricingPlanStore;
+  discountCodeStore: DiscountCodeStore;
   reportStore: ReportStore;
   blockStore: BlockStore;
   contactBlockStore: ContactBlockStore;
@@ -290,6 +294,8 @@ export function createApp(deps?: {
   });
   const verificationStore = new VerificationStore();
   const banStore = new BanStore();
+  const pricingPlanStore = new PricingPlanStore();
+  const discountCodeStore = new DiscountCodeStore();
   const onboardingStore = new OnboardingStore(verificationStore);
   const reportStore = new ReportStore();
   const messageDraftStore = new MessageDraftStore();
@@ -2135,6 +2141,95 @@ export function createApp(deps?: {
     res.status(204).send();
   });
 
+  // Bumble's real "Manage financial plans, pricing and discount codes"
+  // (#177) — see pricingPlans.ts and discountCodes.ts for the honest
+  // scoping: this app has no real payment processor, so these are
+  // genuine, persisted admin-curated records rather than fabricated
+  // billing infra.
+  app.get("/api/admin/pricing-plans", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ plans: pricingPlanStore.list() });
+  });
+
+  app.post("/api/admin/pricing-plans", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = pricingPlanStore.create(req.body?.name, req.body?.priceCents, req.body?.billingPeriod, req.body?.features);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ plan: result.plan });
+  });
+
+  app.put("/api/admin/pricing-plans/:planId", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = pricingPlanStore.update(req.params.planId, req.body ?? {});
+    if (!result.success) {
+      const status = result.error === "Plan not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ plan: result.plan });
+  });
+
+  app.delete("/api/admin/pricing-plans/:planId", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = pricingPlanStore.update(req.params.planId, { active: false });
+    if (!result.success) {
+      res.status(404).json({ error: result.error });
+      return;
+    }
+    res.json({ plan: result.plan });
+  });
+
+  app.get("/api/admin/discount-codes", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ codes: discountCodeStore.list() });
+  });
+
+  app.post("/api/admin/discount-codes", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = discountCodeStore.create(
+      req.body?.code,
+      req.body?.type,
+      req.body?.amount,
+      req.body?.expiresAt,
+      req.body?.maxRedemptions
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ code: result.code });
+  });
+
+  app.delete("/api/admin/discount-codes/:code", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const deactivated = discountCodeStore.deactivate(req.params.code);
+    if (!deactivated) {
+      res.status(404).json({ error: "No active code found with this name" });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  // Public pricing surface: what a real user browsing plans sees, and a
+  // way to check a promo code before "applying" it — this app has no
+  // checkout to actually apply it to, so redeem() here is the honest
+  // stand-in (see discountCodes.ts).
+  app.get("/api/pricing-plans", (_req, res) => {
+    res.json({ plans: pricingPlanStore.listActive() });
+  });
+
+  app.post("/api/discount-codes/redeem", (req, res) => {
+    const result = discountCodeStore.redeem(req.body?.code);
+    if (!result.valid) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ code: result.code });
+  });
+
   // Hinge's real "like or comment on one specific photo" (#112): gated the
   // same way #45's photo serve is (block check + #59's album access level)
   // plus confirming photoId is actually in owner's album, ahead of
@@ -3599,6 +3694,8 @@ export function createApp(deps?: {
     onboardingStore,
     verificationStore,
     banStore,
+    pricingPlanStore,
+    discountCodeStore,
     reportStore,
     blockStore,
     contactBlockStore,

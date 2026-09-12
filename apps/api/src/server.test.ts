@@ -2549,6 +2549,151 @@ test("Ban/Shadowban (#175): DELETE /api/admin/bans/:userId 404s when there's not
   }
 });
 
+test("Pricing plans (#177): admin create/update/archive a plan, and it flows through to the public listing", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/admin/pricing-plans`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ name: "Gold", priceCents: 1999, billingPeriod: "monthly", features: ["Unlimited likes"] }),
+    });
+    assert.equal(createRes.status, 201);
+    const { plan } = await createRes.json();
+    assert.equal(plan.name, "Gold");
+
+    const publicListRes = await fetch(`${baseUrl}/api/pricing-plans`);
+    const { plans: publicPlans } = await publicListRes.json();
+    assert.deepEqual(
+      publicPlans.map((p: { name: string }) => p.name),
+      ["Gold"]
+    );
+
+    const updateRes = await fetch(`${baseUrl}/api/admin/pricing-plans/${plan.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ priceCents: 2499 }),
+    });
+    assert.equal(updateRes.status, 200);
+    assert.equal((await updateRes.json()).plan.priceCents, 2499);
+
+    const archiveRes = await fetch(`${baseUrl}/api/admin/pricing-plans/${plan.id}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(archiveRes.status, 200);
+    assert.equal((await archiveRes.json()).plan.active, false);
+
+    const publicListAfterRes = await fetch(`${baseUrl}/api/pricing-plans`);
+    assert.deepEqual((await publicListAfterRes.json()).plans, []);
+
+    const adminListRes = await fetch(`${baseUrl}/api/admin/pricing-plans`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal((await adminListRes.json()).plans.length, 1);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Pricing plans (#177): POST /api/admin/pricing-plans requires the admin key and rejects invalid fields", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/pricing-plans`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Gold", priceCents: 1999, billingPeriod: "monthly" }),
+    });
+    assert.equal(noKeyRes.status, 401);
+
+    const invalidRes = await fetch(`${baseUrl}/api/admin/pricing-plans`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ name: "Gold", priceCents: -5, billingPeriod: "monthly" }),
+    });
+    assert.equal(invalidRes.status, 400);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Discount codes (#177): admin creates a code, a user redeems it, then it's exhausted", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/admin/discount-codes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ code: "welcome10", type: "percent", amount: 10, maxRedemptions: 1 }),
+    });
+    assert.equal(createRes.status, 201);
+    assert.equal((await createRes.json()).code.code, "WELCOME10");
+
+    const redeemRes = await fetch(`${baseUrl}/api/discount-codes/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "WELCOME10" }),
+    });
+    assert.equal(redeemRes.status, 200);
+
+    const exhaustedRes = await fetch(`${baseUrl}/api/discount-codes/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "WELCOME10" }),
+    });
+    assert.equal(exhaustedRes.status, 400);
+
+    const listRes = await fetch(`${baseUrl}/api/admin/discount-codes`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const { codes } = await listRes.json();
+    assert.equal(codes[0].redemptionCount, 1);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Discount codes (#177): DELETE /api/admin/discount-codes/:code deactivates it, 404s the second time", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/admin/discount-codes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ code: "SAVE20", type: "percent", amount: 20 }),
+    });
+    const deactivateRes = await fetch(`${baseUrl}/api/admin/discount-codes/SAVE20`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(deactivateRes.status, 204);
+
+    const secondRes = await fetch(`${baseUrl}/api/admin/discount-codes/SAVE20`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(secondRes.status, 404);
+
+    const redeemRes = await fetch(`${baseUrl}/api/discount-codes/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "SAVE20" }),
+    });
+    assert.equal(redeemRes.status, 400);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/users/:userId/badge is independent per user", async () => {
   const { server, baseUrl } = listen();
   try {
