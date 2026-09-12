@@ -7370,6 +7370,32 @@ test("PUT /api/permissions-status/:author rejects an unknown permission type", a
   }
 });
 
+test("GET /api/cache-clear-log/:author is null before anything happens", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/cache-clear-log/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { lastClearedAt: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/cache-clear-log/:author records the clear and GET reflects it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const postRes = await fetch(`${baseUrl}/api/cache-clear-log/alice`, { method: "POST" });
+    assert.equal(postRes.status, 200);
+    const { clearedAt } = await postRes.json();
+    assert.ok(clearedAt);
+
+    const getRes = await fetch(`${baseUrl}/api/cache-clear-log/alice`).then((r) => r.json());
+    assert.equal(getRes.lastClearedAt, clearedAt);
+  } finally {
+    server.close();
+  }
+});
+
 async function addAlbumPhoto(baseUrl: string, photoStore: import("./photos").PhotoStore, owner: string) {
   const uploaded = photoStore.upload(owner, "image/png", TINY_PNG_BASE64);
   const id = uploaded.success ? uploaded.photo.id : "";
