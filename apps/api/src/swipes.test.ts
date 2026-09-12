@@ -516,3 +516,32 @@ test("unmatch() doesn't let the pair immediately re-match by swiping again", () 
   const result = store.recordSwipe("alice", "bob", "like");
   assert.equal(result.success, false);
 });
+
+test("getSwiperCount() (#179) counts every distinct author who has recorded a swipe", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "like");
+  store.recordSwipe("alice", "carol", "pass");
+  store.recordSwipe("dave", "bob", "like");
+  assert.equal(store.getSwiperCount(), 2);
+});
+
+test("getSwiperCount() is 0 before any swipe", () => {
+  const store = new SwipeStore();
+  assert.equal(store.getSwiperCount(), 0);
+});
+
+test("getMatchedAuthorCount() (#179) counts distinct authors with at least one live match", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "like");
+  store.recordSwipe("bob", "alice", "like");
+  store.recordSwipe("carol", "dave", "like");
+  assert.equal(store.getMatchedAuthorCount(), 2);
+});
+
+test("getMatchedAuthorCount() excludes an author after unmatch()", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "like");
+  store.recordSwipe("bob", "alice", "like");
+  store.unmatch("alice", "bob");
+  assert.equal(store.getMatchedAuthorCount(), 0);
+});

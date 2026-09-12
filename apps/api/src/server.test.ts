@@ -2794,6 +2794,54 @@ test("Broadcasts (#178): POST /api/admin/broadcasts requires the admin key and r
   }
 });
 
+test("Analytics funnel (#179): GET /api/admin/analytics/funnel reflects real signup/swipe/match/message counts", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110099");
+
+    await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ step: "communityGuidelines", data: { accepted: true } }),
+    });
+
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/analytics/funnel`);
+    assert.equal(noKeyRes.status, 401);
+
+    const res = await fetch(`${baseUrl}/api/admin/analytics/funnel`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(res.status, 200);
+    const { funnel, dailyActiveUsers } = await res.json();
+
+    assert.deepEqual(
+      funnel.map((s: { key: string }) => s.key),
+      ["signedUp", "startedOnboarding", "completedOnboarding", "madeASwipe", "gotAMatch", "sentAMessage"]
+    );
+    const byKey = Object.fromEntries(funnel.map((s: { key: string; count: number }) => [s.key, s.count]));
+    assert.ok(byKey.signedUp >= 1);
+    assert.ok(byKey.startedOnboarding >= 1);
+    assert.ok(byKey.madeASwipe >= 2);
+    assert.ok(byKey.gotAMatch >= 2);
+    assert.equal(typeof dailyActiveUsers, "number");
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/users/:userId/badge is independent per user", async () => {
   const { server, baseUrl } = listen();
   try {

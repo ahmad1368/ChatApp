@@ -73,6 +73,8 @@ export default function AdminDashboardPage() {
         <Link href="/admin/pricing">Pricing plans & discount codes &rarr;</Link>
         {" · "}
         <Link href="/admin/broadcasts">Broadcast messages &rarr;</Link>
+        {" · "}
+        <Link href="/admin/analytics">User behavior & conversion &rarr;</Link>
       </p>
 
       <form

@@ -458,4 +458,21 @@ describe("OnboardingStore", () => {
     const result = store.submitStep("user-1", "selfieVerification", {});
     assert.equal(result.success, false);
   });
+
+  it("getStartedCount() (#179) counts every user who submitted at least one step", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    assert.equal(store.getStartedCount(), 0);
+    store.submitStep("user-1", "communityGuidelines", { accepted: true });
+    store.submitStep("user-2", "communityGuidelines", { accepted: true });
+    assert.equal(store.getStartedCount(), 2);
+  });
+
+  it("getCompletedCount() (#179) only counts users who reached the end of the wizard", () => {
+    const store = new OnboardingStore(new VerificationStore());
+    store.submitStep("user-1", "communityGuidelines", { accepted: true });
+    completeUpToSelfieStep(store, "user-2");
+    store.submitStep("user-2", "selfieVerification", { skipped: true });
+    assert.equal(store.getStartedCount(), 2);
+    assert.equal(store.getCompletedCount(), 1);
+  });
 });

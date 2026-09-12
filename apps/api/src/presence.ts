@@ -47,4 +47,18 @@ export class PresenceStore {
       lastActiveAt: lastActiveAtMs !== undefined ? new Date(lastActiveAtMs).toISOString() : null,
     };
   }
+
+  /**
+   * How many distinct authors have been active (online, or activity
+   * recorded) within the given window — #179's real "daily active users"
+   * metric, computed from this app's own activity timestamps rather than
+   * a fabricated analytics pipeline.
+   */
+  getActiveWithinCount(windowMs: number, now: number = Date.now()): number {
+    let count = 0;
+    for (const lastActiveAtMs of this.lastActiveAtByAuthor.values()) {
+      if (now - lastActiveAtMs <= windowMs) count++;
+    }
+    return count;
+  }
 }

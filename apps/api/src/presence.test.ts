@@ -63,3 +63,17 @@ test("markOffline() with no prior connection does not go negative or throw", () 
   store.markOffline("alice");
   assert.equal(store.isOnline("alice"), false);
 });
+
+test("getActiveWithinCount() (#179) counts only authors active within the window", () => {
+  const store = new PresenceStore();
+  const now = Date.now();
+  store.recordActivity("alice", now - 1000);
+  store.recordActivity("bob", now - 100_000);
+  assert.equal(store.getActiveWithinCount(60_000, now), 1);
+  assert.equal(store.getActiveWithinCount(200_000, now), 2);
+});
+
+test("getActiveWithinCount() is 0 when nobody has ever been active", () => {
+  const store = new PresenceStore();
+  assert.equal(store.getActiveWithinCount(60_000), 0);
+});

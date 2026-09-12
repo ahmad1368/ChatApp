@@ -120,6 +120,7 @@ import { PermissionsStatusStore } from "./permissionsStatus";
 import { CacheClearLogStore } from "./cacheClearLog";
 import { TermsAcceptanceStore } from "./termsAcceptance";
 import { buildAdminMetrics, isAdminConfigured, isValidAdminKey } from "./adminMetrics";
+import { buildConversionFunnel } from "./analyticsFunnel";
 import { PhotoReviewStore } from "./photoReview";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
@@ -2032,6 +2033,31 @@ export function createApp(deps?: {
         totalReports: reportStore.getTotalCount(),
         totalBlocks: blockStore.getTotalBlockCount(),
       }),
+    });
+  });
+
+  // Bumble's real "Tools to analyze user behavior and conversion rate"
+  // (#179) — a genuine signup → onboarding → first-swipe → first-match →
+  // first-message funnel, plus a real daily-active-users count, both
+  // computed from this app's own stores. See analyticsFunnel.ts.
+  const ANALYTICS_ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
+  app.get("/api/admin/analytics/funnel", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const authorsWithMessages = new Set<string>();
+    for (const messages of messagesByRoom.values()) {
+      for (const message of messages) authorsWithMessages.add(message.author);
+    }
+    const funnel = buildConversionFunnel([
+      { key: "signedUp", label: "Signed up", count: userStore.getTotalCount() },
+      { key: "startedOnboarding", label: "Started onboarding", count: onboardingStore.getStartedCount() },
+      { key: "completedOnboarding", label: "Completed onboarding", count: onboardingStore.getCompletedCount() },
+      { key: "madeASwipe", label: "Made a swipe", count: swipeStore.getSwiperCount() },
+      { key: "gotAMatch", label: "Got a match", count: swipeStore.getMatchedAuthorCount() },
+      { key: "sentAMessage", label: "Sent a message", count: authorsWithMessages.size },
+    ]);
+    res.json({
+      funnel,
+      dailyActiveUsers: presenceStore.getActiveWithinCount(ANALYTICS_ACTIVE_WINDOW_MS),
     });
   });
 

@@ -317,6 +317,20 @@ export class SwipeStore {
     return total / 2;
   }
 
+  /** How many distinct authors have ever recorded a swipe — the "made a swipe" stage of #179's conversion funnel. */
+  getSwiperCount(): number {
+    return this.swipesBySwiper.size;
+  }
+
+  /** How many distinct authors currently have at least one live match — the "got a match" stage of #179's conversion funnel. */
+  getMatchedAuthorCount(): number {
+    let count = 0;
+    for (const matches of this.matchesByAuthor.values()) {
+      if (matches.size > 0) count++;
+    }
+    return count;
+  }
+
   /**
    * Tinder's real "Likes You" (#103): everyone who's already liked or
    * superliked this author but hasn't been swiped back on yet — real
