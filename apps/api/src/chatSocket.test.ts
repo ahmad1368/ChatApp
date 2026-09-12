@@ -141,6 +141,41 @@ test("message:send is rejected with rate_limited after exceeding the per-connect
   }
 });
 
+test("Ban/Shadowban (#175): message:send is rejected with banned for a banned author, but a shadowbanned author still sends normally", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    await fetch(`${baseUrl}/api/admin/bans/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ mode: "banned", type: "permanent", reason: "harassment", bannedBy: "admin" }),
+    });
+    await fetch(`${baseUrl}/api/admin/bans/bob`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ mode: "shadowbanned", reason: "fake profile", bannedBy: "admin" }),
+    });
+
+    client.emit("join", "room-1");
+    const rejected = waitFor<{ reason?: string }>(client, "message:rejected");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "hello" });
+    const payload = await rejected;
+    assert.equal(payload.reason, "banned");
+
+    const delivered = waitFor<{ author: string }>(client, "message:new");
+    client.emit("message:send", { roomId: "room-1", author: "bob", text: "hi from bob" });
+    const message = await delivered;
+    assert.equal(message.author, "bob");
+  } finally {
+    client.close();
+    httpServer.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("message:send carries a voice note's audioUrl and waveform through to message:new (#122)", async () => {
   const { httpServer, baseUrl } = await startChatServer();
   const sender = await connectClient(baseUrl);

@@ -2469,6 +2469,86 @@ test("POST /api/admin/verification-queue/:userId/review 404s when no selfie was 
   }
 });
 
+test("Ban/Shadowban (#175): POST /api/admin/bans/:userId applies a permanent ban, GET lists it, DELETE lifts it", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const applyRes = await fetch(`${baseUrl}/api/admin/bans/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ mode: "banned", type: "permanent", reason: "harassment", bannedBy: "admin-1" }),
+    });
+    assert.equal(applyRes.status, 201);
+    const { entry } = await applyRes.json();
+    assert.equal(entry.userId, "alice");
+    assert.equal(entry.mode, "banned");
+    assert.equal(entry.expiresAt, null);
+
+    const listRes = await fetch(`${baseUrl}/api/admin/bans`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const { bans } = await listRes.json();
+    assert.deepEqual(
+      bans.map((b: { userId: string }) => b.userId),
+      ["alice"]
+    );
+
+    const deleteRes = await fetch(`${baseUrl}/api/admin/bans/alice`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(deleteRes.status, 204);
+
+    const listAfterRes = await fetch(`${baseUrl}/api/admin/bans`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.deepEqual((await listAfterRes.json()).bans, []);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Ban/Shadowban (#175): POST /api/admin/bans/:userId rejects an invalid mode and requires 401 without the admin key", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/bans/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "banned", type: "permanent", reason: "harassment", bannedBy: "admin-1" }),
+    });
+    assert.equal(noKeyRes.status, 401);
+
+    const invalidModeRes = await fetch(`${baseUrl}/api/admin/bans/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ mode: "muted", reason: "harassment", bannedBy: "admin-1" }),
+    });
+    assert.equal(invalidModeRes.status, 400);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Ban/Shadowban (#175): DELETE /api/admin/bans/:userId 404s when there's nothing to lift", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/bans/nobody`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/users/:userId/badge is independent per user", async () => {
   const { server, baseUrl } = listen();
   try {
@@ -7428,6 +7508,85 @@ test("Snooze Mode (#164): an existing match stays visible to the snoozed author 
     );
   } finally {
     server.close();
+  }
+});
+
+test("Ban/Shadowban (#175): GET /api/swipe-candidates/:author excludes both a banned and a shadowbanned candidate", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/admin/bans/bob`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ mode: "banned", type: "permanent", reason: "harassment", bannedBy: "admin-1" }),
+    });
+    await fetch(`${baseUrl}/api/admin/bans/carol`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ mode: "shadowbanned", reason: "fake profile", bannedBy: "admin-1" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(body.candidates, []);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Ban/Shadowban (#175): POST /api/swipes rejects a swipe from a banned author but allows one from a shadowbanned author", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/admin/bans/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ mode: "banned", type: "permanent", reason: "harassment", bannedBy: "admin-1" }),
+    });
+    await fetch(`${baseUrl}/api/admin/bans/dave`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ mode: "shadowbanned", reason: "fake profile", bannedBy: "admin-1" }),
+    });
+
+    const bannedRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    assert.equal(bannedRes.status, 403);
+    assert.match((await bannedRes.json()).error, /banned/i);
+
+    const shadowbannedRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "dave", swiped: "bob", direction: "like" }),
+    });
+    assert.equal(shadowbannedRes.status, 201);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
   }
 });
 

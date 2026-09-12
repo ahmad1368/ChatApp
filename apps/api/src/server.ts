@@ -43,6 +43,7 @@ import { canSendFirstMessage } from "./firstMessageRule";
 import { GenderInfoStore } from "./genderInfo";
 import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
 import { VerificationStore } from "./verification";
+import { BanStore } from "./bans";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
 import { MessageDraftStore } from "./messageDrafts";
@@ -161,6 +162,7 @@ export function createApp(deps?: {
   webAuthnService: WebAuthnService;
   onboardingStore: OnboardingStore;
   verificationStore: VerificationStore;
+  banStore: BanStore;
   reportStore: ReportStore;
   blockStore: BlockStore;
   contactBlockStore: ContactBlockStore;
@@ -287,6 +289,7 @@ export function createApp(deps?: {
     origin: process.env.WEBAUTHN_ORIGIN ?? "http://localhost:3000",
   });
   const verificationStore = new VerificationStore();
+  const banStore = new BanStore();
   const onboardingStore = new OnboardingStore(verificationStore);
   const reportStore = new ReportStore();
   const messageDraftStore = new MessageDraftStore();
@@ -1533,6 +1536,13 @@ export function createApp(deps?: {
     if (snoozeAccountStore.isEnabled(b)) {
       return true;
     }
+    // Bumble's real Ban/Shadowban (#175): a banned candidate is gone from
+    // the platform entirely, and a shadowbanned one silently disappears
+    // from discovery while the account itself keeps working normally —
+    // see bans.ts's doc comment for why shadowban stops at this layer.
+    if (banStore.isBanned(b) || banStore.isShadowbanned(b)) {
+      return true;
+    }
     return false;
   };
   // OkCupid's real percentage-match algorithm (#94), computed from #79's
@@ -2090,6 +2100,41 @@ export function createApp(deps?: {
     res.json({ status: result.status });
   });
 
+  // Bumble's real "Ability to permanently or temporarily ban offending
+  // users (Ban / Shadowban)" (#175) — see bans.ts for the ban-vs-
+  // shadowban distinction and why shadowban stops at the discovery layer.
+  app.get("/api/admin/bans", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ bans: banStore.getActiveBans() });
+  });
+
+  app.post("/api/admin/bans/:userId", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = banStore.apply(
+      req.params.userId,
+      req.body?.mode,
+      req.body?.reason,
+      req.body?.bannedBy,
+      req.body?.type,
+      req.body?.durationHours
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ entry: result.entry });
+  });
+
+  app.delete("/api/admin/bans/:userId", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const lifted = banStore.lift(req.params.userId);
+    if (!lifted) {
+      res.status(404).json({ error: "No active ban found for this user" });
+      return;
+    }
+    res.status(204).send();
+  });
+
   // Hinge's real "like or comment on one specific photo" (#112): gated the
   // same way #45's photo serve is (block check + #59's album access level)
   // plus confirming photoId is actually in owner's album, ahead of
@@ -2210,6 +2255,13 @@ export function createApp(deps?: {
     const swiperAuthor = typeof req.body?.swiper === "string" ? req.body.swiper.trim() : "";
     if (swiperAuthor && snoozeAccountStore.isEnabled(swiperAuthor)) {
       res.status(400).json({ error: "Your account is snoozed — unsnooze it to keep swiping" });
+      return;
+    }
+    // Bumble's real Ban/Shadowban (#175): a banned account is hard-blocked
+    // from swiping — a visible consequence, unlike a shadowban, which lets
+    // swiping continue so the account doesn't realize anything changed.
+    if (swiperAuthor && banStore.isBanned(swiperAuthor)) {
+      res.status(403).json({ error: "Your account has been banned" });
       return;
     }
     const result = swipeStore.recordSwipe(req.body?.swiper, req.body?.swiped, req.body?.direction);
@@ -3546,6 +3598,7 @@ export function createApp(deps?: {
     webAuthnService,
     onboardingStore,
     verificationStore,
+    banStore,
     reportStore,
     blockStore,
     contactBlockStore,
@@ -3633,6 +3686,7 @@ export async function createChatServer() {
     genderInfoStore,
     matchExpiryStore,
     notificationPreferencesStore,
+    banStore,
   } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -3663,6 +3717,15 @@ export async function createChatServer() {
     socket.on("message:send", (payload: SendMessagePayload) => {
       if (!messageRateLimiter.isAllowed(socket.id)) {
         socket.emit("message:rejected", { reason: "rate_limited" });
+        return;
+      }
+
+      // Bumble's real Ban/Shadowban (#175): a banned account is hard-
+      // blocked from sending — a shadowbanned one is deliberately let
+      // through here (see bans.ts for why shadowban only acts at the
+      // discovery layer, not chat delivery).
+      if (banStore.isBanned(payload.author)) {
+        socket.emit("message:rejected", { reason: "banned" });
         return;
       }
 
