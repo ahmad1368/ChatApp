@@ -7521,6 +7521,137 @@ test("GET /api/admin/metrics (#171) returns real live counts from the app's own 
   }
 });
 
+test("Photo review (#172): an uploaded photo joins the admin review queue as pending", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const uploadRes = await fetch(`${baseUrl}/api/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    const { id } = await uploadRes.json();
+
+    const res = await fetch(`${baseUrl}/api/admin/photo-review-queue`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(res.status, 200);
+    const { queue } = await res.json();
+    assert.deepEqual(
+      queue.map((e: { photoId: string; author: string; status: string }) => ({ photoId: e.photoId, author: e.author, status: e.status })),
+      [{ photoId: id, author: "alice", status: "pending" }]
+    );
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Photo review (#172): the queue is prioritized by report count, highest first", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    const bobUploadRes = await fetch(`${baseUrl}/api/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob", mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    const { id: bobPhotoId } = await bobUploadRes.json();
+
+    await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "carol", reportedAuthor: "bob", reason: "harassment" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/photo-review-queue`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const { queue } = await res.json();
+    assert.equal(queue[0].photoId, bobPhotoId);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Photo review (#172): rejecting a photo removes it from the owner's album", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const uploadRes = await fetch(`${baseUrl}/api/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    const { id } = await uploadRes.json();
+    await fetch(`${baseUrl}/api/photo-albums/alice/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId: id }),
+    });
+
+    const decisionRes = await fetch(`${baseUrl}/api/admin/photo-review/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "rejected", reason: "Nudity" }),
+    });
+    assert.equal(decisionRes.status, 200);
+    const { entry } = await decisionRes.json();
+    assert.equal(entry.status, "rejected");
+    assert.equal(entry.reviewedBy, "admin-1");
+
+    const albumRes = await fetch(`${baseUrl}/api/photo-albums/alice/photos`).then((r) => r.json());
+    assert.deepEqual(albumRes.photoIds, []);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("POST /api/admin/photo-review/:photoId requires the admin key", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/photo-review/some-id`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "approved" }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("POST /api/admin/photo-review/:photoId 404s for an unknown photo", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/photo-review/nope`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "approved" }),
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 async function addAlbumPhoto(baseUrl: string, photoStore: import("./photos").PhotoStore, owner: string) {
   const uploaded = photoStore.upload(owner, "image/png", TINY_PNG_BASE64);
   const id = uploaded.success ? uploaded.photo.id : "";

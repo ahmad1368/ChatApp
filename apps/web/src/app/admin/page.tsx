@@ -61,6 +61,9 @@ export default function AdminDashboardPage() {
         <Link href="/">&larr; Back to chat</Link>
       </p>
       <h1>Admin dashboard</h1>
+      <p>
+        <Link href="/admin/photos">Photo review queue &rarr;</Link>
+      </p>
 
       <form
         onSubmit={(e) => {
