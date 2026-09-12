@@ -45,6 +45,7 @@ function listen() {
     pinnedChatsStore,
     archivedChatsStore,
     smsSecurityAlertStore,
+    notificationInboxStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -70,6 +71,7 @@ function listen() {
     pinnedChatsStore,
     archivedChatsStore,
     smsSecurityAlertStore,
+    notificationInboxStore,
   };
 }
 
@@ -5534,6 +5536,108 @@ test("POST /api/swipes reports a match on mutual likes, and GET /api/matches ref
 
     const matchesRes = await fetch(`${baseUrl}/api/matches/alice`);
     assert.deepEqual(await matchesRes.json(), { matches: [{ author: "bob", compatibility: 0, archived: false }] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/notification-inbox/:author is empty for an author with no events", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/notification-inbox/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { entries: [], unreadCount: 0 });
+  } finally {
+    server.close();
+  }
+});
+
+test("Notification inbox (#159): a new match records an inbox entry for both sides", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const aliceInbox = await fetch(`${baseUrl}/api/notification-inbox/alice`).then((r) => r.json());
+    assert.equal(aliceInbox.unreadCount, 1);
+    assert.equal(aliceInbox.entries[0].category, "newMatch");
+    assert.match(aliceInbox.entries[0].body, /bob/);
+
+    // bob also got the earlier one-sided-like notification from alice's
+    // first swipe, on top of the match itself — two real, distinct events.
+    const bobInbox = await fetch(`${baseUrl}/api/notification-inbox/bob`).then((r) => r.json());
+    assert.equal(bobInbox.unreadCount, 2);
+    assert.equal(bobInbox.entries[0].category, "newMatch");
+    assert.equal(bobInbox.entries[1].category, "newLike");
+  } finally {
+    server.close();
+  }
+});
+
+test("Notification inbox (#159): a one-sided like records a newLike entry only for the swiped author", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+
+    const bobInbox = await fetch(`${baseUrl}/api/notification-inbox/bob`).then((r) => r.json());
+    assert.equal(bobInbox.entries.length, 1);
+    assert.equal(bobInbox.entries[0].category, "newLike");
+
+    const aliceInbox = await fetch(`${baseUrl}/api/notification-inbox/alice`).then((r) => r.json());
+    assert.equal(aliceInbox.entries.length, 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/notification-inbox/:author/read-all clears the unread count", async () => {
+  const { server, baseUrl, notificationInboxStore } = listen();
+  try {
+    notificationInboxStore.record("alice", "newLike", "Someone likes you! 💕", "Open the app to see who.");
+    notificationInboxStore.record("alice", "newMatch", "New Match! 🎉", "You and bob have matched!");
+
+    const res = await fetch(`${baseUrl}/api/notification-inbox/alice/read-all`, { method: "POST" });
+    assert.equal(res.status, 200);
+
+    const inbox = await fetch(`${baseUrl}/api/notification-inbox/alice`).then((r) => r.json());
+    assert.equal(inbox.unreadCount, 0);
+    assert.ok(inbox.entries.every((e: { read: boolean }) => e.read));
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/notification-inbox/:author/:id/read marks a single entry read", async () => {
+  const { server, baseUrl, notificationInboxStore } = listen();
+  try {
+    notificationInboxStore.record("alice", "newLike", "Someone likes you! 💕", "Open the app to see who.");
+    const [entry] = notificationInboxStore.getInbox("alice");
+
+    const res = await fetch(`${baseUrl}/api/notification-inbox/alice/${entry.id}/read`, { method: "POST" });
+    assert.equal(res.status, 200);
+    assert.equal(notificationInboxStore.getUnreadCount("alice"), 0);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/notification-inbox/:author/:id/read 404s for an unknown id", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/notification-inbox/alice/nope/read`, { method: "POST" });
+    assert.equal(res.status, 404);
   } finally {
     server.close();
   }

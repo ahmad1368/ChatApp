@@ -16,6 +16,7 @@ import {
 import { getOrCreateKeyPair, exportPublicKeyJwk, deriveSharedKey, encryptText, decryptText } from "./e2ee";
 import { loadDataSaverPreference, saveDataSaverPreference } from "./dataSaverStore";
 import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
+import NotificationInbox from "./NotificationInbox";
 import { compressImage, blobToBase64 } from "./imageCompression";
 import { computeWaveform } from "./voiceNoteWaveform";
 import GifPicker from "./GifPicker";
@@ -1977,6 +1978,7 @@ export default function ChatRoom({
           <Link href={`/privacy/location?author=${encodeURIComponent(author)}`}>Location privacy</Link>
           <Link href="/safety">🛡️ Safety Center</Link>
           <Link href="/share-my-date">📍 Share My Date</Link>
+          <NotificationInbox author={author} />
           <ThemeToggle />
           <LocaleToggle />
           <button className="chat-app__theme-toggle" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)">

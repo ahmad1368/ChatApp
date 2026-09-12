@@ -22,6 +22,7 @@ import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
 import { WeeklyDigestStore, buildWeeklyDigest } from "./weeklyDigest";
 import { NotificationPreferencesStore } from "./notificationPreferences";
+import { NotificationInboxStore } from "./notificationInbox";
 import { LiveEventStore } from "./liveEvents";
 import { buildNewLikeNotification } from "./likeNotifications";
 import { buildNewMatchNotification } from "./matchNotifications";
@@ -212,6 +213,7 @@ export function createApp(deps?: {
   genderInfoStore: GenderInfoStore;
   matchExpiryStore: MatchExpiryStore;
   notificationPreferencesStore: NotificationPreferencesStore;
+  notificationInboxStore: NotificationInboxStore;
 } {
   const app = express();
   // Custom response headers aren't visible to browser fetch() by default —
@@ -227,6 +229,7 @@ export function createApp(deps?: {
   const locations = new LocationStore();
   const pushService = new PushService();
   const notificationPreferencesStore = new NotificationPreferencesStore();
+  const notificationInboxStore = new NotificationInboxStore();
   const liveEventStore = new LiveEventStore();
 
   // Match.com's real "Notification for the start of in-app live events"
@@ -239,14 +242,17 @@ export function createApp(deps?: {
   setInterval(() => {
     for (const event of liveEventStore.getEventsNeedingStartNotification()) {
       liveEventStore.markStartNotificationSent(event.id);
-      pushService
-        .notifyAuthors(liveEventStore.getSubscribers(event.id), {
-          title: `${event.title} is starting now! 🎉`,
-          body: event.description || "Open the app to join.",
-        })
-        .catch((err) => {
-          console.error("Failed to deliver live-event start push notification:", err);
-        });
+      const title = `${event.title} is starting now! 🎉`;
+      const body = event.description || "Open the app to join.";
+      const subscribers = [...liveEventStore.getSubscribers(event.id)];
+      pushService.notifyAuthors(subscribers, { title, body }).catch((err) => {
+        console.error("Failed to deliver live-event start push notification:", err);
+      });
+      // Tinder's real in-app Notifications tab (#159): recorded regardless
+      // of push subscription/permission — see notificationInbox.ts.
+      for (const subscriber of subscribers) {
+        notificationInboxStore.record(subscriber, "liveEventStart", title, body);
+      }
     }
   }, LIVE_EVENT_START_SWEEP_INTERVAL_MS).unref();
   const uploadStore = new UploadStore();
@@ -349,6 +355,8 @@ export function createApp(deps?: {
         pushService.notifyAuthor(author, payload).catch((err) => {
           console.error("Failed to deliver match-expiry reminder push notification:", err);
         });
+        // Tinder's real in-app Notifications tab (#159) — see notificationInbox.ts.
+        notificationInboxStore.record(author, "matchExpiryReminder", payload.title, payload.body);
       }
     }
   }, MATCH_EXPIRY_REMINDER_SWEEP_INTERVAL_MS).unref();
@@ -1966,20 +1974,27 @@ export function createApp(deps?: {
       // side gets their own notification naming the other person;
       // fire-and-forget the same way message:send's push above doesn't
       // block the response on delivery.
-      pushService.notifyAuthor(swiperName, buildNewMatchNotification(swipedName)).catch((err) => {
+      const swiperNotification = buildNewMatchNotification(swipedName);
+      const swipedNotification = buildNewMatchNotification(swiperName);
+      pushService.notifyAuthor(swiperName, swiperNotification).catch((err) => {
         console.error("Failed to deliver new-match push notification:", err);
       });
-      pushService.notifyAuthor(swipedName, buildNewMatchNotification(swiperName)).catch((err) => {
+      pushService.notifyAuthor(swipedName, swipedNotification).catch((err) => {
         console.error("Failed to deliver new-match push notification:", err);
       });
+      // Tinder's real in-app Notifications tab (#159) — see notificationInbox.ts.
+      notificationInboxStore.record(swiperName, "newMatch", swiperNotification.title, swiperNotification.body);
+      notificationInboxStore.record(swipedName, "newMatch", swipedNotification.title, swipedNotification.body);
     } else if (liked) {
       // Tinder's real "Notification for a new like" (#153) — only for a
       // one-sided like that didn't already become a mutual match; a
       // match gets its own, differently-worded notification instead
       // (see #151), not both for the same swipe.
-      pushService.notifyAuthor(swipedName, buildNewLikeNotification(req.body?.direction === "superlike")).catch((err) => {
+      const likeNotification = buildNewLikeNotification(req.body?.direction === "superlike");
+      pushService.notifyAuthor(swipedName, likeNotification).catch((err) => {
         console.error("Failed to deliver new-like push notification:", err);
       });
+      notificationInboxStore.record(swipedName, "newLike", likeNotification.title, likeNotification.body);
     }
     res.status(201).json({ matched: result.matched });
   });
@@ -2617,6 +2632,32 @@ export function createApp(deps?: {
     res.json({ preferences: result.preferences });
   });
 
+  // Tinder's real in-app Notifications tab (#159) — a durable record of
+  // every push-worthy event (new match/like/expiry-reminder/live-event
+  // start) independent of push permission/subscription; see
+  // notificationInbox.ts for which events feed it and why "new message"
+  // doesn't.
+  app.get("/api/notification-inbox/:author", (req, res) => {
+    res.json({
+      entries: notificationInboxStore.getInbox(req.params.author),
+      unreadCount: notificationInboxStore.getUnreadCount(req.params.author),
+    });
+  });
+
+  app.post("/api/notification-inbox/:author/read-all", (req, res) => {
+    notificationInboxStore.markAllRead(req.params.author);
+    res.json({ success: true });
+  });
+
+  app.post("/api/notification-inbox/:author/:id/read", (req, res) => {
+    const marked = notificationInboxStore.markRead(req.params.author, req.params.id);
+    if (!marked) {
+      res.status(404).json({ error: "Notification not found" });
+      return;
+    }
+    res.json({ success: true });
+  });
+
   // Image sharing: the client compresses/downscales before uploading (see
   // imageCompression.ts), so this just validates mime type and size.
   app.post("/api/uploads", (req, res) => {
@@ -3252,6 +3293,7 @@ export function createApp(deps?: {
     genderInfoStore,
     matchExpiryStore,
     notificationPreferencesStore,
+    notificationInboxStore,
   };
 }
 
