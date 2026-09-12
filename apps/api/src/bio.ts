@@ -1,4 +1,5 @@
 import { scanForContactInfo } from "./contactInfoDetector";
+import { filterProfanity } from "./profanityFilter";
 
 export const MAX_BIO_LENGTH = 280;
 
@@ -41,8 +42,14 @@ export class BioStore {
       return { success: false, error: `bio ${contactInfoError}` };
     }
 
-    this.bioByAuthor.set(authorName, text);
-    return { success: true, bio: text };
+    // Bumble's real "Automatic filtering system for inappropriate words
+    // and profanity" (#176): unlike #143's chat-message warning, a bio
+    // update isn't rejected or held for confirmation — profanity is
+    // silently masked so the profile is never left blocked mid-edit.
+    const { filtered } = filterProfanity(text);
+
+    this.bioByAuthor.set(authorName, filtered);
+    return { success: true, bio: filtered };
   }
 
   get(author: string): string {

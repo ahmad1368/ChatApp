@@ -58,3 +58,10 @@ test("each author's bio is independent", () => {
   store.update("alice", "Alice's bio");
   assert.equal(store.get("bob"), "");
 });
+
+test("update() (#176) silently masks profanity instead of rejecting the bio", () => {
+  const store = new BioStore();
+  const result = store.update("alice", "just a chill person, don't be a bitch about it");
+  assert.equal(result.success, true);
+  assert.equal(store.get("alice"), "just a chill person, don't be a b**** about it");
+});

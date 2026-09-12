@@ -64,6 +64,13 @@ test("each author's preference is independent", () => {
   assert.deepEqual(store.get("bob"), { mode: "fullName", nickname: "" });
 });
 
+test("update() (#176) silently masks profanity in a nickname instead of rejecting it", () => {
+  const store = new DisplayNameModeStore();
+  const result = store.update("alice", "nickname", "little shit");
+  assert.equal(result.success, true);
+  assert.equal(store.get("alice").nickname, "little s***");
+});
+
 test("resolveDisplayName() returns the full name as-is for mode fullName", () => {
   assert.equal(resolveDisplayName("Alice Smith", { mode: "fullName", nickname: "" }), "Alice Smith");
 });

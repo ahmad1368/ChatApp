@@ -1,4 +1,5 @@
 import { scanForContactInfo } from "./contactInfoDetector";
+import { filterProfanity } from "./profanityFilter";
 
 export const DISPLAY_NAME_MODES = ["fullName", "firstNameOnly", "initials", "nickname"] as const;
 export type DisplayNameMode = (typeof DISPLAY_NAME_MODES)[number];
@@ -64,7 +65,11 @@ export class DisplayNameModeStore {
       return { success: false, error: "nickname is required when mode is \"nickname\"" };
     }
 
-    const preference: DisplayNamePreference = { mode, nickname: nicknameValue };
+    // #176's automatic profanity filter — same silent masking as bio.ts,
+    // since a display name is shown to other users everywhere, not just
+    // in chat where #143's interactive warning already applies.
+    const { filtered: filteredNickname } = filterProfanity(nicknameValue);
+    const preference: DisplayNamePreference = { mode, nickname: filteredNickname };
     this.preferenceByAuthor.set(authorName, preference);
     return { success: true, preference };
   }
