@@ -308,4 +308,23 @@ export class TokenService {
     }
     return others.length;
   }
+
+  /**
+   * Tinder's real "Log out of the account from all devices" (#170) —
+   * unlike revokeOtherSessions() above, this includes the caller's own
+   * current session too: every device, no exception, so the caller is
+   * signed out right along with everyone else. The caller's own already-
+   * issued 15-minute access token still works until it naturally expires
+   * (same disclosed JWT-revocation trade-off as revokeSession()'s doc
+   * comment) — only the refresh token that would otherwise silently
+   * renew it is invalidated immediately.
+   */
+  revokeAllSessions(userId: string): number {
+    const all = Array.from(this.sessionsById.values()).filter((session) => session.userId === userId);
+    for (const session of all) {
+      this.refreshTokenToSessionId.delete(session.refreshToken);
+      this.sessionsById.delete(session.id);
+    }
+    return all.length;
+  }
 }
