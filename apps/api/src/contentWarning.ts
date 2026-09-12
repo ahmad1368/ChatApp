@@ -19,8 +19,11 @@ const HARASSMENT_PHRASES = [
 ];
 
 // Standalone profanity/insults, matched as whole words so this doesn't
-// trip on unrelated substrings (e.g. "class", "assassin").
-const PROFANITY_WORDS = ["fuck", "fucking", "shit", "bitch", "asshole", "bastard", "slut", "whore", "cunt"];
+// trip on unrelated substrings (e.g. "class", "assassin"). Exported for
+// profanityFilter.ts's #176 automatic filter, which reuses this exact
+// list for a different mechanism (silent masking of profile text)
+// instead of duplicating it.
+export const PROFANITY_WORDS = ["fuck", "fucking", "shit", "bitch", "asshole", "bastard", "slut", "whore", "cunt"];
 
 export type ContentWarningReason = "harassment" | "profanity";
 export interface ContentWarningScanResult {
