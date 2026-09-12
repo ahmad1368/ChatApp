@@ -97,6 +97,11 @@ export class UserStore {
     return this.usersById.get(id);
   }
 
+  /** Total distinct registered accounts across every sign-in method — for #171's admin dashboard. */
+  getTotalCount(): number {
+    return this.usersById.size;
+  }
+
   findOrCreate(phoneNumber: string): AuthUser {
     const existing = this.usersByPhone.get(phoneNumber);
     if (existing) return existing;

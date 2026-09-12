@@ -8,6 +8,14 @@
   --color-accent-text: #ffffff;
   --color-danger: #c0392b;
 
+  /* Categorical chart series — fixed order, never cycled (see #171's
+     admin dashboard). Validated for CVD-safe adjacent contrast. */
+  --chart-series-1: #2a78d6;
+  --chart-series-2: #eb6834;
+  --chart-series-3: #1baf7a;
+  --chart-series-4: #eda100;
+  --chart-series-5: #e87ba4;
+
   --chat-max-width: 480px;
   --chat-padding: 16px;
   --chat-gap: 8px;
@@ -25,6 +33,11 @@
     --color-accent: #5b8dff;
     --color-accent-text: #0b0f19;
     --color-danger: #ff6b6b;
+    --chart-series-1: #3987e5;
+    --chart-series-2: #d95926;
+    --chart-series-3: #199e70;
+    --chart-series-4: #c98500;
+    --chart-series-5: #d55181;
   }
 }
 
@@ -37,6 +50,11 @@
   --color-accent: #5b8dff;
   --color-accent-text: #0b0f19;
   --color-danger: #ff6b6b;
+  --chart-series-1: #3987e5;
+  --chart-series-2: #d95926;
+  --chart-series-3: #199e70;
+  --chart-series-4: #c98500;
+  --chart-series-5: #d55181;
 }
 
 * {
