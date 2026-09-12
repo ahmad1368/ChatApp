@@ -133,6 +133,14 @@ function listenWithRecaptcha(recaptchaService: RecaptchaService) {
 // Signs a phone number up for real via the OTP endpoints (rather than
 // forging a JWT) so 2FA tests exercise requireAuth exactly as a real client
 // would: reading the code straight off OtpService instead of a fake SMS provider.
+async function getExploreThemeId(baseUrl: string, name: string): Promise<string> {
+  const res = await fetch(`${baseUrl}/api/explore-mode/catalog`);
+  const { themes } = await res.json();
+  const theme = themes.find((t: { name: string }) => t.name === name);
+  if (!theme) throw new Error(`expected a seeded explore theme named "${name}"`);
+  return theme.id;
+}
+
 async function signUpAndGetAccessToken(baseUrl: string, otpService: OtpService, phoneNumber: string): Promise<string> {
   const result = otpService.requestOtp(phoneNumber);
   const code = "code" in result ? result.code : (() => { throw new Error("expected a fresh code"); })();
@@ -7186,12 +7194,17 @@ test("GET /api/swipe-candidates/:author excludes unverified candidates when requ
   }
 });
 
-test("GET /api/explore-mode/catalog returns the fixed theme list", async () => {
+test("GET /api/explore-mode/catalog returns the seeded active theme names (#182)", async () => {
   const { server, baseUrl } = listen();
   try {
     const res = await fetch(`${baseUrl}/api/explore-mode/catalog`);
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { modes: ["cafes", "sports", "travel"] });
+    const { themes } = await res.json();
+    assert.deepEqual(
+      new Set(themes.map((t: { name: string }) => t.name)),
+      new Set(["Cafes", "Sports", "Travel"])
+    );
+    assert.ok(themes.every((t: { id: string }) => typeof t.id === "string" && t.id));
   } finally {
     server.close();
   }
@@ -7211,16 +7224,17 @@ test("GET /api/explore-mode/:author returns null before any update", async () =>
 test("PUT /api/explore-mode/:author saves a mode and GET returns it", async () => {
   const { server, baseUrl } = listen();
   try {
+    const sportsThemeId = await getExploreThemeId(baseUrl, "Sports");
     const putRes = await fetch(`${baseUrl}/api/explore-mode/alice`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "sports" }),
+      body: JSON.stringify({ mode: sportsThemeId }),
     });
     assert.equal(putRes.status, 200);
-    assert.deepEqual(await putRes.json(), { mode: "sports" });
+    assert.deepEqual(await putRes.json(), { mode: sportsThemeId });
 
     const getRes = await fetch(`${baseUrl}/api/explore-mode/alice`);
-    assert.deepEqual(await getRes.json(), { mode: "sports" });
+    assert.deepEqual(await getRes.json(), { mode: sportsThemeId });
   } finally {
     server.close();
   }
@@ -7243,10 +7257,11 @@ test("PUT /api/explore-mode/:author rejects an invalid mode", async () => {
 test("PUT /api/explore-mode/:author accepts null to clear the active mode", async () => {
   const { server, baseUrl } = listen();
   try {
+    const travelThemeId = await getExploreThemeId(baseUrl, "Travel");
     await fetch(`${baseUrl}/api/explore-mode/alice`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "travel" }),
+      body: JSON.stringify({ mode: travelThemeId }),
     });
     const res = await fetch(`${baseUrl}/api/explore-mode/alice`, {
       method: "PUT",
@@ -7256,6 +7271,99 @@ test("PUT /api/explore-mode/:author accepts null to clear the active mode", asyn
     assert.deepEqual(await res.json(), { mode: null });
   } finally {
     server.close();
+  }
+});
+
+test("Explore themes (#182): admin creates a theme, it appears in the public catalog, and swipers can select it", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/admin/explore-themes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ name: "Book Lovers", interests: ["reading", "writing"] }),
+    });
+    assert.equal(createRes.status, 201);
+    const { theme } = await createRes.json();
+
+    const catalogRes = await fetch(`${baseUrl}/api/explore-mode/catalog`);
+    const { themes } = await catalogRes.json();
+    assert.ok(themes.some((t: { id: string }) => t.id === theme.id));
+
+    const putRes = await fetch(`${baseUrl}/api/explore-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: theme.id }),
+    });
+    assert.equal(putRes.status, 200);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Explore themes (#182): admin updates a theme's interests, and deactivating one removes it from the catalog and blocks selecting it", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const cafesThemeId = await getExploreThemeId(baseUrl, "Cafes");
+
+    const updateRes = await fetch(`${baseUrl}/api/admin/explore-themes/${cafesThemeId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ interests: ["coffee", "wine"] }),
+    });
+    assert.equal(updateRes.status, 200);
+    assert.deepEqual((await updateRes.json()).theme.interests, ["coffee", "wine"]);
+
+    const deleteRes = await fetch(`${baseUrl}/api/admin/explore-themes/${cafesThemeId}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(deleteRes.status, 200);
+
+    const catalogRes = await fetch(`${baseUrl}/api/explore-mode/catalog`);
+    const { themes } = await catalogRes.json();
+    assert.ok(!themes.some((t: { id: string }) => t.id === cafesThemeId));
+
+    const putRes = await fetch(`${baseUrl}/api/explore-mode/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: cafesThemeId }),
+    });
+    assert.equal(putRes.status, 400);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Explore themes (#182): admin routes require the admin key and reject an interest outside the fixed catalog", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/explore-themes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Book Lovers", interests: ["reading"] }),
+    });
+    assert.equal(noKeyRes.status, 401);
+
+    const invalidInterestRes = await fetch(`${baseUrl}/api/admin/explore-themes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ name: "Book Lovers", interests: ["underwater-basket-weaving"] }),
+    });
+    assert.equal(invalidInterestRes.status, 400);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
   }
 });
 
@@ -7331,10 +7439,11 @@ test("GET /api/swipe-candidates/:author only shows candidates matching the swipe
       body: JSON.stringify({ interests: ["coffee"], hideInterests: false }),
     });
 
+    const cafesThemeId = await getExploreThemeId(baseUrl, "Cafes");
     await fetch(`${baseUrl}/api/explore-mode/alice`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "cafes" }),
+      body: JSON.stringify({ mode: cafesThemeId }),
     });
 
     const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);

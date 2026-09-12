@@ -103,7 +103,8 @@ import { StylizedAvatarStore, AVATAR_STYLES } from "./stylizedAvatar";
 import { SwipeStore } from "./swipes";
 import { SmartScoreStore } from "./smartScore";
 import { DiscoveryFiltersStore, candidateMatchesFilters } from "./discoveryFilters";
-import { ExploreModeStore, candidateMatchesExploreMode, EXPLORE_MODES } from "./exploreMode";
+import { ExploreModeStore, candidateMatchesExploreMode } from "./exploreMode";
+import { ExploreThemeStore } from "./exploreThemes";
 import { TopPicksStore } from "./topPicks";
 import { ProfileVisitsStore } from "./profileVisits";
 import { ProfileBoostStore } from "./profileBoost";
@@ -212,6 +213,7 @@ export function createApp(deps?: {
   smartScoreStore: SmartScoreStore;
   discoveryFiltersStore: DiscoveryFiltersStore;
   exploreModeStore: ExploreModeStore;
+  exploreThemeStore: ExploreThemeStore;
   topPicksStore: TopPicksStore;
   profileVisitsStore: ProfileVisitsStore;
   profileBoostStore: ProfileBoostStore;
@@ -351,7 +353,14 @@ export function createApp(deps?: {
   const swipeStore = new SwipeStore();
   const smartScoreStore = new SmartScoreStore();
   const discoveryFiltersStore = new DiscoveryFiltersStore();
-  const exploreModeStore = new ExploreModeStore();
+  // #182 made Explore's themes admin-managed — seeded here with #99's
+  // original three so existing behavior is unchanged until an admin
+  // edits them via /admin/explore-themes.
+  const exploreThemeStore = new ExploreThemeStore();
+  exploreThemeStore.create("Cafes", ["coffee", "foodie", "baking", "wine", "reading"]);
+  exploreThemeStore.create("Sports", ["gym", "running", "cycling", "hiking", "yoga"]);
+  exploreThemeStore.create("Travel", ["travel", "camping", "photography", "hiking"]);
+  const exploreModeStore = new ExploreModeStore(exploreThemeStore);
   const topPicksStore = new TopPicksStore();
   const profileVisitsStore = new ProfileVisitsStore();
   const profileBoostStore = new ProfileBoostStore();
@@ -1529,10 +1538,12 @@ export function createApp(deps?: {
       return true;
     }
     // Tinder's real Explore Mode (#99): when the swiper has a themed deck
-    // active (cafes/sports/travel), only candidates sharing at least one
-    // of that theme's interest tags are shown.
-    const exploreMode = exploreModeStore.get(a);
-    if (!candidateMatchesExploreMode(exploreMode, interestsInfoStore.get(b).interests)) {
+    // active, only candidates sharing at least one of that theme's
+    // interest tags are shown — the theme catalog itself is #182's
+    // admin-managed ExploreThemeStore, not a fixed cafes/sports/travel enum.
+    const activeExploreTheme = exploreModeStore.get(a);
+    const exploreThemeInterests = activeExploreTheme ? exploreThemeStore.get(activeExploreTheme)?.interests ?? null : null;
+    if (!candidateMatchesExploreMode(exploreThemeInterests, interestsInfoStore.get(b).interests)) {
       return true;
     }
     // Bumble's real Incognito Mode (#111): a candidate with vanish mode on
@@ -2414,10 +2425,12 @@ export function createApp(deps?: {
     res.json({ notes: photoInteractionStore.getNotes(req.params.owner, req.params.photoId) });
   });
 
-  // Tinder's real Explore Mode (#99): a curated themed deck (cafes/sports/
-  // travel) instead of the normal, unfiltered discovery deck.
+  // Tinder's real Explore Mode (#99): a curated themed deck instead of the
+  // normal, unfiltered discovery deck — the catalog itself is #182's
+  // admin-managed ExploreThemeStore, so this returns whatever themes are
+  // currently active rather than a fixed list.
   app.get("/api/explore-mode/catalog", (_req, res) => {
-    res.json({ modes: EXPLORE_MODES });
+    res.json({ themes: exploreThemeStore.listActive().map(({ id, name }) => ({ id, name })) });
   });
 
   app.put("/api/explore-mode/:author", (req, res) => {
@@ -2431,6 +2444,46 @@ export function createApp(deps?: {
 
   app.get("/api/explore-mode/:author", (req, res) => {
     res.json({ mode: exploreModeStore.get(req.params.author) });
+  });
+
+  // Bumble's real "Full control over Explore section content and
+  // hashtags" (#182) — admin CRUD for the theme catalog above, gated the
+  // same admin-key way as #171-181. See exploreThemes.ts for why
+  // "hashtags" means #79's existing fixed interest-tag catalog.
+  app.get("/api/admin/explore-themes", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ themes: exploreThemeStore.list() });
+  });
+
+  app.post("/api/admin/explore-themes", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = exploreThemeStore.create(req.body?.name, req.body?.interests);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ theme: result.theme });
+  });
+
+  app.put("/api/admin/explore-themes/:themeId", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = exploreThemeStore.update(req.params.themeId, req.body ?? {});
+    if (!result.success) {
+      const status = result.error === "Theme not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ theme: result.theme });
+  });
+
+  app.delete("/api/admin/explore-themes/:themeId", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = exploreThemeStore.update(req.params.themeId, { active: false });
+    if (!result.success) {
+      res.status(404).json({ error: result.error });
+      return;
+    }
+    res.json({ theme: result.theme });
   });
 
   // OkCupid's real DoubleTake-style grid browsing as a web-native
@@ -3878,6 +3931,7 @@ export function createApp(deps?: {
     smartScoreStore,
     discoveryFiltersStore,
     exploreModeStore,
+    exploreThemeStore,
     topPicksStore,
     profileVisitsStore,
     profileBoostStore,

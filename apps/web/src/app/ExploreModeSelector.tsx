@@ -4,12 +4,17 @@ import { useEffect, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
-const MODE_LABELS: Record<string, string> = { cafes: "☕ Cafes", sports: "🏃 Sports", travel: "✈️ Travel" };
+interface ExploreTheme {
+  id: string;
+  name: string;
+}
 
 /**
- * Tinder's real Explore Mode (#99): pick a themed deck (cafes/sports/
- * travel) instead of the normal, unfiltered discovery deck — see
- * exploreMode.ts for how a theme narrows candidates by shared interests.
+ * Tinder's real Explore Mode (#99): pick a themed deck instead of the
+ * normal, unfiltered discovery deck — see exploreMode.ts for how a theme
+ * narrows candidates by shared interests. #182 made the theme catalog
+ * itself admin-managed (exploreThemes.ts), so the names and set of
+ * themes shown here come entirely from the server, not a hardcoded list.
  */
 export default function ExploreModeSelector({
   author,
@@ -18,7 +23,7 @@ export default function ExploreModeSelector({
   author: string;
   onChange: () => void;
 }) {
-  const [modes, setModes] = useState<string[]>([]);
+  const [themes, setThemes] = useState<ExploreTheme[]>([]);
   const [activeMode, setActiveMode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -28,7 +33,7 @@ export default function ExploreModeSelector({
       fetch(`${API_URL}/api/explore-mode/${encodeURIComponent(author)}`).then((res) => res.json()),
     ])
       .then(([catalogBody, modeBody]) => {
-        setModes(catalogBody.modes ?? []);
+        setThemes(catalogBody.themes ?? []);
         setActiveMode(modeBody.mode ?? null);
       })
       .catch(() => {});
@@ -63,14 +68,14 @@ export default function ExploreModeSelector({
       >
         All
       </button>
-      {modes.map((mode) => (
+      {themes.map((theme) => (
         <button
-          key={mode}
-          onClick={() => selectMode(mode)}
+          key={theme.id}
+          onClick={() => selectMode(theme.id)}
           disabled={busy}
-          style={{ fontWeight: activeMode === mode ? "bold" : "normal" }}
+          style={{ fontWeight: activeMode === theme.id ? "bold" : "normal" }}
         >
-          {MODE_LABELS[mode] ?? mode}
+          {theme.name}
         </button>
       ))}
     </div>
