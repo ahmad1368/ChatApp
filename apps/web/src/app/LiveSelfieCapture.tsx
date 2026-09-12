@@ -98,7 +98,7 @@ export default function LiveSelfieCapture({ onDone }: Props) {
     <div>
       <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>Verify it's really you</label>
       <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 0, marginBottom: 12 }}>
-        Take a live selfie — this photo is used only to confirm your identity and is never shown on your profile.
+        Take a live selfie — an admin reviews it before your verified badge appears; it's never shown on your profile.
       </p>
 
       {status === "unavailable" && (
@@ -134,7 +134,7 @@ export default function LiveSelfieCapture({ onDone }: Props) {
         </button>
         {status === "ready" && (
           <button type="button" onClick={capture} disabled={isSubmitting} style={{ flex: 1, padding: 10 }}>
-            {isSubmitting ? "Verifying…" : "Capture"}
+            {isSubmitting ? "Submitting…" : "Capture"}
           </button>
         )}
       </div>

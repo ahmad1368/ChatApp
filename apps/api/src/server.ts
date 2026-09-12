@@ -2059,6 +2059,37 @@ export function createApp(deps?: {
     res.json({ report: result.report });
   });
 
+  // Raya's real "Admin system to approve verification badges" (#174) —
+  // see verification.ts for why a submission no longer auto-grants the
+  // badge and why the raw selfie is exposed only here, admin-key-gated,
+  // never through any user-facing route.
+  app.get("/api/admin/verification-queue", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ queue: verificationStore.getPendingQueue() });
+  });
+
+  app.get("/api/admin/verification-queue/:userId/selfie", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const selfie = verificationStore.getSelfieForReview(req.params.userId);
+    if (!selfie) {
+      res.status(404).json({ error: "No selfie submission found for this user" });
+      return;
+    }
+    res.setHeader("Content-Type", selfie.mimeType);
+    res.status(200).send(selfie.data);
+  });
+
+  app.post("/api/admin/verification-queue/:userId/review", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = verificationStore.review(req.params.userId, req.body?.reviewer, req.body?.status);
+    if (!result.success) {
+      const status = result.error === "No selfie submission found for this user" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ status: result.status });
+  });
+
   // Hinge's real "like or comment on one specific photo" (#112): gated the
   // same way #45's photo serve is (block check + #59's album access level)
   // plus confirming photoId is actually in owner's album, ahead of
@@ -2501,10 +2532,12 @@ export function createApp(deps?: {
     res.status(204).send();
   });
 
-  // No GET endpoint for verification selfies, deliberately — see the
-  // privacy note in verification.ts. Only a boolean outcome is ever
-  // returned. Gated behind requireAuth (same reasoning as onboarding
-  // below) rather than a client-supplied userId in the body.
+  // No unauthenticated/user-facing GET endpoint for verification selfies —
+  // see the privacy note in verification.ts. Only a boolean outcome is
+  // ever returned here. Gated behind requireAuth (same reasoning as
+  // onboarding below) rather than a client-supplied userId in the body.
+  // #174: a submission no longer auto-verifies — it starts pending until
+  // an admin reviews it (see the admin endpoints below).
   app.post("/api/verification/selfie", (req, res) => {
     const userId = requireAuth(req, res);
     if (!userId) return;
@@ -2518,7 +2551,7 @@ export function createApp(deps?: {
       res.status(400).json({ error: result.error });
       return;
     }
-    res.status(201).json({ verified: true });
+    res.status(201).json({ verified: false, status: "pending" });
   });
 
   // Public-safe badge lookup: a stable read API for "is this user verified"

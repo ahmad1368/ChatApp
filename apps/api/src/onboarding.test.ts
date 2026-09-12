@@ -415,15 +415,26 @@ describe("OnboardingStore", () => {
     assert.equal(store.getState("user-1").currentStep, "selfieVerification");
   });
 
-  it("marks isSelfieVerified true when a selfie was already accepted", () => {
+  it("marks isSelfieVerified true when a selfie was already accepted (#174: admin-approved)", () => {
     const verificationStore = new VerificationStore();
     verificationStore.saveSelfie("user-1", "image/png", TINY_PNG_BASE64);
+    verificationStore.review("user-1", "admin", "approved");
     const store = new OnboardingStore(verificationStore);
     completeUpToSelfieStep(store, "user-1");
     const result = store.submitStep("user-1", "selfieVerification", {});
     assert.ok(result.success);
     assert.equal(result.state.currentStep, "complete");
     assert.equal(result.state.profile.isSelfieVerified, true);
+  });
+
+  it("marks isSelfieVerified false while a submitted selfie is still pending admin approval (#174)", () => {
+    const verificationStore = new VerificationStore();
+    verificationStore.saveSelfie("user-1", "image/png", TINY_PNG_BASE64);
+    const store = new OnboardingStore(verificationStore);
+    completeUpToSelfieStep(store, "user-1");
+    const result = store.submitStep("user-1", "selfieVerification", {});
+    assert.ok(result.success);
+    assert.equal(result.state.profile.isSelfieVerified, false);
   });
 
   it("marks isSelfieVerified false when the user skips", () => {

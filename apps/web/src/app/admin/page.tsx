@@ -65,6 +65,8 @@ export default function AdminDashboardPage() {
         <Link href="/admin/photos">Photo review queue &rarr;</Link>
         {" · "}
         <Link href="/admin/reports">Reported users queue &rarr;</Link>
+        {" · "}
+        <Link href="/admin/verification">Verification badge queue &rarr;</Link>
       </p>
 
       <form
