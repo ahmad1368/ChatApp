@@ -204,4 +204,18 @@ export class OnboardingStore {
     this.statesByUserId.set(userId, updated);
     return { success: true, state: updated };
   }
+
+  /** How many distinct users have submitted at least one onboarding step — the "started onboarding" stage of #179's conversion funnel. */
+  getStartedCount(): number {
+    return this.statesByUserId.size;
+  }
+
+  /** How many users have reached the end of the onboarding wizard — the "completed onboarding" stage of #179's conversion funnel. */
+  getCompletedCount(): number {
+    let count = 0;
+    for (const state of this.statesByUserId.values()) {
+      if (state.currentStep === "complete") count++;
+    }
+    return count;
+  }
 }
