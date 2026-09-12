@@ -113,6 +113,7 @@ import { MeasurementUnitsStore } from "./measurementUnits";
 import { VanishModeStore } from "./vanishMode";
 import { SnoozeAccountStore } from "./snoozeAccount";
 import { PermissionsStatusStore } from "./permissionsStatus";
+import { CacheClearLogStore } from "./cacheClearLog";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
@@ -210,6 +211,7 @@ export function createApp(deps?: {
   vanishModeStore: VanishModeStore;
   snoozeAccountStore: SnoozeAccountStore;
   permissionsStatusStore: PermissionsStatusStore;
+  cacheClearLogStore: CacheClearLogStore;
   photoInteractionStore: PhotoInteractionStore;
   contactsGraphStore: ContactsGraphStore;
   viewModeStore: ViewModeStore;
@@ -342,6 +344,7 @@ export function createApp(deps?: {
   const vanishModeStore = new VanishModeStore();
   const snoozeAccountStore = new SnoozeAccountStore();
   const permissionsStatusStore = new PermissionsStatusStore();
+  const cacheClearLogStore = new CacheClearLogStore();
   const photoInteractionStore = new PhotoInteractionStore();
   const contactsGraphStore = new ContactsGraphStore();
   const viewModeStore = new ViewModeStore();
@@ -1933,6 +1936,22 @@ export function createApp(deps?: {
     res.json({ permissions: result.snapshot });
   });
 
+  // Feeld's real "Clear app cache" (#167) — see cacheClearLog.ts for why
+  // this is just an audit log; the actual Cache Storage clearing happens
+  // entirely client-side (apps/web/src/app/clearCache.ts).
+  app.get("/api/cache-clear-log/:author", (req, res) => {
+    res.json({ lastClearedAt: cacheClearLogStore.getLastClearedAt(req.params.author) });
+  });
+
+  app.post("/api/cache-clear-log/:author", (req, res) => {
+    const result = cacheClearLogStore.recordClear(req.params.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ clearedAt: result.clearedAt });
+  });
+
   // Hinge's real "like or comment on one specific photo" (#112): gated the
   // same way #45's photo serve is (block check + #59's album access level)
   // plus confirming photoId is actually in owner's album, ahead of
@@ -3421,6 +3440,7 @@ export function createApp(deps?: {
     vanishModeStore,
     snoozeAccountStore,
     permissionsStatusStore,
+    cacheClearLogStore,
     photoInteractionStore,
     contactsGraphStore,
     viewModeStore,
