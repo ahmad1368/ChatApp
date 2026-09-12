@@ -3547,6 +3547,33 @@ test("DELETE /api/auth/sessions/others logs out every other device, keeping the 
   }
 });
 
+test("DELETE /api/auth/sessions/all (#170) logs out every device, including the caller's own", async () => {
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessTokenA = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110074");
+    await signUpAndGetAccessToken(baseUrl, otpService, "+15551110074");
+
+    const res = await fetch(`${baseUrl}/api/auth/sessions/all`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessTokenA}` },
+    });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).revokedCount, 2);
+
+    // The caller's own session record is gone too — unlike /others, this
+    // wipes every session for the account, including the one making the
+    // request (the already-issued access token itself keeps working
+    // until its natural 15-minute expiry, same disclosed JWT-revocation
+    // trade-off as revokeSession()'s doc comment — but the session list
+    // it reads is now empty).
+    const afterRes = await fetch(`${baseUrl}/api/auth/sessions`, { headers: { Authorization: `Bearer ${accessTokenA}` } });
+    assert.equal(afterRes.status, 200);
+    assert.equal((await afterRes.json()).sessions.length, 0);
+  } finally {
+    server.close();
+  }
+});
+
 test("POST /api/photo-albums/:owner/photos adds an uploaded photo to the album", async () => {
   const { server, baseUrl, photoStore } = listen();
   try {

@@ -129,6 +129,27 @@ describe("TokenService", () => {
     assert.equal(remaining.length, 1);
     assert.equal(remaining[0].id, currentSessionId);
   });
+
+  it("revokeAllSessions() logs out every device including the caller's own", () => {
+    const tokens = new TokenService();
+    const current = tokens.issueTokens("user-1", "Chrome on Windows");
+    tokens.issueTokens("user-1", "Safari on iOS");
+
+    const revokedCount = tokens.revokeAllSessions("user-1");
+    assert.equal(revokedCount, 2);
+    assert.equal(tokens.listSessions("user-1").length, 0);
+    assert.equal(tokens.refresh(current.refreshToken), undefined);
+  });
+
+  it("revokeAllSessions() only revokes sessions belonging to that user", () => {
+    const tokens = new TokenService();
+    tokens.issueTokens("user-1", "Chrome on Windows");
+    tokens.issueTokens("user-2", "Safari on iOS");
+
+    tokens.revokeAllSessions("user-1");
+    assert.equal(tokens.listSessions("user-1").length, 0);
+    assert.equal(tokens.listSessions("user-2").length, 1);
+  });
 });
 
 describe("describeUserAgent", () => {

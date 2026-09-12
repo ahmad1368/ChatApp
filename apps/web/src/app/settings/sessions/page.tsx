@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { fetchWithAuth, loadStoredAuth } from "../../authClient";
+import { fetchWithAuth, loadStoredAuth, clearStoredAuth } from "../../authClient";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -53,6 +53,21 @@ export default function SessionsPage() {
     }
   };
 
+  // Tinder's real "Log out of the account from all devices" (#170) —
+  // unlike revokeOthers() above, this includes this device too, so the
+  // local session is cleared and there's nothing left to refresh().
+  const revokeAll = async () => {
+    setStatus(null);
+    const res = await fetchWithAuth(`${API_URL}/api/auth/sessions/all`, { method: "DELETE" });
+    if (res.ok) {
+      const body = await res.json();
+      clearStoredAuth();
+      setSessions([]);
+      setSignedIn(false);
+      setStatus(`Logged out of all ${body.revokedCount} device(s), including this one.`);
+    }
+  };
+
   return (
     <main style={{ maxWidth: 480, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
       <p>
@@ -61,7 +76,7 @@ export default function SessionsPage() {
       <h1>Active sessions</h1>
       <p style={{ color: "#666", fontSize: 13 }}>Devices currently signed in to your account.</p>
 
-      {!signedIn && <p style={{ color: "#b00020" }}>Sign in first to manage your sessions.</p>}
+      {!signedIn && !status && <p style={{ color: "#b00020" }}>Sign in first to manage your sessions.</p>}
 
       {signedIn && (
         <>
@@ -78,9 +93,12 @@ export default function SessionsPage() {
               Log out of all other devices
             </button>
           )}
-          {status && <p style={{ fontSize: 13, color: "#6b7280" }}>{status}</p>}
+          <button onClick={revokeAll} style={{ marginTop: 8, marginLeft: 8 }}>
+            Log out of all devices
+          </button>
         </>
       )}
+      {status && <p style={{ fontSize: 13, color: "#6b7280" }}>{status}</p>}
     </main>
   );
 }

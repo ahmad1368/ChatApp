@@ -3352,6 +3352,23 @@ export function createApp(deps?: {
     res.json({ revokedCount });
   });
 
+  // Tinder's real "Log out of the account from all devices" (#170) —
+  // registered ahead of the :sessionId route below for the same reason
+  // as "others" above. Unlike "others", this includes the caller's own
+  // current session: the whole account signs out, no exception.
+  app.delete("/api/auth/sessions/all", (req, res) => {
+    const auth = requireAuthWithSession(req, res);
+    if (!auth) return;
+    const revokedCount = tokenService.revokeAllSessions(auth.userId);
+    smsSecurityAlertStore.notify(
+      auth.userId,
+      userStore.getById(auth.userId)?.phoneNumber,
+      "accountSecurity",
+      `You were logged out of all ${revokedCount} device${revokedCount === 1 ? "" : "s"}, including this one.`
+    );
+    res.json({ revokedCount });
+  });
+
   app.delete("/api/auth/sessions/:sessionId", (req, res) => {
     const auth = requireAuthWithSession(req, res);
     if (!auth) return;
