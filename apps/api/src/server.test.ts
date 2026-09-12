@@ -7396,6 +7396,33 @@ test("POST /api/cache-clear-log/:author records the clear and GET reflects it", 
   }
 });
 
+test("GET /api/terms-acceptance/:author is null before anything happens", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/terms-acceptance/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { acceptance: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/terms-acceptance/:author records acceptance and GET reflects it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const postRes = await fetch(`${baseUrl}/api/terms-acceptance/alice`, { method: "POST" });
+    assert.equal(postRes.status, 200);
+    const { acceptance } = await postRes.json();
+    assert.equal(acceptance.version, 1);
+    assert.ok(acceptance.acceptedAt);
+
+    const getRes = await fetch(`${baseUrl}/api/terms-acceptance/alice`).then((r) => r.json());
+    assert.deepEqual(getRes.acceptance, acceptance);
+  } finally {
+    server.close();
+  }
+});
+
 async function addAlbumPhoto(baseUrl: string, photoStore: import("./photos").PhotoStore, owner: string) {
   const uploaded = photoStore.upload(owner, "image/png", TINY_PNG_BASE64);
   const id = uploaded.success ? uploaded.photo.id : "";
