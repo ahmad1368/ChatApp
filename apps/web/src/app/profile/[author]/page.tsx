@@ -89,7 +89,7 @@ export default function ViewProfilePage({ params }: { params: { author: string }
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      fetch(`${API_URL}/api/presence/${encodeURIComponent(params.author)}`)
+      fetch(`${API_URL}/api/presence/${encodeURIComponent(params.author)}?viewer=${encodeURIComponent(viewer)}`)
         .then((res) => res.json())
         .then((body) => {
           if (!cancelled) setPresence(body);
@@ -102,7 +102,7 @@ export default function ViewProfilePage({ params }: { params: { author: string }
       cancelled = true;
       clearInterval(interval);
     };
-  }, [params.author]);
+  }, [params.author, viewer]);
 
   return (
     <main style={{ maxWidth: 480, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>

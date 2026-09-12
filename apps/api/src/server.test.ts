@@ -47,6 +47,7 @@ function listen() {
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
+    presenceVisibilityStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -74,6 +75,7 @@ function listen() {
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
+    presenceVisibilityStore,
   };
 }
 
@@ -7984,6 +7986,71 @@ test("GET /api/presence/:author reflects the live PresenceStore (#110) — see p
     presenceStore.markOffline("alice", 2_000);
     const offlineRes = await fetch(`${baseUrl}/api/presence/alice`);
     assert.deepEqual(await offlineRes.json(), { online: false, lastActiveAt: new Date(2_000).toISOString() });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/presence-visibility/:author defaults to showing both online status and last active", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/presence-visibility/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { preference: { showOnlineStatus: true, showLastActive: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/presence-visibility/:author rejects a non-boolean value", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/presence-visibility/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ showOnlineStatus: "nope" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("Presence visibility (#161): turning off showOnlineStatus hides the real online status from GET /api/presence", async () => {
+  const { server, baseUrl, presenceStore } = listen();
+  try {
+    presenceStore.markOnline("alice", 1_000);
+    await fetch(`${baseUrl}/api/presence-visibility/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ showOnlineStatus: false }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/presence/alice`);
+    const body = await res.json();
+    assert.equal(body.online, false);
+    // last-active is a separate toggle, still shown.
+    assert.equal(body.lastActiveAt, new Date(1_000).toISOString());
+  } finally {
+    server.close();
+  }
+});
+
+test("Presence visibility (#161): a viewer who hid their own last-active also loses visibility into the author's", async () => {
+  const { server, baseUrl, presenceStore } = listen();
+  try {
+    presenceStore.markOnline("alice", 1_000);
+    await fetch(`${baseUrl}/api/presence-visibility/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ showLastActive: false }),
+    });
+
+    const asBob = await fetch(`${baseUrl}/api/presence/alice?viewer=bob`).then((r) => r.json());
+    assert.equal(asBob.lastActiveAt, null);
+
+    const asNobody = await fetch(`${baseUrl}/api/presence/alice`).then((r) => r.json());
+    assert.equal(asNobody.lastActiveAt, new Date(1_000).toISOString());
   } finally {
     server.close();
   }
