@@ -114,6 +114,7 @@ import { VanishModeStore } from "./vanishMode";
 import { SnoozeAccountStore } from "./snoozeAccount";
 import { PermissionsStatusStore } from "./permissionsStatus";
 import { CacheClearLogStore } from "./cacheClearLog";
+import { TermsAcceptanceStore } from "./termsAcceptance";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
@@ -212,6 +213,7 @@ export function createApp(deps?: {
   snoozeAccountStore: SnoozeAccountStore;
   permissionsStatusStore: PermissionsStatusStore;
   cacheClearLogStore: CacheClearLogStore;
+  termsAcceptanceStore: TermsAcceptanceStore;
   photoInteractionStore: PhotoInteractionStore;
   contactsGraphStore: ContactsGraphStore;
   viewModeStore: ViewModeStore;
@@ -345,6 +347,7 @@ export function createApp(deps?: {
   const snoozeAccountStore = new SnoozeAccountStore();
   const permissionsStatusStore = new PermissionsStatusStore();
   const cacheClearLogStore = new CacheClearLogStore();
+  const termsAcceptanceStore = new TermsAcceptanceStore();
   const photoInteractionStore = new PhotoInteractionStore();
   const contactsGraphStore = new ContactsGraphStore();
   const viewModeStore = new ViewModeStore();
@@ -1952,6 +1955,22 @@ export function createApp(deps?: {
     res.json({ clearedAt: result.clearedAt });
   });
 
+  // Feeld's real "Direct links to terms, privacy policy and support"
+  // (#169) — see termsAcceptance.ts for why visiting the terms page is
+  // what records acceptance in this passwordless, no-signup-gate app.
+  app.get("/api/terms-acceptance/:author", (req, res) => {
+    res.json({ acceptance: termsAcceptanceStore.get(req.params.author) });
+  });
+
+  app.post("/api/terms-acceptance/:author", (req, res) => {
+    const result = termsAcceptanceStore.recordAcceptance(req.params.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ acceptance: result.acceptance });
+  });
+
   // Hinge's real "like or comment on one specific photo" (#112): gated the
   // same way #45's photo serve is (block check + #59's album access level)
   // plus confirming photoId is actually in owner's album, ahead of
@@ -3441,6 +3460,7 @@ export function createApp(deps?: {
     snoozeAccountStore,
     permissionsStatusStore,
     cacheClearLogStore,
+    termsAcceptanceStore,
     photoInteractionStore,
     contactsGraphStore,
     viewModeStore,

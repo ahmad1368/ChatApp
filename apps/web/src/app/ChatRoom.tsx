@@ -2536,6 +2536,8 @@ export default function ChatRoom({
         <Link href="/settings/permissions">App permissions &rarr;</Link>
         {" · "}
         <Link href="/settings/clear-cache">Clear cache &rarr;</Link>
+        {" · "}
+        <Link href="/settings/legal">Legal &amp; support &rarr;</Link>
       </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
