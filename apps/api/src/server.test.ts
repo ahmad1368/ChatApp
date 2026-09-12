@@ -2296,9 +2296,10 @@ test("POST /api/verification/selfie accepts a valid selfie and never exposes it 
       body: JSON.stringify({ mimeType: "image/png", data: TINY_PNG_BASE64 }),
     });
     assert.equal(res.status, 201);
-    assert.deepEqual(await res.json(), { verified: true });
+    // #174: a submission starts pending — it no longer auto-verifies.
+    assert.deepEqual(await res.json(), { verified: false, status: "pending" });
 
-    // There is deliberately no GET /api/verification/... route at all.
+    // There is deliberately no unauthenticated GET /api/verification/... route.
     const noRoute = await fetch(`${baseUrl}/api/verification/selfie`);
     assert.equal(noRoute.status, 404);
   } finally {
@@ -2306,7 +2307,7 @@ test("POST /api/verification/selfie accepts a valid selfie and never exposes it 
   }
 });
 
-test("POST /api/onboarding/step wires a submitted selfie into the selfieVerification step", async () => {
+test("POST /api/onboarding/step marks isSelfieVerified false while a submission is still pending admin approval (#174)", async () => {
   const { server, baseUrl, otpService } = listen();
   try {
     const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110029");
@@ -2326,7 +2327,7 @@ test("POST /api/onboarding/step wires a submitted selfie into the selfieVerifica
     });
     const body = await res.json();
     assert.equal(body.currentStep, "complete");
-    assert.equal(body.profile.isSelfieVerified, true);
+    assert.equal(body.profile.isSelfieVerified, false);
   } finally {
     server.close();
   }
@@ -2378,7 +2379,7 @@ test("GET /api/users/:userId/badge reports unverified for a user who never submi
   }
 });
 
-test("GET /api/users/:userId/badge reports verified after a selfie is accepted, without exposing the image", async () => {
+test("GET /api/users/:userId/badge stays unverified for a pending, not-yet-approved submission (#174)", async () => {
   const { server, baseUrl, otpService } = listen();
   try {
     const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110032");
@@ -2392,11 +2393,79 @@ test("GET /api/users/:userId/badge reports verified after a selfie is accepted, 
 
     const res = await fetch(`${baseUrl}/api/users/${decoded.sub}/badge`);
     const body = await res.json();
-    assert.deepEqual(body, { verified: true });
+    assert.deepEqual(body, { verified: false });
     assert.equal("selfie" in body, false);
     assert.equal("data" in body, false);
   } finally {
     server.close();
+  }
+});
+
+test("Verification (#174): admin approval flips the badge to verified, and the raw selfie is only served admin-key-gated", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110033");
+    const decoded = JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString());
+
+    await fetch(`${baseUrl}/api/verification/selfie`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+
+    const queueRes = await fetch(`${baseUrl}/api/admin/verification-queue`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const { queue } = await queueRes.json();
+    assert.deepEqual(
+      queue.map((e: { userId: string }) => e.userId),
+      [decoded.sub]
+    );
+
+    const noKeySelfieRes = await fetch(`${baseUrl}/api/admin/verification-queue/${decoded.sub}/selfie`);
+    assert.equal(noKeySelfieRes.status, 401);
+
+    const selfieRes = await fetch(`${baseUrl}/api/admin/verification-queue/${decoded.sub}/selfie`, {
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(selfieRes.status, 200);
+    assert.equal(selfieRes.headers.get("content-type"), "image/png");
+
+    const reviewRes = await fetch(`${baseUrl}/api/admin/verification-queue/${decoded.sub}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "approved" }),
+    });
+    assert.equal(reviewRes.status, 200);
+    assert.deepEqual(await reviewRes.json(), { status: "approved" });
+
+    const badgeRes = await fetch(`${baseUrl}/api/users/${decoded.sub}/badge`).then((r) => r.json());
+    assert.deepEqual(badgeRes, { verified: true });
+
+    const queueAfterRes = await fetch(`${baseUrl}/api/admin/verification-queue`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.deepEqual((await queueAfterRes.json()).queue, []);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("POST /api/admin/verification-queue/:userId/review 404s when no selfie was ever submitted", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/verification-queue/nope/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "approved" }),
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
   }
 });
 
@@ -6568,17 +6637,25 @@ test("GET /api/swipe-candidates/:author excludes candidates outside allowedDrink
 });
 
 test("GET /api/swipe-candidates/:author excludes unverified candidates when requireVerifiedOnly is set", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
   const { server, baseUrl, otpService } = listen();
   try {
     // A candidate whose "author" happens to be their own real, selfie-verified
     // userId (#35) — see discoveryFilters.ts for why requireVerifiedOnly only
     // reflects real verification once a guest author is this account's id.
+    // #174: verification now needs an explicit admin approval, not just a submission.
     const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110099");
     const verifiedAuthor = JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString()).sub;
     await fetch(`${baseUrl}/api/verification/selfie`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ mimeType: "image/png", data: TINY_PNG_BASE64 }),
+    });
+    await fetch(`${baseUrl}/api/admin/verification-queue/${verifiedAuthor}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "approved" }),
     });
 
     await fetch(`${baseUrl}/api/discovery/join`, {
@@ -6619,6 +6696,8 @@ test("GET /api/swipe-candidates/:author excludes unverified candidates when requ
     );
   } finally {
     server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
   }
 });
 
