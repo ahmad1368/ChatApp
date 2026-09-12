@@ -46,6 +46,7 @@ import { VerificationStore } from "./verification";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
+import { BroadcastStore } from "./broadcasts";
 import { isGuestSendAllowed } from "./guestMode";
 import { ReportStore } from "./reports";
 import { MessageDraftStore } from "./messageDrafts";
@@ -167,6 +168,7 @@ export function createApp(deps?: {
   banStore: BanStore;
   pricingPlanStore: PricingPlanStore;
   discountCodeStore: DiscountCodeStore;
+  broadcastStore: BroadcastStore;
   reportStore: ReportStore;
   blockStore: BlockStore;
   contactBlockStore: ContactBlockStore;
@@ -296,6 +298,7 @@ export function createApp(deps?: {
   const banStore = new BanStore();
   const pricingPlanStore = new PricingPlanStore();
   const discountCodeStore = new DiscountCodeStore();
+  const broadcastStore = new BroadcastStore();
   const onboardingStore = new OnboardingStore(verificationStore);
   const reportStore = new ReportStore();
   const messageDraftStore = new MessageDraftStore();
@@ -2230,6 +2233,37 @@ export function createApp(deps?: {
     res.json({ code: result.code });
   });
 
+  // Bumble's real "Send broadcast messages and notifications" (#178) —
+  // reuses PushService.broadcast() (every currently-subscribed device,
+  // no exclusion) and records one #159 in-app inbox entry per recipient
+  // regardless of push permission, same as #155's live-event sweep above.
+  // BroadcastStore is only the audit trail — see broadcasts.ts.
+  app.post("/api/admin/broadcasts", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+    const recipients = pushService
+      .getSubscribedAuthors()
+      .filter((author) => notificationPreferencesStore.isEnabled(author, "adminBroadcast"));
+    const result = broadcastStore.record(title, body, req.body?.sentBy, recipients.length);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    pushService.notifyAuthors(recipients, { title, body }).catch((err) => {
+      console.error("Failed to deliver broadcast push notification:", err);
+    });
+    for (const recipient of recipients) {
+      notificationInboxStore.record(recipient, "adminBroadcast", title, body);
+    }
+    res.status(201).json({ broadcast: result.broadcast });
+  });
+
+  app.get("/api/admin/broadcasts", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ broadcasts: broadcastStore.list() });
+  });
+
   // Hinge's real "like or comment on one specific photo" (#112): gated the
   // same way #45's photo serve is (block check + #59's album access level)
   // plus confirming photoId is actually in owner's album, ahead of
@@ -3696,6 +3730,7 @@ export function createApp(deps?: {
     banStore,
     pricingPlanStore,
     discountCodeStore,
+    broadcastStore,
     reportStore,
     blockStore,
     contactBlockStore,

@@ -2694,6 +2694,106 @@ test("Discount codes (#177): DELETE /api/admin/discount-codes/:code deactivates 
   }
 });
 
+test("Broadcasts (#178): admin sends a broadcast, subscribed authors get an inbox entry, and it's recorded in the audit history", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/push/subscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        author: "alice",
+        subscription: { endpoint: "https://example.com/push/alice", keys: { p256dh: "key", auth: "auth" } },
+      }),
+    });
+
+    const sendRes = await fetch(`${baseUrl}/api/admin/broadcasts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ title: "New feature!", body: "Check out the new pricing page", sentBy: "admin-1" }),
+    });
+    assert.equal(sendRes.status, 201);
+    const { broadcast } = await sendRes.json();
+    assert.equal(broadcast.recipientCount, 1);
+
+    const inboxRes = await fetch(`${baseUrl}/api/notification-inbox/alice`);
+    const { entries } = await inboxRes.json();
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].category, "adminBroadcast");
+    assert.equal(entries[0].title, "New feature!");
+
+    const historyRes = await fetch(`${baseUrl}/api/admin/broadcasts`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const { broadcasts } = await historyRes.json();
+    assert.equal(broadcasts.length, 1);
+    assert.equal(broadcasts[0].sentBy, "admin-1");
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Broadcasts (#178): excludes an author who opted out of the adminBroadcast category", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/push/subscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        author: "alice",
+        subscription: { endpoint: "https://example.com/push/alice-opt-out", keys: { p256dh: "key", auth: "auth" } },
+      }),
+    });
+    await fetch(`${baseUrl}/api/notification-preferences/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adminBroadcast: false }),
+    });
+
+    const sendRes = await fetch(`${baseUrl}/api/admin/broadcasts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ title: "New feature!", body: "Check it out", sentBy: "admin-1" }),
+    });
+    assert.equal((await sendRes.json()).broadcast.recipientCount, 0);
+
+    const inboxRes = await fetch(`${baseUrl}/api/notification-inbox/alice`);
+    assert.deepEqual((await inboxRes.json()).entries, []);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Broadcasts (#178): POST /api/admin/broadcasts requires the admin key and rejects a missing title or body", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/broadcasts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Title", body: "Body", sentBy: "admin-1" }),
+    });
+    assert.equal(noKeyRes.status, 401);
+
+    const missingTitleRes = await fetch(`${baseUrl}/api/admin/broadcasts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ title: "", body: "Body", sentBy: "admin-1" }),
+    });
+    assert.equal(missingTitleRes.status, 400);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/users/:userId/badge is independent per user", async () => {
   const { server, baseUrl } = listen();
   try {

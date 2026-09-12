@@ -1,11 +1,19 @@
 // Tinder's real "unified notification service with categorization... and
 // per-category user preferences enforced at send time" (#156). Named
-// after the five push categories this app actually sends: #5's new
+// after the six push categories this app actually sends: #5's new
 // message, #151's new match, #153's new like, #154's match-expiry
-// reminder, and #155's live-event start. All default to enabled — this
-// is an opt-out control, not an opt-in one, matching every real dating
-// app's default of "notifications on until you turn them off."
-export const NOTIFICATION_CATEGORIES = ["newMessage", "newMatch", "newLike", "matchExpiryReminder", "liveEventStart"] as const;
+// reminder, #155's live-event start, and #178's admin broadcast. All
+// default to enabled — this is an opt-out control, not an opt-in one,
+// matching every real dating app's default of "notifications on until
+// you turn them off."
+export const NOTIFICATION_CATEGORIES = [
+  "newMessage",
+  "newMatch",
+  "newLike",
+  "matchExpiryReminder",
+  "liveEventStart",
+  "adminBroadcast",
+] as const;
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 
 export type NotificationPreferences = Record<NotificationCategory, boolean>;
@@ -16,6 +24,7 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
   newLike: true,
   matchExpiryReminder: true,
   liveEventStart: true,
+  adminBroadcast: true,
 };
 
 export type UpdatePreferencesResult = { success: true; preferences: NotificationPreferences } | { success: false; error: string };

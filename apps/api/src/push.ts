@@ -99,4 +99,20 @@ export class PushService {
       .map((s) => s.subscription);
     await this.sendToSubscriptions(recipients, payload);
   }
+
+  /**
+   * Bumble's real admin "Send broadcast messages and notifications"
+   * (#178): the recipient list for an admin broadcast — every distinct
+   * author with a live subscription, filtered by #156's per-category
+   * preference, then sent via notifyAuthors() above rather than a
+   * separate unfiltered "send to literally everyone" path, so the
+   * preference check, the recorded recipient count, and the actual push
+   * delivery never disagree. This app can only reach devices it holds a
+   * live push subscription for — there's no separate email/SMS broadcast
+   * channel — so "everyone" honestly means every currently-subscribed,
+   * opted-in author, not every registered account.
+   */
+  getSubscribedAuthors(): string[] {
+    return [...new Set([...this.subscriptionsByEndpoint.values()].map((s) => s.author))];
+  }
 }
