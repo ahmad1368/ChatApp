@@ -43,6 +43,7 @@ import { canSendFirstMessage } from "./firstMessageRule";
 import { GenderInfoStore } from "./genderInfo";
 import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
 import { VerificationStore } from "./verification";
+import { DiscoveryBoundariesStore } from "./discoveryBoundaries";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -167,6 +168,7 @@ export function createApp(deps?: {
   smsSecurityAlertStore: SmsSecurityAlertStore;
   webAuthnService: WebAuthnService;
   onboardingStore: OnboardingStore;
+  discoveryBoundariesStore: DiscoveryBoundariesStore;
   verificationStore: VerificationStore;
   banStore: BanStore;
   pricingPlanStore: PricingPlanStore;
@@ -304,7 +306,8 @@ export function createApp(deps?: {
   const discountCodeStore = new DiscountCodeStore();
   const broadcastStore = new BroadcastStore();
   const supportTicketStore = new SupportTicketStore();
-  const onboardingStore = new OnboardingStore(verificationStore);
+  const discoveryBoundariesStore = new DiscoveryBoundariesStore();
+  const onboardingStore = new OnboardingStore(verificationStore, discoveryBoundariesStore);
   const reportStore = new ReportStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
@@ -2922,6 +2925,25 @@ export function createApp(deps?: {
     res.json(result.state);
   });
 
+  // Bumble's real "Set default geographic boundaries and discovery
+  // radii" (#183) — a real, admin-adjustable min/max/default search
+  // radius, gated the same admin-key way as #171-182, that
+  // onboarding.ts's searchRadius step actually validates against. Public
+  // GET so the onboarding radius picker can render the current bounds.
+  app.get("/api/discovery-boundaries", (_req, res) => {
+    res.json(discoveryBoundariesStore.get());
+  });
+
+  app.put("/api/admin/discovery-boundaries", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = discoveryBoundariesStore.update(req.body?.minRadiusKm, req.body?.maxRadiusKm, req.body?.defaultRadiusKm);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(result.boundaries);
+  });
+
   // Two orthogonal, backward-compatible filters on top of the full history:
   // `since` (ISO timestamp) lets a reconnecting client fetch only the
   // messages it missed. `limit` opts into cursor pagination instead — the
@@ -3885,6 +3907,7 @@ export function createApp(deps?: {
     smsSecurityAlertStore,
     webAuthnService,
     onboardingStore,
+    discoveryBoundariesStore,
     verificationStore,
     banStore,
     pricingPlanStore,

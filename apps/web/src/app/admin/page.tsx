@@ -81,6 +81,8 @@ export default function AdminDashboardPage() {
         <Link href="/admin/duplicate-accounts">Multi-account detection &rarr;</Link>
         {" · "}
         <Link href="/admin/explore-themes">Explore themes &rarr;</Link>
+        {" · "}
+        <Link href="/admin/discovery-boundaries">Discovery radius boundaries &rarr;</Link>
       </p>
 
       <form

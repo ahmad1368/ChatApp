@@ -5,9 +5,7 @@ import {
   GENDER_OPTIONS,
   GenderOption,
   MAX_PREFERRED_AGE,
-  MAX_SEARCH_RADIUS_KM,
   MIN_PREFERRED_AGE,
-  MIN_SEARCH_RADIUS_KM,
   ONBOARDING_STEPS,
   ORIENTATION_OPTIONS,
   OnboardingProfile,
@@ -16,6 +14,7 @@ import {
   OrientationOption,
 } from "@chatapp/shared";
 import { VerificationStore } from "./verification";
+import { DiscoveryBoundariesStore } from "./discoveryBoundaries";
 import { scanForContactInfo } from "./contactInfoDetector";
 
 const MAX_DISPLAY_NAME_LENGTH = 40;
@@ -67,7 +66,8 @@ function validateStepData(
   step: OnboardingStep,
   data: unknown,
   userId: string,
-  verificationStore: VerificationStore
+  verificationStore: VerificationStore,
+  discoveryBoundariesStore: DiscoveryBoundariesStore
 ): { value: Partial<OnboardingProfile> } | { error: string } {
   if (step === "communityGuidelines") {
     const accepted = typeof data === "object" && data !== null && (data as { accepted?: unknown }).accepted === true;
@@ -146,8 +146,11 @@ function validateStepData(
       location?: unknown;
     };
     if (typeof radiusKm !== "number" || !Number.isInteger(radiusKm)) return { error: "radiusKm must be a whole number" };
-    if (radiusKm < MIN_SEARCH_RADIUS_KM || radiusKm > MAX_SEARCH_RADIUS_KM) {
-      return { error: `radiusKm must be between ${MIN_SEARCH_RADIUS_KM} and ${MAX_SEARCH_RADIUS_KM}` };
+    // #183: bounds come from the admin-adjustable DiscoveryBoundariesStore
+    // rather than fixed MIN/MAX_SEARCH_RADIUS_KM constants.
+    const { minRadiusKm, maxRadiusKm } = discoveryBoundariesStore.get();
+    if (radiusKm < minRadiusKm || radiusKm > maxRadiusKm) {
+      return { error: `radiusKm must be between ${minRadiusKm} and ${maxRadiusKm}` };
     }
 
     // Location is optional — geolocation permission may be denied, and the
@@ -182,7 +185,10 @@ function validateStepData(
 export class OnboardingStore {
   private statesByUserId = new Map<string, OnboardingState>();
 
-  constructor(private readonly verificationStore: VerificationStore) {}
+  constructor(
+    private readonly verificationStore: VerificationStore,
+    private readonly discoveryBoundariesStore: DiscoveryBoundariesStore
+  ) {}
 
   getState(userId: string): OnboardingState {
     return this.statesByUserId.get(userId) ?? { currentStep: ONBOARDING_STEPS[0], profile: {} };
@@ -194,7 +200,7 @@ export class OnboardingStore {
       return { success: false, error: `Expected step "${state.currentStep}", got "${step}"` };
     }
 
-    const validated = validateStepData(step, data, userId, this.verificationStore);
+    const validated = validateStepData(step, data, userId, this.verificationStore, this.discoveryBoundariesStore);
     if ("error" in validated) return { success: false, error: validated.error };
 
     const updated: OnboardingState = {
