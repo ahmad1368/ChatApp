@@ -7367,6 +7367,73 @@ test("Explore themes (#182): admin routes require the admin key and reject an in
   }
 });
 
+test("Discovery boundaries (#183): GET /api/discovery-boundaries returns the built-in defaults", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/discovery-boundaries`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.minRadiusKm, 1);
+    assert.equal(body.maxRadiusKm, 160);
+    assert.equal(body.defaultRadiusKm, 25);
+  } finally {
+    server.close();
+  }
+});
+
+test("Discovery boundaries (#183): PUT /api/admin/discovery-boundaries requires the admin key, validates, and updates what onboarding accepts", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/discovery-boundaries`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minRadiusKm: 5, maxRadiusKm: 20, defaultRadiusKm: 10 }),
+    });
+    assert.equal(noKeyRes.status, 401);
+
+    const invalidRes = await fetch(`${baseUrl}/api/admin/discovery-boundaries`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ minRadiusKm: 50, maxRadiusKm: 10, defaultRadiusKm: 10 }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const updateRes = await fetch(`${baseUrl}/api/admin/discovery-boundaries`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ minRadiusKm: 5, maxRadiusKm: 20, defaultRadiusKm: 10 }),
+    });
+    assert.equal(updateRes.status, 200);
+
+    const getRes = await fetch(`${baseUrl}/api/discovery-boundaries`);
+    assert.deepEqual(await getRes.json(), { minRadiusKm: 5, maxRadiusKm: 20, defaultRadiusKm: 10 });
+
+    const accessToken = await signUpAndGetAccessToken(baseUrl, otpService, "+15551110088");
+    const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+    await stepThroughToSearchRadius(baseUrl, authHeaders);
+
+    const tooLargeForNewBounds = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "searchRadius", data: { radiusKm: 50 } }),
+    });
+    assert.equal(tooLargeForNewBounds.status, 400);
+
+    const withinNewBounds = await fetch(`${baseUrl}/api/onboarding/step`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ step: "searchRadius", data: { radiusKm: 15 } }),
+    });
+    assert.equal(withinNewBounds.status, 200);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

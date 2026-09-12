@@ -304,9 +304,24 @@ function SearchRadiusStep({
   onSubmit: (data: { radiusKm: number; location?: { lat: number; lng: number } }) => void;
   error: string | null;
 }) {
+  // #183: the allowed range and the starting value are a real, admin-
+  // adjustable setting (see discoveryBoundaries.ts) fetched from the
+  // server, not a fixed MIN/MAX_SEARCH_RADIUS_KM constant.
+  const [bounds, setBounds] = useState({ minRadiusKm: MIN_SEARCH_RADIUS_KM, maxRadiusKm: MAX_SEARCH_RADIUS_KM, defaultRadiusKm: 25 });
   const [radiusKm, setRadiusKm] = useState(25);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationStatus, setLocationStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/discovery-boundaries`)
+      .then((res) => res.json())
+      .then((body) => {
+        setBounds(body);
+        setRadiusKm(body.defaultRadiusKm);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const requestLocation = () => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -328,13 +343,13 @@ function SearchRadiusStep({
     <div>
       <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>How far should we look?</label>
       <p style={{ fontSize: 18, fontWeight: 600, margin: "8px 0 16px" }}>
-        {radiusKm} km {radiusKm === MAX_SEARCH_RADIUS_KM ? "(anywhere)" : ""}
+        {radiusKm} km {radiusKm === bounds.maxRadiusKm ? "(anywhere)" : ""}
       </p>
       {error && <p style={{ color: "#c0392b", fontSize: 13 }}>{error}</p>}
       <input
         type="range"
-        min={MIN_SEARCH_RADIUS_KM}
-        max={MAX_SEARCH_RADIUS_KM}
+        min={bounds.minRadiusKm}
+        max={bounds.maxRadiusKm}
         value={radiusKm}
         onChange={(e) => setRadiusKm(Number(e.target.value))}
         style={{ width: "100%", marginBottom: 16 }}
