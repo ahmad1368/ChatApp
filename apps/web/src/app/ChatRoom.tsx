@@ -2532,6 +2532,8 @@ export default function ChatRoom({
         <Link href="/settings/presence-visibility">Online status &rarr;</Link>
         {" · "}
         <Link href="/settings/measurement-units">Measurement units &rarr;</Link>
+        {" · "}
+        <Link href="/settings/permissions">App permissions &rarr;</Link>
       </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
