@@ -109,6 +109,7 @@ import { CrossedPathsStore } from "./crossedPaths";
 import { SquadStore } from "./squads";
 import { PresenceStore } from "./presence";
 import { PresenceVisibilityStore } from "./presenceVisibility";
+import { MeasurementUnitsStore } from "./measurementUnits";
 import { VanishModeStore } from "./vanishMode";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
@@ -203,6 +204,7 @@ export function createApp(deps?: {
   squadStore: SquadStore;
   presenceStore: PresenceStore;
   presenceVisibilityStore: PresenceVisibilityStore;
+  measurementUnitsStore: MeasurementUnitsStore;
   vanishModeStore: VanishModeStore;
   photoInteractionStore: PhotoInteractionStore;
   contactsGraphStore: ContactsGraphStore;
@@ -332,6 +334,7 @@ export function createApp(deps?: {
   const squadStore = new SquadStore();
   const presenceStore = new PresenceStore();
   const presenceVisibilityStore = new PresenceVisibilityStore();
+  const measurementUnitsStore = new MeasurementUnitsStore();
   const vanishModeStore = new VanishModeStore();
   const photoInteractionStore = new PhotoInteractionStore();
   const contactsGraphStore = new ContactsGraphStore();
@@ -1851,6 +1854,22 @@ export function createApp(deps?: {
     res.json({ preference: result.preference });
   });
 
+  // Tinder's real "Set measurement units (cm/inch, km/miles)" (#163) —
+  // see measurementUnits.ts for why this is a display-only preference:
+  // #67's heightInfo.ts keeps storing cm, converted client-side.
+  app.get("/api/measurement-units/:author", (req, res) => {
+    res.json({ system: measurementUnitsStore.get(req.params.author) });
+  });
+
+  app.put("/api/measurement-units/:author", (req, res) => {
+    const result = measurementUnitsStore.update(req.params.author, req.body?.system);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ system: result.system });
+  });
+
   // Bumble's real Incognito Mode (#111): see vanishMode.ts and
   // isExcludedCandidate above for the actual hide-from-discovery behavior
   // this toggle drives.
@@ -3360,6 +3379,7 @@ export function createApp(deps?: {
     notificationInboxStore,
     notificationSoundStore,
     presenceVisibilityStore,
+    measurementUnitsStore,
   };
 }
 

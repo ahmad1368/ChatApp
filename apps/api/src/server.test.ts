@@ -48,6 +48,7 @@ function listen() {
     notificationInboxStore,
     notificationSoundStore,
     presenceVisibilityStore,
+    measurementUnitsStore,
   } = createApp();
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
@@ -76,6 +77,7 @@ function listen() {
     notificationInboxStore,
     notificationSoundStore,
     presenceVisibilityStore,
+    measurementUnitsStore,
   };
 }
 
@@ -8051,6 +8053,49 @@ test("Presence visibility (#161): a viewer who hid their own last-active also lo
 
     const asNobody = await fetch(`${baseUrl}/api/presence/alice`).then((r) => r.json());
     assert.equal(asNobody.lastActiveAt, new Date(1_000).toISOString());
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/measurement-units/:author defaults to metric", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/measurement-units/alice`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { system: "metric" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/measurement-units/:author switches to imperial and persists it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/measurement-units/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ system: "imperial" }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { system: "imperial" });
+
+    const getRes = await fetch(`${baseUrl}/api/measurement-units/alice`).then((r) => r.json());
+    assert.equal(getRes.system, "imperial");
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/measurement-units/:author rejects an invalid system", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/measurement-units/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ system: "furlongs" }),
+    });
+    assert.equal(res.status, 400);
   } finally {
     server.close();
   }
