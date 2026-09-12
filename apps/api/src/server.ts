@@ -111,6 +111,7 @@ import { PresenceStore } from "./presence";
 import { PresenceVisibilityStore } from "./presenceVisibility";
 import { MeasurementUnitsStore } from "./measurementUnits";
 import { VanishModeStore } from "./vanishMode";
+import { SnoozeAccountStore } from "./snoozeAccount";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
@@ -206,6 +207,7 @@ export function createApp(deps?: {
   presenceVisibilityStore: PresenceVisibilityStore;
   measurementUnitsStore: MeasurementUnitsStore;
   vanishModeStore: VanishModeStore;
+  snoozeAccountStore: SnoozeAccountStore;
   photoInteractionStore: PhotoInteractionStore;
   contactsGraphStore: ContactsGraphStore;
   viewModeStore: ViewModeStore;
@@ -336,6 +338,7 @@ export function createApp(deps?: {
   const presenceVisibilityStore = new PresenceVisibilityStore();
   const measurementUnitsStore = new MeasurementUnitsStore();
   const vanishModeStore = new VanishModeStore();
+  const snoozeAccountStore = new SnoozeAccountStore();
   const photoInteractionStore = new PhotoInteractionStore();
   const contactsGraphStore = new ContactsGraphStore();
   const viewModeStore = new ViewModeStore();
@@ -1492,6 +1495,12 @@ export function createApp(deps?: {
     if (vanishModeStore.isEnabled(b) && !swipeStore.hasLiked(b, a)) {
       return true;
     }
+    // Bumble's real Snooze Mode (#164): unlike #111's Vanish Mode above,
+    // there's no "already liked me" exception — a snoozed candidate is
+    // hidden from literally everyone until they un-snooze.
+    if (snoozeAccountStore.isEnabled(b)) {
+      return true;
+    }
     return false;
   };
   // OkCupid's real percentage-match algorithm (#94), computed from #79's
@@ -1886,6 +1895,24 @@ export function createApp(deps?: {
     res.json({ enabled: vanishModeStore.isEnabled(req.params.author) });
   });
 
+  // Bumble's real Snooze Mode (#164) — see snoozeAccount.ts and
+  // isExcludedCandidate/POST /api/swipes above for the actual "hidden
+  // from everyone, and can't swipe either, until un-snoozed" enforcement.
+  // Deliberately doesn't touch matches/messages: existing chats stay
+  // reachable while snoozed, only new discovery/swiping pauses.
+  app.put("/api/snooze-account/:author", (req, res) => {
+    const result = snoozeAccountStore.setEnabled(req.params.author, req.body?.enabled);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ enabled: result.enabled });
+  });
+
+  app.get("/api/snooze-account/:author", (req, res) => {
+    res.json({ enabled: snoozeAccountStore.isEnabled(req.params.author) });
+  });
+
   // Hinge's real "like or comment on one specific photo" (#112): gated the
   // same way #45's photo serve is (block check + #59's album access level)
   // plus confirming photoId is actually in owner's album, ahead of
@@ -2000,6 +2027,14 @@ export function createApp(deps?: {
   });
 
   app.post("/api/swipes", (req, res) => {
+    // Bumble's real Snooze Mode (#164): a snoozed account can't swipe on
+    // new candidates either — the whole account pauses, not just other
+    // people's visibility of it (see snoozeAccount.ts).
+    const swiperAuthor = typeof req.body?.swiper === "string" ? req.body.swiper.trim() : "";
+    if (swiperAuthor && snoozeAccountStore.isEnabled(swiperAuthor)) {
+      res.status(400).json({ error: "Your account is snoozed — unsnooze it to keep swiping" });
+      return;
+    }
     const result = swipeStore.recordSwipe(req.body?.swiper, req.body?.swiped, req.body?.direction);
     if (!result.success) {
       res.status(400).json({ error: result.error });
@@ -3364,6 +3399,7 @@ export function createApp(deps?: {
     squadStore,
     presenceStore,
     vanishModeStore,
+    snoozeAccountStore,
     photoInteractionStore,
     contactsGraphStore,
     viewModeStore,

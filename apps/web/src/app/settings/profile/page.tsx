@@ -23,6 +23,7 @@ import InterestsInfoEditor from "../../InterestsInfoEditor";
 import WeekendPlansEditor from "../../WeekendPlansEditor";
 import ProfileVisibilityEditor from "../../ProfileVisibilityEditor";
 import VanishModeEditor from "../../VanishModeEditor";
+import SnoozeAccountEditor from "../../SnoozeAccountEditor";
 import SocialLinksEditor from "../../SocialLinksEditor";
 import TravelModeEditor from "../../TravelModeEditor";
 import PassportModeEditor from "../../PassportModeEditor";
@@ -83,6 +84,7 @@ export default function ProfileSettingsPage() {
       <StylizedAvatarEditor author={author} />
       <ProfileVisibilityEditor author={author} />
       <VanishModeEditor author={author} />
+      <SnoozeAccountEditor author={author} />
       <DiscoveryFiltersEditor author={author} />
       <ProfilePreview author={author} />
       <SmartScoreDisplay author={author} />

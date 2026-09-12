@@ -7218,6 +7218,113 @@ test("GET /api/swipe-candidates/:author still shows a vanish-mode candidate to s
   }
 });
 
+test("PUT /api/snooze-account/:author then GET reflects the toggle", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const offRes = await fetch(`${baseUrl}/api/snooze-account/alice`);
+    assert.deepEqual(await offRes.json(), { enabled: false });
+
+    const putRes = await fetch(`${baseUrl}/api/snooze-account/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    assert.deepEqual(await putRes.json(), { enabled: true });
+
+    const onRes = await fetch(`${baseUrl}/api/snooze-account/alice`);
+    assert.deepEqual(await onRes.json(), { enabled: true });
+  } finally {
+    server.close();
+  }
+});
+
+test("Snooze Mode (#164): GET /api/swipe-candidates/:author excludes a snoozed candidate for everyone, no exception", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    await fetch(`${baseUrl}/api/snooze-account/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    // Unlike #111's Vanish Mode, even someone bob already liked shouldn't see him.
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(body.candidates, []);
+  } finally {
+    server.close();
+  }
+});
+
+test("Snooze Mode (#164): POST /api/swipes rejects a swipe from a snoozed author", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/snooze-account/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.error, /snoozed/i);
+  } finally {
+    server.close();
+  }
+});
+
+test("Snooze Mode (#164): an existing match stays visible to the snoozed author while snoozed", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    await fetch(`${baseUrl}/api/snooze-account/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/matches/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.matches.map((m: { author: string }) => m.author),
+      ["bob"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
 async function addAlbumPhoto(baseUrl: string, photoStore: import("./photos").PhotoStore, owner: string) {
   const uploaded = photoStore.upload(owner, "image/png", TINY_PNG_BASE64);
   const id = uploaded.success ? uploaded.photo.id : "";
