@@ -71,6 +71,8 @@ export default function AdminDashboardPage() {
         <Link href="/admin/bans">Ban / shadowban queue &rarr;</Link>
         {" · "}
         <Link href="/admin/pricing">Pricing plans & discount codes &rarr;</Link>
+        {" · "}
+        <Link href="/admin/broadcasts">Broadcast messages &rarr;</Link>
       </p>
 
       <form

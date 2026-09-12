@@ -12,6 +12,7 @@ const CATEGORIES: { key: string; label: string; description: string }[] = [
   { key: "newLike", label: "New likes", description: "Someone likes your profile" },
   { key: "matchExpiryReminder", label: "Expiring chat reminders", description: "A match's 24-hour window is about to close" },
   { key: "liveEventStart", label: "Live events", description: "An event you're subscribed to is starting" },
+  { key: "adminBroadcast", label: "Announcements", description: "An admin sends an app-wide announcement" },
 ];
 
 /**
