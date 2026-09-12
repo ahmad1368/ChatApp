@@ -2039,6 +2039,26 @@ export function createApp(deps?: {
     res.json({ entry: result.entry });
   });
 
+  // Bumble's real "Reported users management (Reported Users Queue)"
+  // (#173) — see reports.ts's getReportedUsersQueue() for the real
+  // report-count severity sort, and review() for the actual admin
+  // decision (resolved/dismissed) this endpoint records.
+  app.get("/api/admin/reported-users", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ queue: reportStore.getReportedUsersQueue() });
+  });
+
+  app.post("/api/admin/reports/:reportId/review", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = reportStore.review(req.params.reportId, req.body?.reviewer, req.body?.status, req.body?.note);
+    if (!result.success) {
+      const status = result.error === "Report not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ report: result.report });
+  });
+
   // Hinge's real "like or comment on one specific photo" (#112): gated the
   // same way #45's photo serve is (block check + #59's album access level)
   // plus confirming photoId is actually in owner's album, ahead of
