@@ -108,6 +108,7 @@ import { isSenderPhotoSuspicious } from "./photoWarning";
 import { CrossedPathsStore } from "./crossedPaths";
 import { SquadStore } from "./squads";
 import { PresenceStore } from "./presence";
+import { PresenceVisibilityStore } from "./presenceVisibility";
 import { VanishModeStore } from "./vanishMode";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
@@ -201,6 +202,7 @@ export function createApp(deps?: {
   crossedPathsStore: CrossedPathsStore;
   squadStore: SquadStore;
   presenceStore: PresenceStore;
+  presenceVisibilityStore: PresenceVisibilityStore;
   vanishModeStore: VanishModeStore;
   photoInteractionStore: PhotoInteractionStore;
   contactsGraphStore: ContactsGraphStore;
@@ -329,6 +331,7 @@ export function createApp(deps?: {
   const crossedPathsStore = new CrossedPathsStore();
   const squadStore = new SquadStore();
   const presenceStore = new PresenceStore();
+  const presenceVisibilityStore = new PresenceVisibilityStore();
   const vanishModeStore = new VanishModeStore();
   const photoInteractionStore = new PhotoInteractionStore();
   const contactsGraphStore = new ContactsGraphStore();
@@ -1823,9 +1826,29 @@ export function createApp(deps?: {
   // Badoo's real online/last-active indicator (#110): "online" is driven
   // live by the presence:online/disconnect socket handlers below; this
   // endpoint just exposes the current snapshot for profile views that
-  // aren't already holding a socket connection to that author.
+  // aren't already holding a socket connection to that author. #161's
+  // PresenceVisibilityStore is applied at read time, on top of the real
+  // status — an optional `?viewer=` also enforces the mutual last-active
+  // gating (see presenceVisibility.ts).
   app.get("/api/presence/:author", (req, res) => {
-    res.json(presenceStore.getStatus(req.params.author));
+    const viewer = typeof req.query.viewer === "string" ? req.query.viewer : undefined;
+    res.json(presenceVisibilityStore.applyTo(req.params.author, presenceStore.getStatus(req.params.author), viewer));
+  });
+
+  // Tinder's real "Settings for how online/offline status is displayed"
+  // (#161) — see presenceVisibility.ts for the actual read-time
+  // enforcement and the WhatsApp-style mutual last-active gating.
+  app.get("/api/presence-visibility/:author", (req, res) => {
+    res.json({ preference: presenceVisibilityStore.get(req.params.author) });
+  });
+
+  app.put("/api/presence-visibility/:author", (req, res) => {
+    const result = presenceVisibilityStore.update(req.params.author, req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ preference: result.preference });
   });
 
   // Bumble's real Incognito Mode (#111): see vanishMode.ts and
@@ -3336,6 +3359,7 @@ export function createApp(deps?: {
     notificationPreferencesStore,
     notificationInboxStore,
     notificationSoundStore,
+    presenceVisibilityStore,
   };
 }
 
