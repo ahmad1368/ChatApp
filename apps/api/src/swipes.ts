@@ -308,6 +308,15 @@ export class SwipeStore {
     return [...(this.matchesByAuthor.get(author) ?? new Set<string>())];
   }
 
+  /** Total distinct matches across the whole app — for #171's admin dashboard. Each match is recorded on both sides, hence the /2. */
+  getTotalMatchCount(): number {
+    let total = 0;
+    for (const matches of this.matchesByAuthor.values()) {
+      total += matches.size;
+    }
+    return total / 2;
+  }
+
   /**
    * Tinder's real "Likes You" (#103): everyone who's already liked or
    * superliked this author but hasn't been swiped back on yet — real

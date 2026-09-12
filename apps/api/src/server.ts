@@ -115,6 +115,7 @@ import { SnoozeAccountStore } from "./snoozeAccount";
 import { PermissionsStatusStore } from "./permissionsStatus";
 import { CacheClearLogStore } from "./cacheClearLog";
 import { TermsAcceptanceStore } from "./termsAcceptance";
+import { buildAdminMetrics, isAdminConfigured, isValidAdminKey } from "./adminMetrics";
 import { PhotoInteractionStore } from "./photoInteractions";
 import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
@@ -1969,6 +1970,35 @@ export function createApp(deps?: {
       return;
     }
     res.json({ acceptance: result.acceptance });
+  });
+
+  // Tinder's real "Comprehensive admin dashboard with analytical charts"
+  // (#171) — see adminMetrics.ts for the honest scoping (real live
+  // counts from this app's own stores, gated behind a single shared
+  // ADMIN_API_KEY rather than a full RBAC system this environment has no
+  // role infrastructure to build). Fails closed if unconfigured.
+  app.get("/api/admin/metrics", (req, res) => {
+    if (!isAdminConfigured()) {
+      res.status(503).json({ error: "Admin dashboard is not configured on this server" });
+      return;
+    }
+    if (!isValidAdminKey(req.get("x-admin-key"))) {
+      res.status(401).json({ error: "Invalid or missing admin key" });
+      return;
+    }
+    let totalMessages = 0;
+    for (const messages of messagesByRoom.values()) {
+      totalMessages += messages.length;
+    }
+    res.json({
+      metrics: buildAdminMetrics({
+        totalUsers: userStore.getTotalCount(),
+        totalMatches: swipeStore.getTotalMatchCount(),
+        totalMessages,
+        totalReports: reportStore.getTotalCount(),
+        totalBlocks: blockStore.getTotalBlockCount(),
+      }),
+    });
   });
 
   // Hinge's real "like or comment on one specific photo" (#112): gated the

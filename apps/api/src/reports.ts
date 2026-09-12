@@ -79,4 +79,9 @@ export class ReportStore {
   countFor(reportedAuthor: string): number {
     return this.reports.filter((r) => r.reportedAuthor === reportedAuthor).length;
   }
+
+  /** Total reports ever filed — for #171's admin dashboard, gated behind the admin key, not a public route. */
+  getTotalCount(): number {
+    return this.reports.length;
+  }
 }

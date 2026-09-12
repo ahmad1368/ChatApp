@@ -7450,6 +7450,77 @@ test("POST /api/terms-acceptance/:author records acceptance and GET reflects it"
   }
 });
 
+test("GET /api/admin/metrics is 503 when ADMIN_API_KEY is unset", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  delete process.env.ADMIN_API_KEY;
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/metrics`);
+    assert.equal(res.status, 503);
+  } finally {
+    server.close();
+    if (previous !== undefined) process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("GET /api/admin/metrics rejects a missing or wrong admin key", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/metrics`);
+    assert.equal(noKeyRes.status, 401);
+
+    const wrongKeyRes = await fetch(`${baseUrl}/api/admin/metrics`, { headers: { "x-admin-key": "nope" } });
+    assert.equal(wrongKeyRes.status, 401);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("GET /api/admin/metrics (#171) returns real live counts from the app's own stores", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "bob", reason: "harassment" }),
+    });
+    await fetch(`${baseUrl}/api/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockerAuthor: "alice", blockedAuthor: "carol" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/metrics`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(res.status, 200);
+    const { metrics } = await res.json();
+    assert.equal(metrics.totalMatches, 1);
+    assert.equal(metrics.totalReports, 1);
+    assert.equal(metrics.totalBlocks, 1);
+    assert.equal(typeof metrics.totalUsers, "number");
+    assert.equal(typeof metrics.totalMessages, "number");
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 async function addAlbumPhoto(baseUrl: string, photoStore: import("./photos").PhotoStore, owner: string) {
   const uploaded = photoStore.upload(owner, "image/png", TINY_PNG_BASE64);
   const id = uploaded.success ? uploaded.photo.id : "";

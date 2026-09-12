@@ -56,4 +56,13 @@ export class BlockStore {
   getBlockedAuthors(blockerAuthor: string): string[] {
     return Array.from(this.blockedByBlocker.get(blockerAuthor?.trim()) ?? []);
   }
+
+  /** Total number of block relationships across all authors — for #171's admin dashboard. */
+  getTotalBlockCount(): number {
+    let total = 0;
+    for (const blocked of this.blockedByBlocker.values()) {
+      total += blocked.size;
+    }
+    return total;
+  }
 }
