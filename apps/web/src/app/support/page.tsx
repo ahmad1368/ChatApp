@@ -129,6 +129,9 @@ export default function SupportPage() {
         <li>
           <Link href="/settings/payment-methods">Manage your saved payment methods</Link>
         </li>
+        <li>
+          <Link href="/coins">Buy coins</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>

@@ -8081,6 +8081,54 @@ test("Crypto payment (#195): a charge can be created, fetched, and confirmed via
   }
 });
 
+test("Coin packages (#196): the fixed catalog is listed, and a user can purchase a package then spend coins", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const packagesRes = await fetch(`${baseUrl}/api/coins/packages`);
+    const packages = (await packagesRes.json()).packages;
+    assert.ok(packages.length >= 2);
+
+    const emptyBalanceRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.deepEqual(await emptyBalanceRes.json(), { balance: 0 });
+
+    const invalidPurchaseRes = await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "jumbo" }),
+    });
+    assert.equal(invalidPurchaseRes.status, 400);
+
+    const purchaseRes = await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: packages[0].id }),
+    });
+    assert.equal(purchaseRes.status, 201);
+    const afterPurchase = await purchaseRes.json();
+    assert.equal(afterPurchase.balance, packages[0].coins);
+
+    const overspendRes = await fetch(`${baseUrl}/api/coins/alice/spend`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: packages[0].coins + 1 }),
+    });
+    assert.equal(overspendRes.status, 400);
+
+    const spendRes = await fetch(`${baseUrl}/api/coins/alice/spend`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: 10 }),
+    });
+    assert.equal(spendRes.status, 200);
+    assert.equal((await spendRes.json()).balance, packages[0].coins - 10);
+
+    const finalBalanceRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.deepEqual(await finalBalanceRes.json(), { balance: packages[0].coins - 10 });
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {
