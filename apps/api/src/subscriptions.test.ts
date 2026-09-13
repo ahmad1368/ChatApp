@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SubscriptionStore } from "./subscriptions";
+import { SubscriptionStore, findGiftPackage } from "./subscriptions";
 
 test("subscribe() rejects a missing author or invalid tier", () => {
   const store = new SubscriptionStore();
@@ -284,4 +284,9 @@ test("cancelAtPeriodEnd() can be undone by turning auto-renew back on before the
   subscribed.subscription.expiresAt = new Date(Date.now() - 1000).toISOString();
 
   assert.ok(store.getStatus("alice"));
+});
+
+test("findGiftPackage() resolves a known package id and returns undefined for an unknown one", () => {
+  assert.equal(findGiftPackage("gold-7")?.tier, "gold");
+  assert.equal(findGiftPackage("does-not-exist"), undefined);
 });

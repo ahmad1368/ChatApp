@@ -50,7 +50,7 @@ import { AdminRoleStore, AdminRole } from "./adminRoles";
 import { ExperimentStore } from "./experiments";
 import { computeRetention } from "./retention";
 import { reportsToCsv, reportsToPdf } from "./reportExport";
-import { SubscriptionStore } from "./subscriptions";
+import { SubscriptionStore, GIFT_PACKAGES, findGiftPackage } from "./subscriptions";
 import { UpgradeCouponStore } from "./upgradeCoupons";
 import { ReferralStore, REFERRAL_REWARD_DAYS, REFERRAL_REWARD_TIER } from "./referrals";
 import { SeasonalDiscountStore } from "./seasonalDiscounts";
@@ -2571,6 +2571,47 @@ export function createApp(deps?: {
       return;
     }
     res.json({ request: result.request });
+  });
+
+  // Coffee Meets Bagel's real "Ability to gift a subscription to other
+  // users" (#210) — see subscriptions.ts's GIFT_PACKAGES for the honest
+  // scoping (a fixed, one-per-tier 7-day gift, priced in #196's coins,
+  // reusing extendOrGrant() rather than a new grant primitive since its
+  // "extend if active, else grant fresh at that tier" semantics are
+  // already exactly right for a gift). Registered before the
+  // "/:author" routes right below so "gift-packages"/"gift" are never
+  // swallowed as an author name.
+  app.get("/api/subscriptions/gift-packages", (_req, res) => {
+    res.json({ packages: GIFT_PACKAGES });
+  });
+
+  app.post("/api/subscriptions/gift", (req, res) => {
+    const fromText = typeof req.body?.from === "string" ? req.body.from.trim() : "";
+    const toText = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+    if (!fromText || !toText) {
+      res.status(400).json({ error: "from and to are both required" });
+      return;
+    }
+    if (fromText === toText) {
+      res.status(400).json({ error: "You can't gift a subscription to yourself" });
+      return;
+    }
+    const giftPackage = findGiftPackage(req.body?.packageId);
+    if (!giftPackage) {
+      res.status(400).json({ error: `packageId must be one of: ${GIFT_PACKAGES.map((p) => p.id).join(", ")}` });
+      return;
+    }
+    const spendResult = coinStore.spend(fromText, giftPackage.coinCost);
+    if (!spendResult.success) {
+      res.status(400).json({ error: spendResult.error });
+      return;
+    }
+    const grantResult = subscriptionStore.extendOrGrant(toText, giftPackage.tier, giftPackage.days);
+    if (!grantResult.success) {
+      res.status(400).json({ error: grantResult.error });
+      return;
+    }
+    res.status(201).json({ subscription: grantResult.subscription, balance: spendResult.balance });
   });
 
   // Tinder's real "Premium subscription plans (Gold, Platinum, VIP)"
