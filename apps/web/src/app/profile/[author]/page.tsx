@@ -69,13 +69,35 @@ const FIELD_LABELS: Record<keyof ProfilePreviewData, string> = {
  * self-preview on /settings/profile) — the surface Tinder Gold's real
  * "Who's Viewed You" (#104) tracks visits from. Loading this page sends
  * ?viewer=<me>, which server.ts's profile-preview route records as a
- * visit unless viewing your own profile.
+ * visit unless viewing your own profile. The "Send a direct message"
+ * form is #208's real "Pay to open a direct chat without needing a
+ * Match" — see directMessageRequests.ts for the honest scoping (a real
+ * coin-priced request landing in their own inbox, not an open chat).
  */
 export default function ViewProfilePage({ params }: { params: { author: string } }) {
   const [viewer] = useState(() => getOrCreateGuestIdentity());
   const [preview, setPreview] = useState<ProfilePreviewData | null>(null);
   const [presence, setPresence] = useState<PresenceStatus | null>(null);
   const [measurementSystem, setMeasurementSystem] = useState<MeasurementSystem>("metric");
+  const [directMessageText, setDirectMessageText] = useState("");
+  const [directMessageResult, setDirectMessageResult] = useState<string | null>(null);
+
+  const sendDirectMessageRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDirectMessageResult(null);
+    const res = await fetch(`${API_URL}/api/direct-message-requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: viewer, to: params.author, text: directMessageText }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setDirectMessageResult(body.error ?? "Failed to send");
+      return;
+    }
+    setDirectMessageText("");
+    setDirectMessageResult("Sent! They'll see it in their message requests.");
+  };
 
   useEffect(() => {
     fetch(`${API_URL}/api/profile-preview/${encodeURIComponent(params.author)}?viewer=${encodeURIComponent(viewer)}`)
@@ -149,6 +171,24 @@ export default function ViewProfilePage({ params }: { params: { author: string }
         </dl>
       )}
       <ProfilePhotoGallery owner={params.author} viewer={viewer} />
+
+      <form onSubmit={sendDirectMessageRequest} style={{ marginTop: 16, border: "1px solid var(--color-border)", borderRadius: 8, padding: 12 }}>
+        <h2 style={{ fontSize: 15, marginTop: 0 }}>Send a direct message (100 coins)</h2>
+        <p style={{ fontSize: 12, color: "var(--color-muted)", marginTop: 0 }}>
+          No match needed — it lands in their message requests.
+        </p>
+        <textarea
+          value={directMessageText}
+          onChange={(e) => setDirectMessageText(e.target.value)}
+          placeholder="Say hi..."
+          rows={2}
+          style={{ width: "100%", padding: 8, boxSizing: "border-box" }}
+        />
+        <button type="submit" disabled={!directMessageText.trim()} style={{ marginTop: 8 }}>
+          Send
+        </button>
+        {directMessageResult && <p style={{ fontSize: 13, marginTop: 8 }}>{directMessageResult}</p>}
+      </form>
     </main>
   );
 }

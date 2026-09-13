@@ -54,6 +54,7 @@ import { SubscriptionStore } from "./subscriptions";
 import { UpgradeCouponStore } from "./upgradeCoupons";
 import { ReferralStore, REFERRAL_REWARD_DAYS, REFERRAL_REWARD_TIER } from "./referrals";
 import { SeasonalDiscountStore } from "./seasonalDiscounts";
+import { DirectMessageRequestStore, DIRECT_MESSAGE_REQUEST_COST, validateDirectMessageRequest } from "./directMessageRequests";
 import { PaymentMethodStore } from "./paymentMethods";
 import { GooglePlayBillingBridge, parseGooglePlayRtdn } from "./googlePlayBilling";
 import { AppleAppStoreBridge, parseAppleNotification } from "./appleAppStore";
@@ -366,6 +367,7 @@ export function createApp(deps?: {
   const upgradeCouponStore = new UpgradeCouponStore();
   const referralStore = new ReferralStore();
   const seasonalDiscountStore = new SeasonalDiscountStore();
+  const directMessageRequestStore = new DirectMessageRequestStore();
   const paymentMethodStore = new PaymentMethodStore();
   const googlePlayBillingBridge = new GooglePlayBillingBridge(subscriptionStore);
   const appleAppStoreBridge = new AppleAppStoreBridge(subscriptionStore);
@@ -2529,6 +2531,46 @@ export function createApp(deps?: {
       return;
     }
     res.json({ campaign: result.campaign });
+  });
+
+  // Tinder's real "Pay to open a direct chat without needing a Match"
+  // (#208) — see directMessageRequests.ts for the honest scoping (a
+  // real coin-priced request that lands in the recipient's own inbox
+  // rather than the open chat room, since this app's chat has no
+  // formal match-gating to bypass in the first place).
+  app.post("/api/direct-message-requests", (req, res) => {
+    // Validate before spending — never charge coins for a request that
+    // was going to be rejected anyway.
+    const validated = validateDirectMessageRequest(req.body?.from, req.body?.to, req.body?.text);
+    if (!validated.valid) {
+      res.status(400).json({ error: validated.error });
+      return;
+    }
+    const spendResult = coinStore.spend(validated.from, DIRECT_MESSAGE_REQUEST_COST);
+    if (!spendResult.success) {
+      res.status(400).json({ error: spendResult.error });
+      return;
+    }
+    const result = directMessageRequestStore.send(validated.from, validated.to, validated.text);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ request: result.request });
+  });
+
+  app.get("/api/direct-message-requests/:author/inbox", (req, res) => {
+    res.json({ requests: directMessageRequestStore.getInbox(req.params.author) });
+  });
+
+  app.post("/api/direct-message-requests/:requestId/respond", (req, res) => {
+    const result = directMessageRequestStore.respond(req.params.requestId, req.body?.author, req.body?.accept);
+    if (!result.success) {
+      const status = result.error === "Request not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ request: result.request });
   });
 
   // Tinder's real "Premium subscription plans (Gold, Platinum, VIP)"
