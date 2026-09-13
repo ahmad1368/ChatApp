@@ -132,6 +132,9 @@ export default function SupportPage() {
         <li>
           <Link href="/coins">Buy coins</Link>
         </li>
+        <li>
+          <Link href="/daily-spin">Spin the daily wheel for free coins</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>

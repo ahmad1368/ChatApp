@@ -13,6 +13,7 @@ export const COIN_PACKAGES: CoinPackage[] = [
 
 export type PurchaseResult = { success: true; balance: number; coinPackage: CoinPackage } | { success: false; error: string };
 export type SpendResult = { success: true; balance: number } | { success: false; error: string };
+export type CreditResult = { success: true; balance: number } | { success: false; error: string };
 
 function findPackage(packageId: unknown): CoinPackage | undefined {
   return COIN_PACKAGES.find((p) => p.id === packageId);
@@ -45,6 +46,18 @@ export class CoinStore {
     const balance = this.getBalance(authorText) + coinPackage.coins;
     this.balanceByAuthor.set(authorText, balance);
     return { success: true, balance, coinPackage };
+  }
+
+  /** Credits coins earned rather than purchased (e.g. #211's daily spin wheel payout) — no package required. */
+  credit(author: unknown, amount: unknown): CreditResult {
+    const authorText = typeof author === "string" ? author.trim() : "";
+    if (!authorText) return { success: false, error: "author is required" };
+    if (typeof amount !== "number" || !Number.isFinite(amount) || !Number.isInteger(amount) || amount <= 0) {
+      return { success: false, error: "amount must be a positive integer" };
+    }
+    const balance = this.getBalance(authorText) + amount;
+    this.balanceByAuthor.set(authorText, balance);
+    return { success: true, balance };
   }
 
   spend(author: unknown, amount: unknown): SpendResult {

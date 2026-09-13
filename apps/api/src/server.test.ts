@@ -10795,3 +10795,36 @@ test("Gift a subscription (#210): rejects an insufficient balance, and a success
     server.close();
   }
 });
+
+test("Daily Spin wheel (#211): spinning once credits coins, a second spin the same day is rejected, and status reflects the cooldown", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const initialStatusRes = await fetch(`${baseUrl}/api/daily-spin/alice`);
+    const initialStatus = await initialStatusRes.json();
+    assert.equal(initialStatus.canSpin, true);
+    assert.equal(initialStatus.nextSpinAt, null);
+    assert.ok(initialStatus.segments.length > 0);
+
+    const spinRes = await fetch(`${baseUrl}/api/daily-spin/alice/spin`, { method: "POST" });
+    assert.equal(spinRes.status, 200);
+    const spinBody = await spinRes.json();
+    assert.ok(spinBody.coinsWon > 0);
+    assert.ok(spinBody.nextSpinAt);
+
+    const balanceRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.equal((await balanceRes.json()).balance, spinBody.coinsWon);
+
+    const secondSpinRes = await fetch(`${baseUrl}/api/daily-spin/alice/spin`, { method: "POST" });
+    assert.equal(secondSpinRes.status, 400);
+
+    const statusAfterSpinRes = await fetch(`${baseUrl}/api/daily-spin/alice`);
+    const statusAfterSpin = await statusAfterSpinRes.json();
+    assert.equal(statusAfterSpin.canSpin, false);
+    assert.ok(statusAfterSpin.nextSpinAt);
+
+    const otherAuthorStatusRes = await fetch(`${baseUrl}/api/daily-spin/bob`);
+    assert.equal((await otherAuthorStatusRes.json()).canSpin, true);
+  } finally {
+    server.close();
+  }
+});
