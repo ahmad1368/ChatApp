@@ -32,6 +32,18 @@ export function findSuperLikePackage(packageId: unknown): SuperLikePackage | und
 // against it, matching real Tinder).
 export const DAILY_LIKE_LIMIT = 100;
 
+// #92's original Rewind was free with no daily cap at all (only ever
+// limited to the single most recent swipe) — same "no premium tier to
+// gate it behind" honest scoping #105/#106's Boost doc comments
+// disclosed for themselves. #209's "Purchase an unlimited Super Rewind
+// package" is the moment that gap closes: a real daily cap, plus a
+// real, coin-priced, time-bounded (not credit-counted, matching this
+// issue's own "unlimited" framing rather than #198/#199's "N-pack"
+// framing) removal of it.
+export const DAILY_REWIND_LIMIT = 1;
+export const UNLIMITED_REWIND_DURATION_MS = 24 * 60 * 60 * 1000;
+export const UNLIMITED_REWIND_COST_COINS = 150;
+
 export type RecordSwipeResult = { success: true; matched: boolean } | { success: false; error: string };
 export type JoinDiscoveryResult = { success: true } | { success: false; error: string };
 export type UndoLastSwipeResult = { success: true; swiped: string } | { success: false; error: string };
@@ -150,6 +162,8 @@ export class SwipeStore {
   private likesUsedToday = new Map<string, { date: string; count: number }>();
   private superLikeCreditsByAuthor = new Map<string, number>();
   private creditFundedSwipeKeys = new Set<string>();
+  private rewindsUsedToday = new Map<string, { date: string; count: number }>();
+  private unlimitedRewindsUntilByAuthor = new Map<string, number>();
 
   joinDiscovery(author: unknown): JoinDiscoveryResult {
     const authorName = typeof author === "string" ? author.trim() : "";
@@ -276,6 +290,13 @@ export class SwipeStore {
     const swiped = this.lastSwipeBySwiper.get(authorName);
     if (!swiped) {
       return { success: false, error: "Nothing to undo" };
+    }
+
+    if (!this.hasUnlimitedRewinds(authorName)) {
+      if (usedToday(this.rewindsUsedToday, authorName) >= DAILY_REWIND_LIMIT) {
+        return { success: false, error: "You've used your free Rewind for today — purchase unlimited Rewinds to keep going" };
+      }
+      incrementUsage(this.rewindsUsedToday, authorName);
     }
 
     const undoneDirection = this.swipesBySwiper.get(authorName)?.get(swiped);
@@ -430,5 +451,23 @@ export class SwipeStore {
     const credits = this.getSuperLikeCredits(author) + superLikes;
     this.superLikeCreditsByAuthor.set(author, credits);
     return credits;
+  }
+
+  hasUnlimitedRewinds(author: string, now: number = Date.now()): boolean {
+    const until = this.unlimitedRewindsUntilByAuthor.get(author);
+    return until !== undefined && until > now;
+  }
+
+  /** #209's purchasable perk: coin-spending happens in the route handler (server.ts), same shape as grantSuperLikeCredits() above — this only ever grants the time window, never debits coins itself. */
+  grantUnlimitedRewinds(author: string, now: number = Date.now()): string {
+    const until = now + UNLIMITED_REWIND_DURATION_MS;
+    this.unlimitedRewindsUntilByAuthor.set(author, until);
+    return new Date(until).toISOString();
+  }
+
+  /** null signals "unlimited right now" rather than a specific remaining count. */
+  getRewindsRemainingToday(author: string): number | null {
+    if (this.hasUnlimitedRewinds(author)) return null;
+    return Math.max(0, DAILY_REWIND_LIMIT - usedToday(this.rewindsUsedToday, author));
   }
 }

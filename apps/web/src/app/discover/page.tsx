@@ -43,6 +43,8 @@ export default function DiscoverPage() {
   const [superLikeCredits, setSuperLikeCredits] = useState(0);
   const [superLikePackages, setSuperLikePackages] = useState<{ id: string; superLikes: number; coinCost: number }[]>([]);
   const [likesRemaining, setLikesRemaining] = useState(0);
+  const [rewindsRemaining, setRewindsRemaining] = useState(1);
+  const [unlimitedRewinds, setUnlimitedRewinds] = useState(false);
   const [bioKeyword, setBioKeyword] = useState("");
   const [viewMode, setViewModeState] = useState<ViewMode>("card");
 
@@ -105,6 +107,7 @@ export default function DiscoverPage() {
     }).then(() => loadCandidates());
     loadSuperLikesRemaining();
     loadSuperLikeCredits();
+    loadRewindsRemaining();
     fetch(`${API_URL}/api/super-likes/packages`)
       .then((res) => res.json())
       .then((body) => setSuperLikePackages(body.packages ?? []))
@@ -166,6 +169,28 @@ export default function DiscoverPage() {
     }
   };
 
+  // #209's real daily Rewind cap (and purchasable unlimited removal of
+  // it) — see swipes.ts for the honest scoping.
+  const loadRewindsRemaining = () => {
+    fetch(`${API_URL}/api/rewinds-remaining/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => {
+        setRewindsRemaining(body.remaining ?? 0);
+        setUnlimitedRewinds(body.unlimited ?? false);
+      })
+      .catch(() => {});
+  };
+
+  const purchaseUnlimitedRewinds = () => {
+    fetch(`${API_URL}/api/rewinds/${encodeURIComponent(author)}/purchase-unlimited`, { method: "POST" })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => {
+        if (ok) loadRewindsRemaining();
+        else setError(body.error ?? "Failed to purchase unlimited Rewinds");
+      })
+      .catch(() => setError("Failed to purchase unlimited Rewinds"));
+  };
+
   // Tinder's "Rewind" feature (#92) — undo only the single most recent
   // swipe, matching the server's own one-step-only rule.
   const undo = async () => {
@@ -191,6 +216,7 @@ export default function DiscoverPage() {
       loadSuperLikesRemaining();
       loadSuperLikeCredits();
       loadLikesRemaining();
+      loadRewindsRemaining();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to undo");
     } finally {
@@ -276,9 +302,20 @@ export default function DiscoverPage() {
         </div>
       )}
       {lastSwiped && (
-        <button onClick={undo} disabled={busy} style={{ marginBottom: 8 }}>
-          ↺ Rewind
-        </button>
+        <div style={{ marginBottom: 8 }}>
+          <button
+            onClick={undo}
+            disabled={busy || (!unlimitedRewinds && rewindsRemaining <= 0)}
+            title={unlimitedRewinds || rewindsRemaining > 0 ? "Rewind" : "No free Rewinds left today"}
+          >
+            ↺ Rewind
+          </button>
+          {!unlimitedRewinds && rewindsRemaining <= 0 && (
+            <button onClick={purchaseUnlimitedRewinds} style={{ marginLeft: 8, fontSize: 12 }}>
+              Get unlimited Rewinds (150 coins)
+            </button>
+          )}
+        </div>
       )}
       {viewMode === "card" ? (
         current ? (

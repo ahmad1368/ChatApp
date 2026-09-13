@@ -594,3 +594,53 @@ test("undoLastSwipe() refunds the daily allowance (not a credit) when that's wha
   assert.equal(store.getSuperLikesRemainingToday("alice"), 1);
   assert.equal(store.getSuperLikeCredits("alice"), 0);
 });
+
+test("undoLastSwipe() rejects a second free Rewind the same day (#209)", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "like");
+  const first = store.undoLastSwipe("alice");
+  assert.equal(first.success, true);
+
+  store.recordSwipe("alice", "carol", "like");
+  const second = store.undoLastSwipe("alice");
+  assert.equal(second.success, false);
+});
+
+test("getRewindsRemainingToday() reflects the free daily limit and unlimited status", () => {
+  const store = new SwipeStore();
+  assert.equal(store.getRewindsRemainingToday("alice"), 1);
+
+  store.recordSwipe("alice", "bob", "like");
+  store.undoLastSwipe("alice");
+  assert.equal(store.getRewindsRemainingToday("alice"), 0);
+
+  store.grantUnlimitedRewinds("alice");
+  assert.equal(store.getRewindsRemainingToday("alice"), null);
+});
+
+test("hasUnlimitedRewinds() is false before any purchase and true right after one", () => {
+  const store = new SwipeStore();
+  assert.equal(store.hasUnlimitedRewinds("alice"), false);
+  store.grantUnlimitedRewinds("alice");
+  assert.equal(store.hasUnlimitedRewinds("alice"), true);
+});
+
+test("hasUnlimitedRewinds() expires after its real 24-hour window", () => {
+  const store = new SwipeStore();
+  const now = Date.now();
+  store.grantUnlimitedRewinds("alice", now);
+  assert.equal(store.hasUnlimitedRewinds("alice", now + 23 * 60 * 60 * 1000), true);
+  assert.equal(store.hasUnlimitedRewinds("alice", now + 25 * 60 * 60 * 1000), false);
+});
+
+test("grantUnlimitedRewinds() lets a user Rewind more than once in the same day", () => {
+  const store = new SwipeStore();
+  store.grantUnlimitedRewinds("alice");
+
+  store.recordSwipe("alice", "bob", "like");
+  assert.equal(store.undoLastSwipe("alice").success, true);
+  store.recordSwipe("alice", "carol", "like");
+  assert.equal(store.undoLastSwipe("alice").success, true);
+  store.recordSwipe("alice", "dave", "like");
+  assert.equal(store.undoLastSwipe("alice").success, true);
+});
