@@ -48,6 +48,7 @@ import { AllowedDomainStore } from "./allowedDomains";
 import { TransactionLogStore } from "./transactionLog";
 import { AdminRoleStore, AdminRole } from "./adminRoles";
 import { ExperimentStore } from "./experiments";
+import { computeRetention } from "./retention";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2131,6 +2132,24 @@ export function createApp(deps?: {
       funnel,
       dailyActiveUsers: presenceStore.getActiveWithinCount(ANALYTICS_ACTIVE_WINDOW_MS),
     });
+  });
+
+  // Bumble's real "View user retention rate" (#189) — see retention.ts
+  // for why signup-to-return is computed from UserStore.createdAt and
+  // TokenService's per-session lastUsedAt (the one place in this app
+  // where signup time and "returned" activity share the same
+  // authenticated userId identity space, unlike the self-reported chat
+  // `author` string PresenceStore/SwipeStore use elsewhere).
+  app.get("/api/admin/retention", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const users = userStore.listCreatedTimestamps().map(({ id, createdAt }) => {
+      const lastUsedAt = tokenService.getLastUsedAt(id);
+      return {
+        createdAtMs: new Date(createdAt).getTime(),
+        lastActiveAtMs: lastUsedAt ? new Date(lastUsedAt).getTime() : undefined,
+      };
+    });
+    res.json({ windows: computeRetention(users) });
   });
 
   // Bumble's real "Smart and manual review of uploaded photos" (#172) —

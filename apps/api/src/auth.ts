@@ -102,6 +102,11 @@ export class UserStore {
     return this.usersById.size;
   }
 
+  /** Every account's id and signup time — #189's retention rate needs the full cohort, not just a count. */
+  listCreatedTimestamps(): { id: string; createdAt: string }[] {
+    return [...this.usersById.values()].map(({ id, createdAt }) => ({ id, createdAt }));
+  }
+
   findOrCreate(phoneNumber: string): AuthUser {
     const existing = this.usersByPhone.get(phoneNumber);
     if (existing) return existing;
@@ -280,6 +285,22 @@ export class TokenService {
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * The most recent activity for a user across every one of their
+   * sessions — #189's retention rate uses this as "last seen" (updated on
+   * token refresh, not every single request, same trade-off as #60's
+   * sessions list already accepts). Undefined if the user has no session
+   * at all (or all of them have since been revoked).
+   */
+  getLastUsedAt(userId: string): string | undefined {
+    let mostRecent: string | undefined;
+    for (const session of this.sessionsById.values()) {
+      if (session.userId !== userId) continue;
+      if (!mostRecent || session.lastUsedAt > mostRecent) mostRecent = session.lastUsedAt;
+    }
+    return mostRecent;
   }
 
   listSessions(userId: string): SessionInfo[] {

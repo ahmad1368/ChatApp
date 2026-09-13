@@ -7744,6 +7744,38 @@ test("A/B experiments (#188): admin can create/list/toggle an experiment, and as
   }
 });
 
+test("Retention rate (#189): requires the admin key and reports a window per configured cohort size", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl, otpService } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/retention`);
+    assert.equal(noKeyRes.status, 401);
+
+    await signUpAndGetAccessToken(baseUrl, otpService, "+15551110099");
+    await signUpAndGetAccessToken(baseUrl, otpService, "+15551110098");
+
+    const res = await fetch(`${baseUrl}/api/admin/retention`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(
+      body.windows.map((w: { windowDays: number }) => w.windowDays),
+      [1, 7, 30]
+    );
+    // Both accounts just signed up, so neither is old enough to be
+    // eligible for any retention window yet — a real, honest zero
+    // rather than a fabricated non-zero sample.
+    for (const window of body.windows) {
+      assert.equal(window.eligibleUsers, 0);
+      assert.equal(window.retentionRate, 0);
+    }
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {
