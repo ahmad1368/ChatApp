@@ -44,6 +44,7 @@ import { GenderInfoStore } from "./genderInfo";
 import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
 import { VerificationStore } from "./verification";
 import { DiscoveryBoundariesStore } from "./discoveryBoundaries";
+import { AllowedDomainStore } from "./allowedDomains";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -169,6 +170,7 @@ export function createApp(deps?: {
   webAuthnService: WebAuthnService;
   onboardingStore: OnboardingStore;
   discoveryBoundariesStore: DiscoveryBoundariesStore;
+  allowedDomainStore: AllowedDomainStore;
   verificationStore: VerificationStore;
   banStore: BanStore;
   pricingPlanStore: PricingPlanStore;
@@ -246,9 +248,27 @@ export function createApp(deps?: {
   notificationSoundStore: NotificationSoundStore;
 } {
   const app = express();
+  // Bumble's real "Manage domains and website access" (#184): a real,
+  // admin-adjustable CORS allowlist (see allowedDomains.ts) rather than
+  // reflecting every origin unconditionally. An empty allowlist (the
+  // default until an admin adds one) preserves the previous
+  // allow-everything behavior — no server-to-server/tool call ever sends
+  // an Origin header, so those are always allowed regardless.
+  const allowedDomainStore = new AllowedDomainStore();
   // Custom response headers aren't visible to browser fetch() by default —
   // must be explicitly exposed via CORS for the client to read X-Has-More.
-  app.use(cors({ exposedHeaders: ["X-Has-More"] }));
+  app.use(
+    cors({
+      exposedHeaders: ["X-Has-More"],
+      origin: (origin, callback) => {
+        if (!origin || allowedDomainStore.isAllowed(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error("Not allowed by CORS"));
+        }
+      },
+    })
+  );
   // Base64-encoded media is ~33% larger than its binary size, so allow a
   // generous body limit even though individual uploads are capped in their
   // own stores after decoding. Raised from 10mb to fit #63's 20MB video cap
@@ -2944,6 +2964,34 @@ export function createApp(deps?: {
     res.json(result.boundaries);
   });
 
+  // Bumble's real "Manage domains and website access" (#184) — admin
+  // CRUD for the CORS allowlist enforced above, gated the same
+  // admin-key way as #171-183. See allowedDomains.ts.
+  app.get("/api/admin/allowed-domains", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ origins: allowedDomainStore.list() });
+  });
+
+  app.post("/api/admin/allowed-domains", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = allowedDomainStore.add(req.body?.origin);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ origin: result.origin });
+  });
+
+  app.delete("/api/admin/allowed-domains/:origin", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const removed = allowedDomainStore.remove(decodeURIComponent(req.params.origin));
+    if (!removed) {
+      res.status(404).json({ error: "That origin isn't in the allowlist" });
+      return;
+    }
+    res.status(204).send();
+  });
+
   // Two orthogonal, backward-compatible filters on top of the full history:
   // `since` (ISO timestamp) lets a reconnecting client fetch only the
   // messages it missed. `limit` opts into cursor pagination instead — the
@@ -3908,6 +3956,7 @@ export function createApp(deps?: {
     webAuthnService,
     onboardingStore,
     discoveryBoundariesStore,
+    allowedDomainStore,
     verificationStore,
     banStore,
     pricingPlanStore,

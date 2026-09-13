@@ -7434,6 +7434,77 @@ test("Discovery boundaries (#183): PUT /api/admin/discovery-boundaries requires 
   }
 });
 
+test("Allowed domains (#184): empty allowlist permits any origin, and admin can add/list/remove entries", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/allowed-domains`);
+    assert.equal(noKeyRes.status, 401);
+
+    const emptyListRes = await fetch(`${baseUrl}/api/admin/allowed-domains`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.deepEqual((await emptyListRes.json()).origins, []);
+
+    const invalidRes = await fetch(`${baseUrl}/api/admin/allowed-domains`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ origin: "not-a-url" }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const addRes = await fetch(`${baseUrl}/api/admin/allowed-domains`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ origin: "https://chatapp.example/" }),
+    });
+    assert.equal(addRes.status, 201);
+    assert.equal((await addRes.json()).origin, "https://chatapp.example");
+
+    const listRes = await fetch(`${baseUrl}/api/admin/allowed-domains`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.deepEqual((await listRes.json()).origins, ["https://chatapp.example"]);
+
+    const deleteRes = await fetch(`${baseUrl}/api/admin/allowed-domains/${encodeURIComponent("https://chatapp.example")}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(deleteRes.status, 204);
+
+    const secondDeleteRes = await fetch(`${baseUrl}/api/admin/allowed-domains/${encodeURIComponent("https://chatapp.example")}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(secondDeleteRes.status, 404);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Allowed domains (#184): once a domain is added, CORS actually rejects a request from an unlisted origin", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/admin/allowed-domains`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ origin: "https://allowed.example" }),
+    });
+
+    const allowedRes = await fetch(`${baseUrl}/health`, { headers: { Origin: "https://allowed.example" } });
+    assert.equal(allowedRes.status, 200);
+    assert.equal(allowedRes.headers.get("access-control-allow-origin"), "https://allowed.example");
+
+    const blockedRes = await fetch(`${baseUrl}/health`, { headers: { Origin: "https://evil.example" } });
+    assert.equal(blockedRes.headers.get("access-control-allow-origin"), null);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {
