@@ -52,7 +52,8 @@ export default function LoginStreakPage() {
   return (
     <main style={{ maxWidth: 480, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
       <p>
-        <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/coins">Coins</Link>
+        <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/coins">Coins</Link> &middot;{" "}
+        <Link href="/achievements">Achievements</Link>
       </p>
       <h1>Daily Streak</h1>
 

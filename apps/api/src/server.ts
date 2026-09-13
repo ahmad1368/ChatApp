@@ -62,6 +62,7 @@ import { CryptoChargeStore, verifyCoinbaseWebhookSignature } from "./cryptoPayme
 import { CoinStore, COIN_PACKAGES } from "./coins";
 import { DailySpinStore } from "./dailySpin";
 import { LoginStreakStore } from "./loginStreak";
+import { AchievementBadgeStore, ACHIEVEMENT_BADGES } from "./achievementBadges";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -270,6 +271,7 @@ export function createApp(deps?: {
   coinStore: CoinStore;
   dailySpinStore: DailySpinStore;
   loginStreakStore: LoginStreakStore;
+  achievementBadgeStore: AchievementBadgeStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -379,6 +381,7 @@ export function createApp(deps?: {
   const coinStore = new CoinStore();
   const dailySpinStore = new DailySpinStore();
   const loginStreakStore = new LoginStreakStore();
+  const achievementBadgeStore = new AchievementBadgeStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -1483,6 +1486,11 @@ export function createApp(deps?: {
       interestsInfo: interestsInfoStore.get(author),
       promptAnswerCount: profilePromptsStore.getAnswers(author).length,
     });
+    // #213's "Profile Perfectionist" badge — awarded the first time this
+    // author's profile is observed at 100% complete.
+    if (completion.percentage === 100) {
+      achievementBadgeStore.award(author, "profile-complete");
+    }
     res.json({ completion });
   });
 
@@ -2936,6 +2944,12 @@ export function createApp(deps?: {
       res.status(400).json({ error: result.error });
       return;
     }
+    // #213's "Week Streak" badge — awarded (once, idempotently) the
+    // moment a real 7-day streak is reached, regardless of how long the
+    // streak later runs or breaks.
+    if (result.checkIn.streak >= 7) {
+      achievementBadgeStore.award(req.params.author, "week-streak");
+    }
     if (result.checkIn.coinsAwarded > 0) {
       const creditResult = coinStore.credit(req.params.author, result.checkIn.coinsAwarded);
       if (!creditResult.success) {
@@ -2946,6 +2960,19 @@ export function createApp(deps?: {
       return;
     }
     res.json({ ...result.checkIn, balance: coinStore.getBalance(req.params.author) });
+  });
+
+  // Hinge's real "Achievement badges and medals" (#213) — see
+  // achievementBadges.ts for the honest scoping (a fixed, app-earned
+  // badge catalog distinct from #87's user-entered "official
+  // achievements" field; awarded automatically at the real milestone
+  // routes below, never self-claimable).
+  app.get("/api/achievement-badges", (_req, res) => {
+    res.json({ badges: ACHIEVEMENT_BADGES });
+  });
+
+  app.get("/api/achievement-badges/:author", (req, res) => {
+    res.json({ earned: achievementBadgeStore.getEarnedBadges(req.params.author) });
   });
 
   // Bumble's real "Send broadcast messages and notifications" (#178) —
@@ -3239,6 +3266,9 @@ export function createApp(deps?: {
     // moment a match is created — see matchExpiry.ts.
     if (result.matched) {
       matchExpiryStore.recordMatch(swiperName, swipedName);
+      // #213's "First Match" badge — awarded to both sides of a real match.
+      achievementBadgeStore.award(swiperName, "first-match");
+      achievementBadgeStore.award(swipedName, "first-match");
       // Tinder's real "Push notification for a new Match" (#151) — each
       // side gets their own notification naming the other person;
       // fire-and-forget the same way message:send's push above doesn't
@@ -4856,6 +4886,7 @@ export function createApp(deps?: {
     coinStore,
     dailySpinStore,
     loginStreakStore,
+    achievementBadgeStore,
   };
 }
 
