@@ -56,3 +56,55 @@ test("listActive() returns every currently active subscriber", () => {
   const authors = store.listActive().map((s) => s.author).sort();
   assert.deepEqual(authors, ["alice", "bob"]);
 });
+
+test("startTrial() rejects a missing author or invalid tier", () => {
+  const store = new SubscriptionStore();
+  assert.equal(store.startTrial("", "gold").success, false);
+  assert.equal(store.startTrial("alice", "diamond").success, false);
+});
+
+test("startTrial() succeeds, marks isTrial, and getStatus() reflects it", () => {
+  const store = new SubscriptionStore();
+  const result = store.startTrial("alice", "platinum");
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.subscription.isTrial, true);
+  assert.equal(store.getStatus("alice")?.tier, "platinum");
+  assert.equal(store.getStatus("alice")?.isTrial, true);
+});
+
+test("startTrial() marks the trial as used, even after it's cancelled", () => {
+  const store = new SubscriptionStore();
+  store.startTrial("alice", "gold");
+  assert.equal(store.hasUsedTrial("alice"), true);
+  store.cancel("alice");
+  assert.equal(store.hasUsedTrial("alice"), true);
+});
+
+test("startTrial() rejects a second trial for the same author", () => {
+  const store = new SubscriptionStore();
+  store.startTrial("alice", "gold");
+  store.cancel("alice");
+  const result = store.startTrial("alice", "vip");
+  assert.equal(result.success, false);
+});
+
+test("startTrial() rejects when the author already has an active subscription", () => {
+  const store = new SubscriptionStore();
+  store.subscribe("alice", "gold");
+  const result = store.startTrial("alice", "vip");
+  assert.equal(result.success, false);
+});
+
+test("a regular subscribe() is not marked as a trial", () => {
+  const store = new SubscriptionStore();
+  const result = store.subscribe("alice", "gold");
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.subscription.isTrial, false);
+});
+
+test("hasUsedTrial() is false before any trial is started", () => {
+  const store = new SubscriptionStore();
+  assert.equal(store.hasUsedTrial("alice"), false);
+});

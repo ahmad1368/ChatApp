@@ -18,6 +18,7 @@ interface Plan {
 interface Subscription {
   tier: (typeof SUBSCRIPTION_TIERS)[number];
   expiresAt: string;
+  isTrial: boolean;
 }
 
 /**
@@ -28,7 +29,9 @@ interface Subscription {
  * to charge a card — see discountCodes.ts. The Premium section below is
  * #191's real named-tier subscription (Gold/Platinum/VIP) — see
  * subscriptions.ts for why "Subscribe" activates immediately instead of
- * charging anything.
+ * charging anything. #202's free trial is a real, once-per-author 3-day
+ * period that just lapses on its own rather than auto-converting to a
+ * real charge, since there's nothing to charge.
  */
 export default function PricingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -36,6 +39,7 @@ export default function PricingPage() {
   const [result, setResult] = useState<string | null>(null);
   const [author, setAuthor] = useState("");
   const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [trialEligible, setTrialEligible] = useState(false);
 
   useEffect(() => {
     fetch(`${API_URL}/api/pricing-plans`)
@@ -47,10 +51,22 @@ export default function PricingPage() {
     const res = await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}`);
     const body = await res.json().catch(() => ({}));
     setSubscription(body.subscription ?? null);
+    const eligibleRes = await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}/trial-eligible`);
+    const eligibleBody = await eligibleRes.json().catch(() => ({}));
+    setTrialEligible(eligibleBody.eligible ?? false);
   };
 
   const subscribe = async (tier: (typeof SUBSCRIPTION_TIERS)[number]) => {
     await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier }),
+    });
+    loadSubscription();
+  };
+
+  const startTrial = async (tier: (typeof SUBSCRIPTION_TIERS)[number]) => {
+    await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}/trial`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tier }),
@@ -131,7 +147,8 @@ export default function PricingPage() {
 
       {subscription ? (
         <p>
-          You're subscribed to <strong>{subscription.tier}</strong> until {new Date(subscription.expiresAt).toLocaleDateString()}.{" "}
+          You're subscribed to <strong>{subscription.tier}</strong>
+          {subscription.isTrial && " (free trial)"} until {new Date(subscription.expiresAt).toLocaleDateString()}.{" "}
           <button onClick={cancelSubscription}>Cancel</button>
         </p>
       ) : (
@@ -142,6 +159,11 @@ export default function PricingPage() {
               <button onClick={() => subscribe(tier)} disabled={!author}>
                 Subscribe
               </button>
+              {trialEligible && (
+                <button onClick={() => startTrial(tier)} disabled={!author} style={{ display: "block", marginTop: 6, fontSize: 12 }}>
+                  Start 3-day free trial
+                </button>
+              )}
             </div>
           ))}
         </div>
