@@ -53,6 +53,7 @@ import { reportsToCsv, reportsToPdf } from "./reportExport";
 import { SubscriptionStore } from "./subscriptions";
 import { PaymentMethodStore } from "./paymentMethods";
 import { GooglePlayBillingBridge, parseGooglePlayRtdn } from "./googlePlayBilling";
+import { AppleAppStoreBridge, parseAppleNotification } from "./appleAppStore";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -347,6 +348,7 @@ export function createApp(deps?: {
   const subscriptionStore = new SubscriptionStore();
   const paymentMethodStore = new PaymentMethodStore();
   const googlePlayBillingBridge = new GooglePlayBillingBridge(subscriptionStore);
+  const appleAppStoreBridge = new AppleAppStoreBridge(subscriptionStore);
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2468,6 +2470,35 @@ export function createApp(deps?: {
       return;
     }
     const result = googlePlayBillingBridge.handleNotification(payload.subscriptionNotification);
+    if (!result.success) {
+      res.status(404).json({ error: result.error });
+      return;
+    }
+    res.json({ action: result.action });
+  });
+
+  // Tinder's real "Apple In-App Purchase" (#194) — see appleAppStore.ts
+  // for the honest scoping (the iOS counterpart to #193's Google Play
+  // bridge; same "no native app to actually drive a purchase" gap).
+  // /link is called by the iOS client right after a StoreKit purchase;
+  // /webhooks/apple is where App Store Server Notifications V2 would
+  // arrive.
+  app.post("/api/subscriptions/apple/link", (req, res) => {
+    const result = appleAppStoreBridge.linkPurchase(req.body?.author, req.body?.originalTransactionId, req.body?.productId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ linked: true });
+  });
+
+  app.post("/api/subscriptions/webhooks/apple", (req, res) => {
+    const notification = parseAppleNotification(req.body);
+    if (!notification) {
+      res.status(400).json({ error: "Malformed App Store Server Notification payload" });
+      return;
+    }
+    const result = appleAppStoreBridge.handleNotification(notification);
     if (!result.success) {
       res.status(404).json({ error: result.error });
       return;
