@@ -47,6 +47,7 @@ import { DiscoveryBoundariesStore } from "./discoveryBoundaries";
 import { AllowedDomainStore } from "./allowedDomains";
 import { TransactionLogStore } from "./transactionLog";
 import { AdminRoleStore, AdminRole } from "./adminRoles";
+import { ExperimentStore } from "./experiments";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -175,6 +176,7 @@ export function createApp(deps?: {
   allowedDomainStore: AllowedDomainStore;
   transactionLogStore: TransactionLogStore;
   adminRoleStore: AdminRoleStore;
+  experimentStore: ExperimentStore;
   verificationStore: VerificationStore;
   banStore: BanStore;
   pricingPlanStore: PricingPlanStore;
@@ -328,6 +330,7 @@ export function createApp(deps?: {
   const verificationStore = new VerificationStore();
   const banStore = new BanStore();
   const adminRoleStore = new AdminRoleStore();
+  const experimentStore = new ExperimentStore();
   const pricingPlanStore = new PricingPlanStore();
   const discountCodeStore = new DiscountCodeStore();
   const broadcastStore = new BroadcastStore();
@@ -3086,6 +3089,61 @@ export function createApp(deps?: {
     }
     res.status(204).send();
   });
+
+  // Hinge's real "A/B testing support for algorithm changes" (#188) —
+  // see experiments.ts for the honest scoping (real deterministic
+  // per-user bucketing and real assignment counts; no algorithm is
+  // wired to branch on a variant yet). Management is admin-key-gated;
+  // GET .../assignment is public since any part of the app — client or
+  // server — needs to resolve a user's own bucket without an admin key.
+  app.get("/api/admin/experiments", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ experiments: experimentStore.list() });
+  });
+
+  app.post("/api/admin/experiments", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = experimentStore.create(req.body?.name, req.body?.variants);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.experiment);
+  });
+
+  app.put("/api/admin/experiments/:experimentId", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    if (typeof req.body?.active !== "boolean") {
+      res.status(400).json({ error: "active must be a boolean" });
+      return;
+    }
+    const updated = experimentStore.setActive(req.params.experimentId, req.body.active);
+    if (!updated) {
+      res.status(404).json({ error: "Experiment not found" });
+      return;
+    }
+    res.json(experimentStore.get(req.params.experimentId));
+  });
+
+  app.get("/api/admin/experiments/:experimentId/stats", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const stats = experimentStore.getStats(req.params.experimentId);
+    if (!stats) {
+      res.status(404).json({ error: "Experiment not found" });
+      return;
+    }
+    res.json({ stats });
+  });
+
+  app.get("/api/experiments/:experimentId/assignment", (req, res) => {
+    const result = experimentStore.assignVariant(req.params.experimentId, req.query.author);
+    if (!result.success) {
+      res.status(result.error === "Experiment not found" ? 404 : 400).json({ error: result.error });
+      return;
+    }
+    res.json({ variant: result.variant });
+  });
+
   // Two orthogonal, backward-compatible filters on top of the full history:
   // `since` (ISO timestamp) lets a reconnecting client fetch only the
   // messages it missed. `limit` opts into cursor pagination instead — the
@@ -4053,6 +4111,7 @@ export function createApp(deps?: {
     allowedDomainStore,
     transactionLogStore,
     adminRoleStore,
+    experimentStore,
     verificationStore,
     banStore,
     pricingPlanStore,

@@ -7687,6 +7687,63 @@ test("Admin RBAC (#187): a moderator account can list roles but can't create or 
   }
 });
 
+test("A/B experiments (#188): admin can create/list/toggle an experiment, and assignment is deterministic and public", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/experiments`);
+    assert.equal(noKeyRes.status, 401);
+
+    const invalidRes = await fetch(`${baseUrl}/api/admin/experiments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ name: "Ranking test", variants: ["only-one"] }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const createRes = await fetch(`${baseUrl}/api/admin/experiments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ name: "Ranking test", variants: ["control", "treatment"] }),
+    });
+    assert.equal(createRes.status, 201);
+    const experiment = await createRes.json();
+    assert.equal(experiment.active, true);
+
+    const listRes = await fetch(`${baseUrl}/api/admin/experiments`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const listBody = await listRes.json();
+    assert.equal(listBody.experiments.length, 1);
+
+    const assignRes = await fetch(`${baseUrl}/api/experiments/${experiment.id}/assignment?author=alice`);
+    assert.equal(assignRes.status, 200);
+    const firstAssignment = await assignRes.json();
+    assert.ok(experiment.variants.includes(firstAssignment.variant));
+
+    const assignAgainRes = await fetch(`${baseUrl}/api/experiments/${experiment.id}/assignment?author=alice`);
+    const secondAssignment = await assignAgainRes.json();
+    assert.equal(secondAssignment.variant, firstAssignment.variant);
+
+    const statsRes = await fetch(`${baseUrl}/api/admin/experiments/${experiment.id}/stats`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const statsBody = await statsRes.json();
+    assert.equal(statsBody.stats[firstAssignment.variant], 1);
+
+    const deactivateRes = await fetch(`${baseUrl}/api/admin/experiments/${experiment.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ active: false }),
+    });
+    assert.equal(deactivateRes.status, 200);
+
+    const assignAfterDeactivateRes = await fetch(`${baseUrl}/api/experiments/${experiment.id}/assignment?author=bob`);
+    assert.equal(assignAfterDeactivateRes.status, 400);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {
