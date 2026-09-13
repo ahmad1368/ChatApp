@@ -8280,6 +8280,30 @@ test("Likes You (#200): identities are only unlocked for a subscriber, but the c
   }
 });
 
+test("Ad-free for pro (#201): ads show for a non-subscriber and are removed once subscribed", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const beforeRes = await fetch(`${baseUrl}/api/ads/alice/should-show`);
+    assert.deepEqual(await beforeRes.json(), { showAds: true });
+
+    await fetch(`${baseUrl}/api/subscriptions/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "gold" }),
+    });
+
+    const afterRes = await fetch(`${baseUrl}/api/ads/alice/should-show`);
+    assert.deepEqual(await afterRes.json(), { showAds: false });
+
+    await fetch(`${baseUrl}/api/subscriptions/alice`, { method: "DELETE" });
+
+    const afterCancelRes = await fetch(`${baseUrl}/api/ads/alice/should-show`);
+    assert.deepEqual(await afterCancelRes.json(), { showAds: true });
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

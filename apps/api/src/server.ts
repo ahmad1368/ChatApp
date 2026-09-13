@@ -2445,6 +2445,23 @@ export function createApp(deps?: {
     res.json({ subscription: subscription ?? null });
   });
 
+  // Tinder's real "Ability to remove ads for pro users" (#201) — a real
+  // ad network (AdMob, Meta Audience Network, etc.) needs a publisher
+  // account this environment has no credentials for, same disclosed gap
+  // as Google/Apple Sign-In's own credential requirement elsewhere in
+  // this app; AdBanner.tsx renders an honestly-labeled placeholder slot
+  // rather than pretending to serve a real ad. What's real: whether that
+  // slot should render at all is a genuine, tested server decision (not
+  // duplicated ad-hoc per page) — any active #191 subscription tier
+  // removes it, the actual feature this issue asks for. A separate named
+  // endpoint (rather than the client re-deriving this from
+  // GET /api/subscriptions/:author itself) keeps "should ads show" as
+  // its own decision, ready for e.g. a future ad-free-only purchase that
+  // isn't tied to a subscription tier at all.
+  app.get("/api/ads/:author/should-show", (req, res) => {
+    res.json({ showAds: !subscriptionStore.getStatus(req.params.author) });
+  });
+
   app.post("/api/subscriptions/:author", (req, res) => {
     const result = subscriptionStore.subscribe(req.params.author, req.body?.tier);
     if (!result.success) {
