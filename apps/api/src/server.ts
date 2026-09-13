@@ -44,6 +44,8 @@ import { GenderInfoStore } from "./genderInfo";
 import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
 import { VerificationStore } from "./verification";
 import { DiscoveryBoundariesStore } from "./discoveryBoundaries";
+import { AllowedDomainStore } from "./allowedDomains";
+import { TransactionLogStore } from "./transactionLog";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -169,6 +171,8 @@ export function createApp(deps?: {
   webAuthnService: WebAuthnService;
   onboardingStore: OnboardingStore;
   discoveryBoundariesStore: DiscoveryBoundariesStore;
+  allowedDomainStore: AllowedDomainStore;
+  transactionLogStore: TransactionLogStore;
   verificationStore: VerificationStore;
   banStore: BanStore;
   pricingPlanStore: PricingPlanStore;
@@ -247,9 +251,27 @@ export function createApp(deps?: {
   requireAdmin: (req: express.Request, res: express.Response) => boolean;
 } {
   const app = express();
+  // Bumble's real "Manage domains and website access" (#184): a real,
+  // admin-adjustable CORS allowlist (see allowedDomains.ts) rather than
+  // reflecting every origin unconditionally. An empty allowlist (the
+  // default until an admin adds one) preserves the previous
+  // allow-everything behavior — no server-to-server/tool call ever sends
+  // an Origin header, so those are always allowed regardless.
+  const allowedDomainStore = new AllowedDomainStore();
   // Custom response headers aren't visible to browser fetch() by default —
   // must be explicitly exposed via CORS for the client to read X-Has-More.
-  app.use(cors({ exposedHeaders: ["X-Has-More"] }));
+  app.use(
+    cors({
+      exposedHeaders: ["X-Has-More"],
+      origin: (origin, callback) => {
+        if (!origin || allowedDomainStore.isAllowed(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error("Not allowed by CORS"));
+        }
+      },
+    })
+  );
   // Base64-encoded media is ~33% larger than its binary size, so allow a
   // generous body limit even though individual uploads are capped in their
   // own stores after decoding. Raised from 10mb to fit #63's 20MB video cap
@@ -308,6 +330,7 @@ export function createApp(deps?: {
   const broadcastStore = new BroadcastStore();
   const supportTicketStore = new SupportTicketStore();
   const discoveryBoundariesStore = new DiscoveryBoundariesStore();
+  const transactionLogStore = new TransactionLogStore();
   const onboardingStore = new OnboardingStore(verificationStore, discoveryBoundariesStore);
   const reportStore = new ReportStore();
   const messageDraftStore = new MessageDraftStore();
@@ -2945,6 +2968,65 @@ export function createApp(deps?: {
     res.json(result.boundaries);
   });
 
+  // Bumble's real "Manage domains and website access" (#184) — admin
+  // CRUD for the CORS allowlist enforced above, gated the same
+  // admin-key way as #171-183. See allowedDomains.ts.
+  app.get("/api/admin/allowed-domains", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ origins: allowedDomainStore.list() });
+  });
+
+  app.post("/api/admin/allowed-domains", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = allowedDomainStore.add(req.body?.origin);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ origin: result.origin });
+  });
+
+  app.delete("/api/admin/allowed-domains/:origin", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const removed = allowedDomainStore.remove(decodeURIComponent(req.params.origin));
+    if (!removed) {
+      res.status(404).json({ error: "That origin isn't in the allowlist" });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  // Tinder's real "Detailed logging of all financial transactions and
+  // refunds" (#185) — see transactionLog.ts for the honest scoping (a
+  // manual ledger, since this app has no integrated payment processor
+  // yet). Gated the same admin-key way as #171-184.
+  app.get("/api/admin/transactions", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const author = typeof req.query.author === "string" ? req.query.author : undefined;
+    const type = req.query.type === "purchase" || req.query.type === "refund" ? req.query.type : undefined;
+    res.json({ transactions: transactionLogStore.list({ author, type }) });
+  });
+
+  app.post("/api/admin/transactions", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = transactionLogStore.logPurchase(req.body?.author, req.body?.amountCents, req.body?.description);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.transaction);
+  });
+
+  app.post("/api/admin/transactions/:transactionId/refund", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = transactionLogStore.refund(req.params.transactionId, req.body?.reason);
+    if (!result.success) {
+      res.status(result.error === "Transaction not found" ? 404 : 400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.refund);
+  });
+
   // Two orthogonal, backward-compatible filters on top of the full history:
   // `since` (ISO timestamp) lets a reconnecting client fetch only the
   // messages it missed. `limit` opts into cursor pagination instead — the
@@ -3909,6 +3991,8 @@ export function createApp(deps?: {
     webAuthnService,
     onboardingStore,
     discoveryBoundariesStore,
+    allowedDomainStore,
+    transactionLogStore,
     verificationStore,
     banStore,
     pricingPlanStore,
