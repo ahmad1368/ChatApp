@@ -8410,6 +8410,56 @@ test("Upgrade coupons (#203): admin creates a coupon and redeeming it grants a r
   }
 });
 
+test("Referral system (#204): redeeming a friend's code credits real subscription days to both sides", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const codeRes = await fetch(`${baseUrl}/api/referrals/alice/code`);
+    assert.equal(codeRes.status, 200);
+    const { code } = await codeRes.json();
+    assert.equal(typeof code, "string");
+
+    const sameCodeRes = await fetch(`${baseUrl}/api/referrals/alice/code`);
+    assert.equal((await sameCodeRes.json()).code, code);
+
+    const selfRedeemRes = await fetch(`${baseUrl}/api/referrals/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, author: "alice" }),
+    });
+    assert.equal(selfRedeemRes.status, 400);
+
+    const redeemRes = await fetch(`${baseUrl}/api/referrals/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, author: "bob" }),
+    });
+    assert.equal(redeemRes.status, 200);
+    const redeemed = await redeemRes.json();
+    assert.equal(redeemed.subscription.tier, "gold");
+
+    const refereeStatusRes = await fetch(`${baseUrl}/api/subscriptions/bob`);
+    assert.equal((await refereeStatusRes.json()).subscription.tier, "gold");
+
+    const referrerStatusRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    assert.equal((await referrerStatusRes.json()).subscription.tier, "gold");
+
+    const referrerCodeRes = await fetch(`${baseUrl}/api/referrals/alice/code`);
+    assert.equal((await referrerCodeRes.json()).referralCount, 1);
+
+    // A referee can't redeem a second referral code.
+    const carolCodeRes = await fetch(`${baseUrl}/api/referrals/carol/code`);
+    const { code: carolCode } = await carolCodeRes.json();
+    const secondRedeemRes = await fetch(`${baseUrl}/api/referrals/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: carolCode, author: "bob" }),
+    });
+    assert.equal(secondRedeemRes.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

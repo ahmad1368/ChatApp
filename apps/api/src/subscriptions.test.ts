@@ -127,3 +127,33 @@ test("grantDays() grants a subscription for the exact custom duration given", ()
   assert.equal(result.subscription.isTrial, false);
   assert.equal(store.getStatus("alice")?.tier, "vip");
 });
+
+test("extendOrGrant() grants a fresh subscription at the given tier when none is active", () => {
+  const store = new SubscriptionStore();
+  const result = store.extendOrGrant("alice", "gold", 7);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.subscription.tier, "gold");
+  assert.equal(store.getStatus("alice")?.tier, "gold");
+});
+
+test("extendOrGrant() extends an existing active subscription's expiry, keeping its current tier", () => {
+  const store = new SubscriptionStore();
+  const original = store.subscribe("alice", "platinum");
+  assert.equal(original.success, true);
+  if (!original.success) return;
+  const originalExpiresAt = new Date(original.subscription.expiresAt).getTime();
+
+  const result = store.extendOrGrant("alice", "gold", 7);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.subscription.tier, "platinum");
+  const newExpiresAt = new Date(result.subscription.expiresAt).getTime();
+  assert.equal(newExpiresAt - originalExpiresAt, 7 * 24 * 60 * 60 * 1000);
+});
+
+test("extendOrGrant() rejects a missing author or invalid tier", () => {
+  const store = new SubscriptionStore();
+  assert.equal(store.extendOrGrant("", "gold", 7).success, false);
+  assert.equal(store.extendOrGrant("alice", "diamond", 7).success, false);
+});

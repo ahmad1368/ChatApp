@@ -31,7 +31,9 @@ interface Subscription {
  * subscriptions.ts for why "Subscribe" activates immediately instead of
  * charging anything. #202's free trial is a real, once-per-author 3-day
  * period that just lapses on its own rather than auto-converting to a
- * real charge, since there's nothing to charge.
+ * real charge, since there's nothing to charge. #204's referral system
+ * gives both sides real free subscription days on redemption — see
+ * referrals.ts.
  */
 export default function PricingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -42,6 +44,10 @@ export default function PricingPage() {
   const [trialEligible, setTrialEligible] = useState(false);
   const [couponCode, setCouponCode] = useState("");
   const [couponResult, setCouponResult] = useState<string | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referralCount, setReferralCount] = useState(0);
+  const [friendCode, setFriendCode] = useState("");
+  const [referralResult, setReferralResult] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/api/pricing-plans`)
@@ -56,6 +62,31 @@ export default function PricingPage() {
     const eligibleRes = await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}/trial-eligible`);
     const eligibleBody = await eligibleRes.json().catch(() => ({}));
     setTrialEligible(eligibleBody.eligible ?? false);
+    const referralRes = await fetch(`${API_URL}/api/referrals/${encodeURIComponent(author)}/code`);
+    const referralBody = await referralRes.json().catch(() => ({}));
+    setReferralCode(referralBody.code ?? null);
+    setReferralCount(referralBody.referralCount ?? 0);
+  };
+
+  // #204's referral system: redeeming a friend's real, unique code
+  // credits real #191 subscription days to both sides via
+  // SubscriptionStore.extendOrGrant() (see referrals.ts).
+  const redeemReferral = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReferralResult(null);
+    const res = await fetch(`${API_URL}/api/referrals/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: friendCode, author }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setReferralResult(body.error ?? "That referral code isn't valid");
+      return;
+    }
+    setFriendCode("");
+    setReferralResult("You both got free subscription days!");
+    loadSubscription();
   };
 
   const subscribe = async (tier: (typeof SUBSCRIPTION_TIERS)[number]) => {
@@ -204,6 +235,31 @@ export default function PricingPage() {
         </button>
       </form>
       {couponResult && <p style={{ marginTop: 8, fontSize: 13 }}>{couponResult}</p>}
+
+      {author && (
+        <div style={{ marginTop: 24, border: "1px solid var(--color-border)", borderRadius: 8, padding: 12 }}>
+          <h2 style={{ fontSize: 16, marginTop: 0 }}>Invite friends</h2>
+          {referralCode && (
+            <p style={{ fontSize: 13 }}>
+              Your referral code: <strong>{referralCode}</strong> — {referralCount} friend{referralCount === 1 ? "" : "s"} referred so far.
+              Each redemption gives you both free subscription days.
+            </p>
+          )}
+          <form onSubmit={redeemReferral} style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <input
+              type="text"
+              value={friendCode}
+              onChange={(e) => setFriendCode(e.target.value)}
+              placeholder="Have a friend's referral code?"
+              style={{ flex: 1, padding: 8 }}
+            />
+            <button type="submit" disabled={!friendCode}>
+              Redeem
+            </button>
+          </form>
+          {referralResult && <p style={{ marginTop: 8, fontSize: 13 }}>{referralResult}</p>}
+        </div>
+      )}
 
       <p style={{ marginTop: 16, fontSize: 13 }}>
         <Link href="/settings/payment-methods">Manage your saved payment methods &rarr;</Link>

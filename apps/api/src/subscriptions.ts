@@ -117,6 +117,32 @@ export class SubscriptionStore {
     return { success: true, subscription };
   }
 
+  /**
+   * #204's "Referral system to invite friends for free subscription
+   * days": extends an already-active subscription by `days`, keeping
+   * its current tier, rather than replacing it the way grantDays()
+   * does — a referral reward should never shorten or downgrade what a
+   * user already has. With no active subscription, grants a fresh one
+   * at `tier` for `days`, same as grantDays().
+   */
+  extendOrGrant(author: unknown, tier: unknown, days: number): SubscribeResult {
+    const authorText = typeof author === "string" ? author.trim() : "";
+    if (!authorText) return { success: false, error: "author is required" };
+    if (!isSubscriptionTier(tier)) return { success: false, error: `tier must be one of: ${SUBSCRIPTION_TIERS.join(", ")}` };
+
+    const existing = this.getStatus(authorText);
+    const baseTimeMs = existing ? new Date(existing.expiresAt).getTime() : Date.now();
+    const subscription: Subscription = {
+      author: authorText,
+      tier: existing?.tier ?? tier,
+      subscribedAt: existing?.subscribedAt ?? new Date().toISOString(),
+      expiresAt: new Date(baseTimeMs + days * 24 * 60 * 60 * 1000).toISOString(),
+      isTrial: false,
+    };
+    this.byAuthor.set(authorText, subscription);
+    return { success: true, subscription };
+  }
+
   cancel(author: string): boolean {
     return this.byAuthor.delete(author);
   }
