@@ -8559,6 +8559,71 @@ test("Cancel from within the app (#207): cancelling keeps access until the real 
   }
 });
 
+test("Direct message requests (#208): sending costs coins, only the recipient can accept/decline, and a rejected request never charges", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const insufficientRes = await fetch(`${baseUrl}/api/direct-message-requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "alice", to: "bob", text: "Hey!" }),
+    });
+    assert.equal(insufficientRes.status, 400);
+
+    await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "medium" }),
+    });
+
+    // An invalid request (self-send) is rejected before any coins are spent.
+    const selfSendRes = await fetch(`${baseUrl}/api/direct-message-requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "alice", to: "alice", text: "Hey!" }),
+    });
+    assert.equal(selfSendRes.status, 400);
+    const balanceAfterRejectionRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.equal((await balanceAfterRejectionRes.json()).balance, 550);
+
+    const sendRes = await fetch(`${baseUrl}/api/direct-message-requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "alice", to: "bob", text: "Hey, I'd love to chat!" }),
+    });
+    assert.equal(sendRes.status, 201);
+    const request = (await sendRes.json()).request;
+    assert.equal(request.status, "pending");
+
+    const balanceAfterSendRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.equal((await balanceAfterSendRes.json()).balance, 550 - 100);
+
+    const inboxRes = await fetch(`${baseUrl}/api/direct-message-requests/bob/inbox`);
+    const inbox = (await inboxRes.json()).requests;
+    assert.equal(inbox.length, 1);
+    assert.equal(inbox[0].id, request.id);
+
+    const wrongResponderRes = await fetch(`${baseUrl}/api/direct-message-requests/${request.id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol", accept: true }),
+    });
+    assert.equal(wrongResponderRes.status, 400);
+
+    const acceptRes = await fetch(`${baseUrl}/api/direct-message-requests/${request.id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob", accept: true }),
+    });
+    assert.equal(acceptRes.status, 200);
+    assert.equal((await acceptRes.json()).request.status, "accepted");
+
+    const inboxAfterRes = await fetch(`${baseUrl}/api/direct-message-requests/bob/inbox`);
+    assert.deepEqual((await inboxAfterRes.json()).requests, []);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {
