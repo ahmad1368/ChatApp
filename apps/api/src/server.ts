@@ -53,6 +53,7 @@ import { reportsToCsv, reportsToPdf } from "./reportExport";
 import { SubscriptionStore } from "./subscriptions";
 import { UpgradeCouponStore } from "./upgradeCoupons";
 import { ReferralStore, REFERRAL_REWARD_DAYS, REFERRAL_REWARD_TIER } from "./referrals";
+import { SeasonalDiscountStore } from "./seasonalDiscounts";
 import { PaymentMethodStore } from "./paymentMethods";
 import { GooglePlayBillingBridge, parseGooglePlayRtdn } from "./googlePlayBilling";
 import { AppleAppStoreBridge, parseAppleNotification } from "./appleAppStore";
@@ -364,6 +365,7 @@ export function createApp(deps?: {
   const subscriptionStore = new SubscriptionStore();
   const upgradeCouponStore = new UpgradeCouponStore();
   const referralStore = new ReferralStore();
+  const seasonalDiscountStore = new SeasonalDiscountStore();
   const paymentMethodStore = new PaymentMethodStore();
   const googlePlayBillingBridge = new GooglePlayBillingBridge(subscriptionStore);
   const appleAppStoreBridge = new AppleAppStoreBridge(subscriptionStore);
@@ -2509,6 +2511,24 @@ export function createApp(deps?: {
     subscriptionStore.extendOrGrant(result.referrer, REFERRAL_REWARD_TIER, REFERRAL_REWARD_DAYS);
     const refereeGrant = subscriptionStore.extendOrGrant(req.body?.author, REFERRAL_REWARD_TIER, REFERRAL_REWARD_DAYS);
     res.json({ subscription: refereeGrant.success ? refereeGrant.subscription : null });
+  });
+
+  // Tinder's real "Seasonal and occasion-based discounts (Valentine's,
+  // Black Friday)" (#205) — see seasonalDiscounts.ts for the honest
+  // scoping. Unlike #177's admin-managed DiscountCodeStore, a campaign
+  // here activates purely from the real wall-clock date, recurring
+  // every year with no admin upkeep.
+  app.get("/api/seasonal-discounts/active", (_req, res) => {
+    res.json({ campaign: seasonalDiscountStore.getActiveCampaign() ?? null });
+  });
+
+  app.post("/api/seasonal-discounts/redeem", (_req, res) => {
+    const result = seasonalDiscountStore.redeem();
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ campaign: result.campaign });
   });
 
   // Tinder's real "Premium subscription plans (Gold, Platinum, VIP)"

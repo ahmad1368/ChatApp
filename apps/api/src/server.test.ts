@@ -8460,6 +8460,30 @@ test("Referral system (#204): redeeming a friend's code credits real subscriptio
   }
 });
 
+test("Seasonal discounts (#205): the active-campaign endpoint and redemption agree with each other on the real current date", async () => {
+  // A real, unmocked wall-clock check — see seasonalDiscounts.test.ts for
+  // the exhaustive date-window coverage using injected dates instead.
+  // This just proves the two endpoints are wired to the same store and
+  // agree with whatever the real date happens to be right now, so it
+  // can't go flaky depending on when the suite runs.
+  const { server, baseUrl } = listen();
+  try {
+    const activeRes = await fetch(`${baseUrl}/api/seasonal-discounts/active`);
+    assert.equal(activeRes.status, 200);
+    const { campaign } = await activeRes.json();
+
+    const redeemRes = await fetch(`${baseUrl}/api/seasonal-discounts/redeem`, { method: "POST" });
+    if (campaign) {
+      assert.equal(redeemRes.status, 200);
+      assert.equal((await redeemRes.json()).campaign.id, campaign.id);
+    } else {
+      assert.equal(redeemRes.status, 400);
+    }
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

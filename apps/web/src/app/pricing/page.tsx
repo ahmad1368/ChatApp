@@ -21,6 +21,12 @@ interface Subscription {
   isTrial: boolean;
 }
 
+interface SeasonalCampaign {
+  name: string;
+  discountType: "percent" | "fixed";
+  discountAmount: number;
+}
+
 /**
  * Bumble's real pricing page (#177) — lists whatever plans an admin has
  * published via /admin/pricing, plus a promo-code check. There's no real
@@ -33,10 +39,13 @@ interface Subscription {
  * period that just lapses on its own rather than auto-converting to a
  * real charge, since there's nothing to charge. #204's referral system
  * gives both sides real free subscription days on redemption — see
- * referrals.ts.
+ * referrals.ts. #205's seasonal banner (Valentine's/Black Friday) shows
+ * only while that campaign's real calendar window is currently open —
+ * see seasonalDiscounts.ts.
  */
 export default function PricingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [seasonalCampaign, setSeasonalCampaign] = useState<SeasonalCampaign | null>(null);
   const [code, setCode] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [author, setAuthor] = useState("");
@@ -53,6 +62,10 @@ export default function PricingPage() {
     fetch(`${API_URL}/api/pricing-plans`)
       .then((r) => r.json())
       .then((body) => setPlans(body.plans ?? []));
+    fetch(`${API_URL}/api/seasonal-discounts/active`)
+      .then((r) => r.json())
+      .then((body) => setSeasonalCampaign(body.campaign ?? null))
+      .catch(() => {});
   }, []);
 
   const loadSubscription = async () => {
@@ -154,6 +167,13 @@ export default function PricingPage() {
         <Link href="/">&larr; Back to chat</Link>
       </p>
       <h1>Pricing</h1>
+
+      {seasonalCampaign && (
+        <div style={{ background: "#fef3c7", padding: 12, borderRadius: 8, marginBottom: 16, textAlign: "center" }}>
+          🎉 {seasonalCampaign.name} — {seasonalCampaign.discountAmount}
+          {seasonalCampaign.discountType === "percent" ? "%" : "$"} off!
+        </div>
+      )}
 
       {plans.length === 0 && <p style={{ color: "var(--color-muted)" }}>No plans are available right now.</p>}
 
