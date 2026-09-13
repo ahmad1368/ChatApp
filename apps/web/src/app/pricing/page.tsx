@@ -44,7 +44,11 @@ interface SeasonalCampaign {
  * only while that campaign's real calendar window is currently open —
  * see seasonalDiscounts.ts. #206's auto-renew toggle actually decides
  * whether getStatus() rolls the subscription into another real period
- * on expiry rather than just being a cosmetic switch.
+ * on expiry rather than just being a cosmetic switch. #207's "Cancel
+ * subscription" keeps access until that real expiresAt instead of
+ * revoking it immediately (see subscriptions.ts's cancelAtPeriodEnd()),
+ * the same behavior every real subscription platform has; "End access
+ * immediately" below it is the separate, more drastic hard-removal path.
  */
 export default function PricingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -123,23 +127,32 @@ export default function PricingPage() {
     loadSubscription();
   };
 
+  // #207's "Manage subscription cancellation from within the app" —
+  // keeps access until the real period end instead of revoking it
+  // immediately (see subscriptions.ts's cancelAtPeriodEnd()), the same
+  // behavior every real subscription platform actually has.
   const cancelSubscription = async () => {
-    await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}`, { method: "DELETE" });
-    setSubscription(null);
+    await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}/cancel`, { method: "POST" });
+    loadSubscription();
   };
 
-  // #206's auto-renew toggle — see subscriptions.ts for why this
-  // actually decides whether getStatus() rolls the subscription into
-  // another real period on expiry, not just a cosmetic switch.
-  const toggleAutoRenew = async () => {
-    if (!subscription) return;
+  // Undoes a pending cancellation before the period ends — #206's
+  // auto-renew toggle turned back on.
+  const resumeSubscription = async () => {
     const res = await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}/auto-renew`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ autoRenew: !subscription.autoRenew }),
+      body: JSON.stringify({ autoRenew: true }),
     });
     const body = await res.json().catch(() => ({}));
     if (res.ok) setSubscription(body.subscription);
+  };
+
+  // An immediate hard removal — an admin/support-style action, not the
+  // primary in-app cancellation flow above.
+  const deleteSubscriptionNow = async () => {
+    await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}`, { method: "DELETE" });
+    setSubscription(null);
   };
 
   // #203's upgrade coupon — unlike the price-discount codes below, this
@@ -236,16 +249,26 @@ export default function PricingPage() {
       />
 
       {subscription ? (
-        <p>
-          You're subscribed to <strong>{subscription.tier}</strong>
-          {subscription.isTrial && " (free trial)"} until {new Date(subscription.expiresAt).toLocaleDateString()}.{" "}
-          {!subscription.isTrial && (
-            <label style={{ fontSize: 13 }}>
-              <input type="checkbox" checked={subscription.autoRenew} onChange={toggleAutoRenew} /> Auto-renew
-            </label>
-          )}{" "}
-          <button onClick={cancelSubscription}>Cancel</button>
-        </p>
+        <div>
+          <p style={{ margin: 0 }}>
+            You're subscribed to <strong>{subscription.tier}</strong>
+            {subscription.isTrial && " (free trial)"} until {new Date(subscription.expiresAt).toLocaleDateString()}.
+          </p>
+          {!subscription.isTrial &&
+            (subscription.autoRenew ? (
+              <p style={{ fontSize: 13, marginTop: 4 }}>
+                Renews automatically. <button onClick={cancelSubscription}>Cancel subscription</button>
+              </p>
+            ) : (
+              <p style={{ fontSize: 13, marginTop: 4, color: "var(--color-muted)" }}>
+                Cancelled — you'll keep access until {new Date(subscription.expiresAt).toLocaleDateString()}.{" "}
+                <button onClick={resumeSubscription}>Resume subscription</button>
+              </p>
+            ))}
+          <button onClick={deleteSubscriptionNow} style={{ fontSize: 11, marginTop: 8, color: "var(--color-muted)" }}>
+            End access immediately instead
+          </button>
+        </div>
       ) : (
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           {SUBSCRIPTION_TIERS.map((tier) => (

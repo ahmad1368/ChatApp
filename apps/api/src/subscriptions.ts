@@ -161,6 +161,7 @@ export class SubscriptionStore {
     return { success: true, subscription };
   }
 
+  /** Immediate hard removal — an admin/support tool, not what #207's in-app "Cancel" button below should call (see cancelAtPeriodEnd()). */
   cancel(author: string): boolean {
     return this.byAuthor.delete(author);
   }
@@ -177,6 +178,23 @@ export class SubscriptionStore {
     if (!subscription) return false;
     subscription.autoRenew = autoRenew;
     return true;
+  }
+
+  /**
+   * #207's "Manage subscription cancellation from within the app" —
+   * the real cancellation behavior every actual subscription platform
+   * (App Store, Play Store, a web billing portal) has: turning off
+   * auto-renewal while keeping access until the period the user
+   * already has actually ends, rather than revoking it immediately the
+   * way cancel() above does. A thin, purpose-named wrapper over
+   * setAutoRenew(author, false) that also hands back the real
+   * expiresAt a "you'll keep access until…" confirmation needs.
+   */
+  cancelAtPeriodEnd(author: string): { success: true; expiresAt: string } | { success: false; error: string } {
+    const subscription = this.getStatus(author);
+    if (!subscription) return { success: false, error: "No active subscription for that author" };
+    subscription.autoRenew = false;
+    return { success: true, expiresAt: subscription.expiresAt };
   }
 
   /**

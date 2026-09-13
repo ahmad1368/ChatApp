@@ -2612,6 +2612,21 @@ export function createApp(deps?: {
     res.json({ subscription: subscriptionStore.getStatus(req.params.author) });
   });
 
+  // #207's "Manage subscription cancellation from within the app" —
+  // see subscriptions.ts's cancelAtPeriodEnd() for why this is the real
+  // cancellation behavior every actual subscription platform has
+  // (access kept until the period already paid for ends), distinct
+  // from the immediate hard-removal DELETE endpoint below (an admin/
+  // support tool, not what a user's own "Cancel" button should call).
+  app.post("/api/subscriptions/:author/cancel", (req, res) => {
+    const result = subscriptionStore.cancelAtPeriodEnd(req.params.author);
+    if (!result.success) {
+      res.status(404).json({ error: result.error });
+      return;
+    }
+    res.json({ expiresAt: result.expiresAt });
+  });
+
   app.get("/api/admin/subscriptions", (req, res) => {
     if (!requireAdmin(req, res)) return;
     res.json({ subscriptions: subscriptionStore.listActive() });

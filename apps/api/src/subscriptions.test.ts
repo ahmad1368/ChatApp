@@ -240,3 +240,48 @@ test("setAutoRenew() returns false when there's no active subscription to change
   const store = new SubscriptionStore();
   assert.equal(store.setAutoRenew("alice", true), false);
 });
+
+test("cancelAtPeriodEnd() rejects when there's no active subscription", () => {
+  const store = new SubscriptionStore();
+  const result = store.cancelAtPeriodEnd("alice");
+  assert.equal(result.success, false);
+});
+
+test("cancelAtPeriodEnd() turns off auto-renew but keeps access until the real expiresAt", () => {
+  const store = new SubscriptionStore();
+  const subscribed = store.subscribe("alice", "gold");
+  assert.equal(subscribed.success, true);
+  if (!subscribed.success) return;
+
+  const result = store.cancelAtPeriodEnd("alice");
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.expiresAt, subscribed.subscription.expiresAt);
+
+  const status = store.getStatus("alice");
+  assert.ok(status, "access is retained immediately after cancelling");
+  assert.equal(status?.autoRenew, false);
+});
+
+test("cancelAtPeriodEnd() actually stops the next renewal once the period ends", () => {
+  const store = new SubscriptionStore();
+  const subscribed = store.subscribe("alice", "gold");
+  assert.equal(subscribed.success, true);
+  if (!subscribed.success) return;
+  store.cancelAtPeriodEnd("alice");
+  subscribed.subscription.expiresAt = new Date(Date.now() - 1000).toISOString();
+
+  assert.equal(store.getStatus("alice"), undefined);
+});
+
+test("cancelAtPeriodEnd() can be undone by turning auto-renew back on before the period ends", () => {
+  const store = new SubscriptionStore();
+  const subscribed = store.subscribe("alice", "gold");
+  assert.equal(subscribed.success, true);
+  if (!subscribed.success) return;
+  store.cancelAtPeriodEnd("alice");
+  store.setAutoRenew("alice", true);
+  subscribed.subscription.expiresAt = new Date(Date.now() - 1000).toISOString();
+
+  assert.ok(store.getStatus("alice"));
+});
