@@ -8188,6 +8188,67 @@ test("Boost packages (#198): purchasing a package spends coins and credits boost
   }
 });
 
+test("Super Like packages (#199): a purchased credit covers a Super Like once the free daily allowance is used up", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const packagesRes = await fetch(`${baseUrl}/api/super-likes/packages`);
+    const packages = (await packagesRes.json()).packages;
+    assert.ok(packages.length >= 2);
+
+    const emptyCreditsRes = await fetch(`${baseUrl}/api/super-likes/alice/credits`);
+    assert.deepEqual(await emptyCreditsRes.json(), { credits: 0 });
+
+    const invalidPurchaseRes = await fetch(`${baseUrl}/api/super-likes/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "jumbo" }),
+    });
+    assert.equal(invalidPurchaseRes.status, 400);
+
+    const insufficientCoinsRes = await fetch(`${baseUrl}/api/super-likes/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: packages[0].id }),
+    });
+    assert.equal(insufficientCoinsRes.status, 400);
+
+    await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "medium" }),
+    });
+
+    const purchaseRes = await fetch(`${baseUrl}/api/super-likes/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: packages[0].id }),
+    });
+    assert.equal(purchaseRes.status, 201);
+    assert.equal((await purchaseRes.json()).credits, packages[0].superLikes);
+
+    // Use up the free daily allowance first.
+    const firstSwipeRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "superlike" }),
+    });
+    assert.equal(firstSwipeRes.status, 201);
+
+    // The next one has to fall back to the purchased credit.
+    const secondSwipeRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "carol", direction: "superlike" }),
+    });
+    assert.equal(secondSwipeRes.status, 201);
+
+    const creditsAfterRes = await fetch(`${baseUrl}/api/super-likes/alice/credits`);
+    assert.equal((await creditsAfterRes.json()).credits, packages[0].superLikes - 1);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

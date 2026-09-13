@@ -3,6 +3,29 @@ export type SwipeDirection = (typeof SWIPE_DIRECTIONS)[number];
 
 export const DAILY_SUPER_LIKE_LIMIT = 1;
 
+export interface SuperLikePackage {
+  id: string;
+  superLikes: number;
+  coinCost: number;
+}
+
+/**
+ * Tinder's real "Purchase a separate Super Like package" (#199) — a
+ * single Super Like or a discounted 5-pack, priced in #196's coins,
+ * the same "single vs. discounted pack" shape #198's BOOST_PACKAGES
+ * uses for Boost. A purchased credit is spent only once the free daily
+ * allowance above is exhausted — see recordSwipe()'s superlike branch and
+ * grantSuperLikeCredits() below.
+ */
+export const SUPER_LIKE_PACKAGES: SuperLikePackage[] = [
+  { id: "single", superLikes: 1, coinCost: 30 },
+  { id: "pack5", superLikes: 5, coinCost: 120 },
+];
+
+export function findSuperLikePackage(packageId: unknown): SuperLikePackage | undefined {
+  return SUPER_LIKE_PACKAGES.find((p) => p.id === packageId);
+}
+
 // Coffee Meets Bagel/Tinder's real free-tier daily like cap (#116) —
 // Tinder's own free limit is around 100 right-swipes per 24 hours, a
 // separate allowance from Super Likes above (a Super Like never counts
@@ -125,6 +148,8 @@ export class SwipeStore {
   private lastSwipeBySwiper = new Map<string, string>();
   private superLikesUsedToday = new Map<string, { date: string; count: number }>();
   private likesUsedToday = new Map<string, { date: string; count: number }>();
+  private superLikeCreditsByAuthor = new Map<string, number>();
+  private creditFundedSwipeKeys = new Set<string>();
 
   joinDiscovery(author: unknown): JoinDiscoveryResult {
     const authorName = typeof author === "string" ? author.trim() : "";
@@ -209,9 +234,18 @@ export class SwipeStore {
 
     if (direction === "superlike") {
       if (usedToday(this.superLikesUsedToday, swiperName) >= DAILY_SUPER_LIKE_LIMIT) {
-        return { success: false, error: "You've used all your Super Likes for today" };
+        // #199: the free daily allowance is used up — fall back to a
+        // purchased credit rather than rejecting outright, same "credit
+        // covers what the free tier doesn't" shape as #198's Boost.
+        const credits = this.getSuperLikeCredits(swiperName);
+        if (credits <= 0) {
+          return { success: false, error: "You've used all your Super Likes for today" };
+        }
+        this.superLikeCreditsByAuthor.set(swiperName, credits - 1);
+        this.creditFundedSwipeKeys.add(`${swiperName}:${swipedName}`);
+      } else {
+        incrementUsage(this.superLikesUsedToday, swiperName);
       }
-      incrementUsage(this.superLikesUsedToday, swiperName);
     }
     if (direction === "like") {
       if (usedToday(this.likesUsedToday, swiperName) >= DAILY_LIKE_LIMIT) {
@@ -250,9 +284,18 @@ export class SwipeStore {
     this.revokeMatch(authorName, swiped);
 
     // Refund the daily Super Like or regular Like if that's what's being
-    // undone, so a rewind doesn't cost the user their daily allowance.
+    // undone, so a rewind doesn't cost the user their daily allowance —
+    // or, if this particular Super Like was funded by a purchased credit
+    // (#199) rather than the free daily allowance, refund the credit
+    // instead so a rewind doesn't cost the user coins they already spent.
     if (undoneDirection === "superlike") {
-      refundUsage(this.superLikesUsedToday, authorName);
+      const creditKey = `${authorName}:${swiped}`;
+      if (this.creditFundedSwipeKeys.has(creditKey)) {
+        this.creditFundedSwipeKeys.delete(creditKey);
+        this.superLikeCreditsByAuthor.set(authorName, this.getSuperLikeCredits(authorName) + 1);
+      } else {
+        refundUsage(this.superLikesUsedToday, authorName);
+      }
     }
     if (undoneDirection === "like") {
       refundUsage(this.likesUsedToday, authorName);
@@ -374,5 +417,16 @@ export class SwipeStore {
 
   getLikesRemainingToday(author: string): number {
     return Math.max(0, DAILY_LIKE_LIMIT - usedToday(this.likesUsedToday, author));
+  }
+
+  getSuperLikeCredits(author: string): number {
+    return this.superLikeCreditsByAuthor.get(author) ?? 0;
+  }
+
+  /** Coin-spending happens in the route handler (server.ts), same "orchestrate cross-store calls at the call site" shape #198's grantCredits() uses — this only ever credits, never debits coins itself. */
+  grantSuperLikeCredits(author: string, superLikes: number): number {
+    const credits = this.getSuperLikeCredits(author) + superLikes;
+    this.superLikeCreditsByAuthor.set(author, credits);
+    return credits;
   }
 }
