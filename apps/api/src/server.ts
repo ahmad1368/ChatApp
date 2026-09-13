@@ -2,7 +2,7 @@ import cors from "cors";
 import express, { Express } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { ChatMessage, DEFAULT_ROOM_ID, ONBOARDING_STEPS, OnboardingStep, SendMessagePayload } from "@chatapp/shared";
+import { ChatMessage, DEFAULT_ROOM_ID, GIFT_CATALOG, ONBOARDING_STEPS, OnboardingStep, SendMessagePayload } from "@chatapp/shared";
 import { describeUserAgent, normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
 import { TwoFactorService } from "./twoFactor";
 import { SmsSecurityAlertStore } from "./smsSecurityAlerts";
@@ -261,6 +261,7 @@ export function createApp(deps?: {
   notificationInboxStore: NotificationInboxStore;
   notificationSoundStore: NotificationSoundStore;
   requireAdmin: (req: express.Request, res: express.Response) => boolean;
+  coinStore: CoinStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -4460,6 +4461,7 @@ export function createApp(deps?: {
     presenceVisibilityStore,
     measurementUnitsStore,
     requireAdmin,
+    coinStore,
   };
 }
 
@@ -4480,6 +4482,7 @@ export async function createChatServer() {
     notificationPreferencesStore,
     banStore,
     requireAdmin,
+    coinStore,
   } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -4643,6 +4646,29 @@ export async function createChatServer() {
         message.dateProposalCategory = payload.dateProposalCategory;
         if (!message.text) {
           message.text = DATE_PROPOSAL_LABELS[payload.dateProposalCategory];
+        }
+      }
+
+      // Coffee Meets Bagel's real "send virtual gifts in chat using
+      // coins" (#197) — the client sends only a catalog id; the real
+      // cost and debit happen here, so a client can never forge a gift
+      // it didn't actually pay for. See coins.ts for why an
+      // insufficient balance rejects the whole send rather than
+      // silently downgrading to a plain message.
+      if (payload.giftId !== undefined) {
+        const gift = GIFT_CATALOG.find((g) => g.id === payload.giftId);
+        if (!gift) {
+          socket.emit("message:rejected", { reason: "invalid_gift" });
+          return;
+        }
+        const spendResult = coinStore.spend(message.author, gift.cost);
+        if (!spendResult.success) {
+          socket.emit("message:rejected", { reason: "insufficient_coins" });
+          return;
+        }
+        message.gift = gift;
+        if (!message.text) {
+          message.text = `${gift.emoji} ${gift.name}`;
         }
       }
 

@@ -10,6 +10,7 @@ import {
   DATE_PROPOSAL_CATEGORIES,
   DATE_PROPOSAL_LABELS,
   DateProposalCategory,
+  GIFT_CATALOG,
   SendMessagePayload,
   EncryptedPayload,
 } from "@chatapp/shared";
@@ -390,7 +391,8 @@ function MessageRow({
     !message.encrypted &&
     !message.game &&
     !message.dateProposalCategory &&
-    !message.dateInvite;
+    !message.dateInvite &&
+    !message.gift;
   const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
   const canEdit = isOwnMessage && isPlainTextMessage && messageAgeMs < 15 * 60 * 1000;
   const canDelete = isOwnMessage && !message.deleted && messageAgeMs < 24 * 60 * 60 * 1000;
@@ -616,6 +618,8 @@ export default function ChatRoom({
   const [e2eeError, setE2eeError] = useState<string | null>(null);
   const [sharedKey, setSharedKey] = useState<CryptoKey | null>(null);
   const [showDateProposalPicker, setShowDateProposalPicker] = useState(false);
+  const [showGiftPicker, setShowGiftPicker] = useState(false);
+  const [coinBalance, setCoinBalance] = useState(0);
   const [showDateInvitePicker, setShowDateInvitePicker] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [liveLocationUpdates, setLiveLocationUpdates] = useState<Record<string, { latitude: number; longitude: number }>>({});
@@ -749,6 +753,17 @@ export default function ChatRoom({
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, author]);
+
+  // Coffee Meets Bagel's real "send virtual gifts in chat using coins"
+  // (#197) — loads the real balance from #196's CoinStore so the gift
+  // picker can show what the sender can actually afford.
+  useEffect(() => {
+    if (isGuest) return;
+    fetch(`${API_URL}/api/coins/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setCoinBalance(body.balance ?? 0))
+      .catch(() => {});
+  }, [author, isGuest]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window) {
@@ -1748,6 +1763,26 @@ export default function ChatRoom({
     setShowDateProposalPicker(false);
   };
 
+  // Coffee Meets Bagel's real "send virtual gifts in chat using coins"
+  // (#197) — the server looks up the real cost/emoji from GIFT_CATALOG
+  // and debits #196's CoinStore; this just refreshes the displayed
+  // balance afterward since the socket response doesn't echo it back.
+  const sendGift = (giftId: string) => {
+    if (isGuest) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      giftId,
+      asGuest: isGuest,
+    });
+    setShowGiftPicker(false);
+    fetch(`${API_URL}/api/coins/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setCoinBalance(body.balance ?? 0))
+      .catch(() => {});
+  };
+
   const sendDateInvite = (payload: DateInviteSharePayload) => {
     if (isGuest) return;
     socketRef.current?.emit("message:send", {
@@ -2364,6 +2399,14 @@ export default function ChatRoom({
         </button>
         <button
           className="chat-app__image-button"
+          onClick={() => setShowGiftPicker((v) => !v)}
+          disabled={isGuest || !liveUpdatesEnabled}
+          title={`Send a gift (${coinBalance} coins)`}
+        >
+          🎁
+        </button>
+        <button
+          className="chat-app__image-button"
           onClick={() => setShowDateInvitePicker((v) => !v)}
           disabled={isGuest || !liveUpdatesEnabled}
           title="Propose a real date"
@@ -2388,6 +2431,16 @@ export default function ChatRoom({
       )}
       {showDateInvitePicker && (
         <DateInvitePicker onSend={sendDateInvite} onClose={() => setShowDateInvitePicker(false)} />
+      )}
+      {showGiftPicker && (
+        <div className="chat-app__date-proposal-picker">
+          {GIFT_CATALOG.map((gift) => (
+            <button key={gift.id} onClick={() => sendGift(gift.id)} disabled={coinBalance < gift.cost}>
+              {gift.emoji} {gift.name} · {gift.cost} coins
+            </button>
+          ))}
+          <button onClick={() => setShowGiftPicker(false)}>✕</button>
+        </div>
       )}
       {locationError && <p style={{ color: "var(--color-danger)" }}>{locationError}</p>}
       {e2eeError && <p style={{ color: "var(--color-danger)" }}>{e2eeError}</p>}

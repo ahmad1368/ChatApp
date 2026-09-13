@@ -58,6 +58,11 @@ export interface ChatMessage {
   // card's outcome persists across reloads the same way #133's edited/
   // #134's deleted messages do.
   dateInvite?: DateInvite;
+  // Coffee Meets Bagel's real "send virtual gifts in chat using coins"
+  // (#197) — set server-side from GIFT_CATALOG once the sender's coin
+  // balance (#196's CoinStore) actually covers the cost, so a client can
+  // never forge a gift it didn't pay for.
+  gift?: VirtualGift;
   // Bumble's real "Private Detector" AI photo warning (#144) — set
   // server-side (see server.ts's message:send) for an `imageUrl` message
   // whose sender is a real safety signal this app already tracks (enough
@@ -113,6 +118,25 @@ export const DATE_PROPOSAL_LABELS: Record<DateProposalCategory, string> = {
   drinks: "How about drinks? 🍸",
 };
 
+export interface VirtualGift {
+  id: string;
+  name: string;
+  emoji: string;
+  cost: number;
+}
+
+// Coffee Meets Bagel's real "send virtual gifts in chat using coins"
+// (#197) — a small, fixed, curated catalog (same "quality over
+// quantity" shape as this reference app's own daily-Bagel philosophy),
+// shared between server (validation + cost) and client (the gift
+// picker) so the two never drift apart, same shape as
+// DATE_PROPOSAL_LABELS above.
+export const GIFT_CATALOG: VirtualGift[] = [
+  { id: "rose", name: "Rose", emoji: "🌹", cost: 20 },
+  { id: "coffee", name: "Coffee", emoji: "☕", cost: 50 },
+  { id: "diamond", name: "Diamond", emoji: "💎", cost: 200 },
+];
+
 export interface ChatLocationShare {
   latitude: number;
   longitude: number;
@@ -149,6 +173,11 @@ export interface SendMessagePayload {
   // the authoritative `status: "pending"` (see server.ts's message:send
   // and dateInvites.ts's createDateInvite).
   dateInvite?: { location: string; proposedAt: string; note?: string };
+  // Coffee Meets Bagel's real "send virtual gifts in chat using coins"
+  // (#197) — client sends only the catalog id; the server looks up its
+  // real cost and debits #196's CoinStore, same "server fills in the
+  // authoritative details" trust boundary as dateInvite above.
+  giftId?: string;
   // Self-reported by the client — see the trust-boundary note in
   // apps/api/src/server.ts (same limitation as #26-#37's :userId trust:
   // there's no merged auth session yet to verify this against). The
