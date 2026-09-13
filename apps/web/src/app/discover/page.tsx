@@ -11,6 +11,7 @@ import SharedContacts from "../SharedContacts";
 import MusicMatches from "../MusicMatches";
 import WeekendPlanMatches from "../WeekendPlanMatches";
 import BioMatches from "../BioMatches";
+import AdBanner from "../AdBanner";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -321,6 +322,7 @@ export default function DiscoverPage() {
                 ))}
               </div>
             )}
+            <AdBanner author={author} />
           </div>
         ) : (
           <p style={{ color: "var(--color-muted)", marginTop: 16 }}>No more profiles right now — check back later.</p>
