@@ -60,6 +60,7 @@ import { GooglePlayBillingBridge, parseGooglePlayRtdn } from "./googlePlayBillin
 import { AppleAppStoreBridge, parseAppleNotification } from "./appleAppStore";
 import { CryptoChargeStore, verifyCoinbaseWebhookSignature } from "./cryptoPayments";
 import { CoinStore, COIN_PACKAGES } from "./coins";
+import { DailySpinStore } from "./dailySpin";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -266,6 +267,7 @@ export function createApp(deps?: {
   notificationSoundStore: NotificationSoundStore;
   requireAdmin: (req: express.Request, res: express.Response) => boolean;
   coinStore: CoinStore;
+  dailySpinStore: DailySpinStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -373,6 +375,7 @@ export function createApp(deps?: {
   const appleAppStoreBridge = new AppleAppStoreBridge(subscriptionStore);
   const cryptoChargeStore = new CryptoChargeStore();
   const coinStore = new CoinStore();
+  const dailySpinStore = new DailySpinStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2893,6 +2896,28 @@ export function createApp(deps?: {
     res.json({ balance: result.balance });
   });
 
+  // Coffee Meets Bagel's real "Daily Spin wheel to earn free coins"
+  // (#211) — see dailySpin.ts for the honest scoping (one real
+  // weighted-random spin per UTC day per author, paid out through
+  // #196's CoinStore.credit()).
+  app.get("/api/daily-spin/:author", (req, res) => {
+    res.json(dailySpinStore.getStatus(req.params.author));
+  });
+
+  app.post("/api/daily-spin/:author/spin", (req, res) => {
+    const result = dailySpinStore.spin(req.params.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    const creditResult = coinStore.credit(req.params.author, result.coinsWon);
+    if (!creditResult.success) {
+      res.status(400).json({ error: creditResult.error });
+      return;
+    }
+    res.json({ coinsWon: result.coinsWon, balance: creditResult.balance, nextSpinAt: result.nextSpinAt });
+  });
+
   // Bumble's real "Send broadcast messages and notifications" (#178) —
   // reuses PushService.broadcast() (every currently-subscribed device,
   // no exclusion) and records one #159 in-app inbox entry per recipient
@@ -4799,6 +4824,7 @@ export function createApp(deps?: {
     measurementUnitsStore,
     requireAdmin,
     coinStore,
+    dailySpinStore,
   };
 }
 
