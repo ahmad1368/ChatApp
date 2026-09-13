@@ -95,6 +95,8 @@ export default function AdminDashboardPage() {
         <Link href="/admin/experiments">A/B experiments &rarr;</Link>
         {" · "}
         <Link href="/admin/retention">User retention &rarr;</Link>
+        {" · "}
+        <Link href="/admin/subscriptions">Active subscriptions &rarr;</Link>
       </p>
 
       <form

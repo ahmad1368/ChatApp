@@ -50,6 +50,7 @@ import { AdminRoleStore, AdminRole } from "./adminRoles";
 import { ExperimentStore } from "./experiments";
 import { computeRetention } from "./retention";
 import { reportsToCsv, reportsToPdf } from "./reportExport";
+import { SubscriptionStore } from "./subscriptions";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -341,6 +342,7 @@ export function createApp(deps?: {
   const transactionLogStore = new TransactionLogStore();
   const onboardingStore = new OnboardingStore(verificationStore, discoveryBoundariesStore);
   const reportStore = new ReportStore();
+  const subscriptionStore = new SubscriptionStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2367,6 +2369,39 @@ export function createApp(deps?: {
       return;
     }
     res.json({ code: result.code });
+  });
+
+  // Tinder's real "Premium subscription plans (Gold, Platinum, VIP)"
+  // (#191) — see subscriptions.ts for the honest scoping (self-service
+  // entitlement since this app has no payment processor to charge
+  // against yet). author is self-reported the same way as every other
+  // chat `author` in this codebase.
+  app.get("/api/subscriptions/:author", (req, res) => {
+    const subscription = subscriptionStore.getStatus(req.params.author);
+    res.json({ subscription: subscription ?? null });
+  });
+
+  app.post("/api/subscriptions/:author", (req, res) => {
+    const result = subscriptionStore.subscribe(req.params.author, req.body?.tier);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ subscription: result.subscription });
+  });
+
+  app.delete("/api/subscriptions/:author", (req, res) => {
+    const cancelled = subscriptionStore.cancel(req.params.author);
+    if (!cancelled) {
+      res.status(404).json({ error: "No active subscription for that author" });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  app.get("/api/admin/subscriptions", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ subscriptions: subscriptionStore.listActive() });
   });
 
   // Bumble's real "Send broadcast messages and notifications" (#178) —
