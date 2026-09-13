@@ -29,11 +29,12 @@ test("getStatus() returns undefined for a user who never subscribed", () => {
   assert.equal(store.getStatus("alice"), undefined);
 });
 
-test("getStatus() returns undefined once a subscription has expired, and it stops appearing in listActive()", () => {
+test("getStatus() returns undefined once a subscription with auto-renew off has expired, and it stops appearing in listActive()", () => {
   const store = new SubscriptionStore();
   const result = store.subscribe("alice", "platinum");
   assert.equal(result.success, true);
   if (!result.success) return;
+  store.setAutoRenew("alice", false);
   // Force it into the past instead of waiting 30 real days.
   result.subscription.expiresAt = new Date(Date.now() - 1000).toISOString();
 
@@ -156,4 +157,86 @@ test("extendOrGrant() rejects a missing author or invalid tier", () => {
   const store = new SubscriptionStore();
   assert.equal(store.extendOrGrant("", "gold", 7).success, false);
   assert.equal(store.extendOrGrant("alice", "diamond", 7).success, false);
+});
+
+test("subscribe() defaults to autoRenew: true", () => {
+  const store = new SubscriptionStore();
+  const result = store.subscribe("alice", "gold");
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.subscription.autoRenew, true);
+});
+
+test("startTrial(), grantDays(), and a fresh extendOrGrant() default to autoRenew: false", () => {
+  const store = new SubscriptionStore();
+  const trial = store.startTrial("alice", "gold");
+  assert.equal(trial.success, true);
+  if (trial.success) assert.equal(trial.subscription.autoRenew, false);
+
+  const granted = store.grantDays("bob", "gold", 7);
+  assert.equal(granted.success, true);
+  if (granted.success) assert.equal(granted.subscription.autoRenew, false);
+
+  const extended = store.extendOrGrant("carol", "gold", 7);
+  assert.equal(extended.success, true);
+  if (extended.success) assert.equal(extended.subscription.autoRenew, false);
+});
+
+test("getStatus() auto-renews an expired subscription with autoRenew on, for another full period at the same tier", () => {
+  const store = new SubscriptionStore();
+  const result = store.subscribe("alice", "platinum");
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  const originalExpiresAt = new Date(result.subscription.expiresAt).getTime();
+  // Force it just past expiry instead of waiting 30 real days.
+  result.subscription.expiresAt = new Date(Date.now() - 1000).toISOString();
+
+  const renewed = store.getStatus("alice");
+  assert.ok(renewed);
+  assert.equal(renewed?.tier, "platinum");
+  assert.equal(renewed?.autoRenew, true);
+  assert.ok(new Date(renewed!.expiresAt).getTime() > Date.now());
+  // Still one real 30-day period long, just anchored to the missed
+  // expiry rather than "now" — no schedule drift.
+  assert.notEqual(new Date(renewed!.expiresAt).getTime(), originalExpiresAt);
+});
+
+test("getStatus() rolls forward through every period missed, not just one, for a long-unchecked auto-renewing subscription", () => {
+  const store = new SubscriptionStore();
+  const result = store.subscribe("alice", "gold");
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  // Simulate 3 missed periods (~95 days) without ever calling getStatus().
+  result.subscription.expiresAt = new Date(Date.now() - 95 * 24 * 60 * 60 * 1000).toISOString();
+
+  const renewed = store.getStatus("alice");
+  assert.ok(renewed);
+  assert.ok(new Date(renewed!.expiresAt).getTime() > Date.now());
+});
+
+test("setAutoRenew() turns renewal off, so the subscription lapses at its current expiry instead of renewing", () => {
+  const store = new SubscriptionStore();
+  const result = store.subscribe("alice", "gold");
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(store.setAutoRenew("alice", false), true);
+  result.subscription.expiresAt = new Date(Date.now() - 1000).toISOString();
+
+  assert.equal(store.getStatus("alice"), undefined);
+});
+
+test("setAutoRenew() turns renewal back on for a subscription created without it", () => {
+  const store = new SubscriptionStore();
+  const result = store.startTrial("alice", "gold");
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(store.setAutoRenew("alice", true), true);
+  result.subscription.expiresAt = new Date(Date.now() - 1000).toISOString();
+
+  assert.ok(store.getStatus("alice"));
+});
+
+test("setAutoRenew() returns false when there's no active subscription to change", () => {
+  const store = new SubscriptionStore();
+  assert.equal(store.setAutoRenew("alice", true), false);
 });
