@@ -49,6 +49,7 @@ import { TransactionLogStore } from "./transactionLog";
 import { AdminRoleStore, AdminRole } from "./adminRoles";
 import { ExperimentStore } from "./experiments";
 import { computeRetention } from "./retention";
+import { reportsToCsv, reportsToPdf } from "./reportExport";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2193,6 +2194,24 @@ export function createApp(deps?: {
       return;
     }
     res.json({ report: result.report });
+  });
+
+  // Bumble's real "Export reports in CSV and PDF format" (#190) — see
+  // reportExport.ts for the honest scoping (a real generated CSV/PDF of
+  // the moderation reports #41/#172/#173 already collect).
+  app.get("/api/admin/reports/export.csv", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.set("Content-Type", "text/csv");
+    res.set("Content-Disposition", 'attachment; filename="reports.csv"');
+    res.send(reportsToCsv(reportStore.listAll()));
+  });
+
+  app.get("/api/admin/reports/export.pdf", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const buffer = await reportsToPdf(reportStore.listAll());
+    res.set("Content-Type", "application/pdf");
+    res.set("Content-Disposition", 'attachment; filename="reports.pdf"');
+    res.send(buffer);
   });
 
   // Raya's real "Admin system to approve verification badges" (#174) —

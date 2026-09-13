@@ -7776,6 +7776,42 @@ test("Retention rate (#189): requires the admin key and reports a window per con
   }
 });
 
+test("Report export (#190): requires the admin key and exports a real CSV and PDF of filed reports", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyCsvRes = await fetch(`${baseUrl}/api/admin/reports/export.csv`);
+    assert.equal(noKeyCsvRes.status, 401);
+    const noKeyPdfRes = await fetch(`${baseUrl}/api/admin/reports/export.pdf`);
+    assert.equal(noKeyPdfRes.status, 401);
+
+    await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "bob", reason: "harassment" }),
+    });
+
+    const csvRes = await fetch(`${baseUrl}/api/admin/reports/export.csv`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(csvRes.status, 200);
+    assert.match(csvRes.headers.get("content-type") ?? "", /text\/csv/);
+    const csv = await csvRes.text();
+    const lines = csv.split("\n");
+    assert.equal(lines.length, 2);
+    assert.match(lines[1], /^[^,]+,alice,bob,harassment,/);
+
+    const pdfRes = await fetch(`${baseUrl}/api/admin/reports/export.pdf`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(pdfRes.status, 200);
+    assert.match(pdfRes.headers.get("content-type") ?? "", /application\/pdf/);
+    const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
+    assert.equal(pdfBuffer.subarray(0, 5).toString("latin1"), "%PDF-");
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

@@ -24,7 +24,9 @@ interface QueueEntry {
  * (#173). The queue is already grouped by reported author and sorted by
  * pending-report count (see reports.ts's getReportedUsersQueue()) —
  * this page renders it and lets an admin resolve or dismiss each
- * individual report.
+ * individual report. The Export CSV/PDF buttons are #190's real
+ * generated exports (see reportExport.ts) of every report ever filed,
+ * not just this page's pending queue.
  */
 export default function AdminReportsPage() {
   const [adminKey, setAdminKey] = useState("");
@@ -42,6 +44,23 @@ export default function AdminReportsPage() {
       return;
     }
     setQueue(body.queue);
+  };
+
+  const download = async (format: "csv" | "pdf") => {
+    setError(null);
+    const res = await fetch(`${API_URL}/api/admin/reports/export.${format}`, { headers: { "x-admin-key": adminKey } });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(body.error ?? `Failed to export ${format.toUpperCase()}`);
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `reports.${format}`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const review = async (reportId: string, status: "resolved" | "dismissed") => {
@@ -91,6 +110,15 @@ export default function AdminReportsPage() {
       </form>
 
       {error && <p style={{ color: "var(--color-danger)", marginTop: 12 }}>{error}</p>}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button onClick={() => download("csv")} disabled={!adminKey}>
+          Export CSV
+        </button>
+        <button onClick={() => download("pdf")} disabled={!adminKey}>
+          Export PDF
+        </button>
+      </div>
 
       {queue && queue.length === 0 && <p style={{ color: "var(--color-muted)", marginTop: 16 }}>Nothing pending.</p>}
 

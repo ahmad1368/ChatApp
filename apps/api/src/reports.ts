@@ -104,6 +104,11 @@ export class ReportStore {
     return this.reports.length;
   }
 
+  /** Every report ever filed, newest first — #190's CSV/PDF export needs the flat list, not #173's per-reported-author grouping. */
+  listAll(): StoredReport[] {
+    return [...this.reports].reverse();
+  }
+
   /**
    * Bumble's real "Reported users management (Reported Users Queue)"
    * (#173) — groups still-pending reports by the reported author (not a
