@@ -46,6 +46,7 @@ import { VerificationStore } from "./verification";
 import { DiscoveryBoundariesStore } from "./discoveryBoundaries";
 import { AllowedDomainStore } from "./allowedDomains";
 import { TransactionLogStore } from "./transactionLog";
+import { AdminRoleStore, AdminRole } from "./adminRoles";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -173,6 +174,7 @@ export function createApp(deps?: {
   discoveryBoundariesStore: DiscoveryBoundariesStore;
   allowedDomainStore: AllowedDomainStore;
   transactionLogStore: TransactionLogStore;
+  adminRoleStore: AdminRoleStore;
   verificationStore: VerificationStore;
   banStore: BanStore;
   pricingPlanStore: PricingPlanStore;
@@ -325,6 +327,7 @@ export function createApp(deps?: {
   });
   const verificationStore = new VerificationStore();
   const banStore = new BanStore();
+  const adminRoleStore = new AdminRoleStore();
   const pricingPlanStore = new PricingPlanStore();
   const discountCodeStore = new DiscountCodeStore();
   const broadcastStore = new BroadcastStore();
@@ -495,6 +498,32 @@ export function createApp(deps?: {
     }
     if (!isValidAdminKey(req.get("x-admin-key"))) {
       res.status(401).json({ error: "Invalid or missing admin key" });
+      return false;
+    }
+    return true;
+  }
+
+  // Bumble's real "Manage admin access roles (RBAC)" (#187) — see
+  // adminRoles.ts for the honest scoping. The master ADMIN_API_KEY is
+  // always treated as "superadmin" so every pre-existing admin route
+  // (still gated by requireAdmin above) keeps working unchanged.
+  function getAdminRole(providedKey: unknown): AdminRole | undefined {
+    if (isValidAdminKey(providedKey)) return "superadmin";
+    return typeof providedKey === "string" ? adminRoleStore.findRoleByApiKey(providedKey) : undefined;
+  }
+
+  function requireRole(req: express.Request, res: express.Response, allowed: AdminRole[]): boolean {
+    if (!isAdminConfigured()) {
+      res.status(503).json({ error: "Admin dashboard is not configured on this server" });
+      return false;
+    }
+    const role = getAdminRole(req.get("x-admin-key"));
+    if (!role) {
+      res.status(401).json({ error: "Invalid or missing admin key" });
+      return false;
+    }
+    if (role !== "superadmin" && !allowed.includes(role)) {
+      res.status(403).json({ error: "This admin role isn't permitted to do that" });
       return false;
     }
     return true;
@@ -3027,6 +3056,36 @@ export function createApp(deps?: {
     res.status(201).json(result.refund);
   });
 
+  // Bumble's real "Manage admin access roles (RBAC)" (#187) — see
+  // adminRoles.ts for the honest scoping. Only superadmin (the master
+  // ADMIN_API_KEY, or an account created with that role) can create or
+  // revoke accounts; a moderator can view the roster too, demonstrating
+  // requireRole actually differentiating access, not just gating on any
+  // valid key the way requireAdmin does.
+  app.get("/api/admin/roles", (req, res) => {
+    if (!requireRole(req, res, ["moderator"])) return;
+    res.json({ accounts: adminRoleStore.list() });
+  });
+
+  app.post("/api/admin/roles", (req, res) => {
+    if (!requireRole(req, res, ["superadmin"])) return;
+    const result = adminRoleStore.create(req.body?.name, req.body?.role);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.account);
+  });
+
+  app.delete("/api/admin/roles/:accountId", (req, res) => {
+    if (!requireRole(req, res, ["superadmin"])) return;
+    const revoked = adminRoleStore.revoke(req.params.accountId);
+    if (!revoked) {
+      res.status(404).json({ error: "Admin account not found (or already revoked)" });
+      return;
+    }
+    res.status(204).send();
+  });
   // Two orthogonal, backward-compatible filters on top of the full history:
   // `since` (ISO timestamp) lets a reconnecting client fetch only the
   // messages it missed. `limit` opts into cursor pagination instead — the
@@ -3993,6 +4052,7 @@ export function createApp(deps?: {
     discoveryBoundariesStore,
     allowedDomainStore,
     transactionLogStore,
+    adminRoleStore,
     verificationStore,
     banStore,
     pricingPlanStore,
