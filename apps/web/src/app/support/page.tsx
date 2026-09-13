@@ -126,6 +126,9 @@ export default function SupportPage() {
         <li>
           <Link href="/settings/permissions">Check location, camera, or microphone access</Link>
         </li>
+        <li>
+          <Link href="/settings/payment-methods">Manage your saved payment methods</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>

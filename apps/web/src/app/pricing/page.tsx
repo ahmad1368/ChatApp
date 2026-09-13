@@ -146,6 +146,10 @@ export default function PricingPage() {
           ))}
         </div>
       )}
+
+      <p style={{ marginTop: 16, fontSize: 13 }}>
+        <Link href="/settings/payment-methods">Manage your saved payment methods &rarr;</Link>
+      </p>
     </main>
   );
 }
