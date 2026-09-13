@@ -55,6 +55,7 @@ import { PaymentMethodStore } from "./paymentMethods";
 import { GooglePlayBillingBridge, parseGooglePlayRtdn } from "./googlePlayBilling";
 import { AppleAppStoreBridge, parseAppleNotification } from "./appleAppStore";
 import { CryptoChargeStore, verifyCoinbaseWebhookSignature } from "./cryptoPayments";
+import { CoinStore, COIN_PACKAGES } from "./coins";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -362,6 +363,7 @@ export function createApp(deps?: {
   const googlePlayBillingBridge = new GooglePlayBillingBridge(subscriptionStore);
   const appleAppStoreBridge = new AppleAppStoreBridge(subscriptionStore);
   const cryptoChargeStore = new CryptoChargeStore();
+  const coinStore = new CoinStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2569,6 +2571,36 @@ export function createApp(deps?: {
       return;
     }
     res.json({ handled: false });
+  });
+
+  // Coffee Meets Bagel's real "Purchase in-app coin/token packages"
+  // (#196) — see coins.ts for the honest scoping (a real per-author
+  // balance backing a fixed, curated package catalog; self-service
+  // purchase since there's no payment processor to charge against yet).
+  app.get("/api/coins/packages", (_req, res) => {
+    res.json({ packages: COIN_PACKAGES });
+  });
+
+  app.get("/api/coins/:author", (req, res) => {
+    res.json({ balance: coinStore.getBalance(req.params.author) });
+  });
+
+  app.post("/api/coins/:author/purchase", (req, res) => {
+    const result = coinStore.purchase(req.params.author, req.body?.packageId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ balance: result.balance, package: result.coinPackage });
+  });
+
+  app.post("/api/coins/:author/spend", (req, res) => {
+    const result = coinStore.spend(req.params.author, req.body?.amount);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ balance: result.balance });
   });
 
   // Bumble's real "Send broadcast messages and notifications" (#178) —
