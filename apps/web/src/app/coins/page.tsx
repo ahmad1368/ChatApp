@@ -57,7 +57,8 @@ export default function CoinsPage() {
   return (
     <main style={{ maxWidth: 480, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
       <p>
-        <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/daily-spin">Daily Spin</Link>
+        <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/daily-spin">Daily Spin</Link> &middot;{" "}
+        <Link href="/login-streak">Daily Streak</Link>
       </p>
       <h1>Coins</h1>
       <p style={{ fontSize: 24, fontWeight: 700 }}>{balance} coins</p>

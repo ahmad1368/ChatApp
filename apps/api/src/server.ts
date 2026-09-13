@@ -61,6 +61,7 @@ import { AppleAppStoreBridge, parseAppleNotification } from "./appleAppStore";
 import { CryptoChargeStore, verifyCoinbaseWebhookSignature } from "./cryptoPayments";
 import { CoinStore, COIN_PACKAGES } from "./coins";
 import { DailySpinStore } from "./dailySpin";
+import { LoginStreakStore } from "./loginStreak";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -268,6 +269,7 @@ export function createApp(deps?: {
   requireAdmin: (req: express.Request, res: express.Response) => boolean;
   coinStore: CoinStore;
   dailySpinStore: DailySpinStore;
+  loginStreakStore: LoginStreakStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -376,6 +378,7 @@ export function createApp(deps?: {
   const cryptoChargeStore = new CryptoChargeStore();
   const coinStore = new CoinStore();
   const dailySpinStore = new DailySpinStore();
+  const loginStreakStore = new LoginStreakStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2918,6 +2921,33 @@ export function createApp(deps?: {
     res.json({ coinsWon: result.coinsWon, balance: creditResult.balance, nextSpinAt: result.nextSpinAt });
   });
 
+  // Tinder's real "Reward for consecutive daily logins (Daily Streak)"
+  // (#212) — see loginStreak.ts for the honest scoping (a real 7-day
+  // reward cycle, idempotent per UTC day, paid out through #196's
+  // CoinStore.credit() the same way #211's daily spin already earns
+  // coins outright).
+  app.get("/api/login-streak/:author", (req, res) => {
+    res.json(loginStreakStore.getStatus(req.params.author));
+  });
+
+  app.post("/api/login-streak/:author/check-in", (req, res) => {
+    const result = loginStreakStore.checkIn(req.params.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    if (result.checkIn.coinsAwarded > 0) {
+      const creditResult = coinStore.credit(req.params.author, result.checkIn.coinsAwarded);
+      if (!creditResult.success) {
+        res.status(400).json({ error: creditResult.error });
+        return;
+      }
+      res.json({ ...result.checkIn, balance: creditResult.balance });
+      return;
+    }
+    res.json({ ...result.checkIn, balance: coinStore.getBalance(req.params.author) });
+  });
+
   // Bumble's real "Send broadcast messages and notifications" (#178) —
   // reuses PushService.broadcast() (every currently-subscribed device,
   // no exclusion) and records one #159 in-app inbox entry per recipient
@@ -4825,6 +4855,7 @@ export function createApp(deps?: {
     requireAdmin,
     coinStore,
     dailySpinStore,
+    loginStreakStore,
   };
 }
 
