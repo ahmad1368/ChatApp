@@ -52,6 +52,7 @@ import { computeRetention } from "./retention";
 import { reportsToCsv, reportsToPdf } from "./reportExport";
 import { SubscriptionStore } from "./subscriptions";
 import { PaymentMethodStore } from "./paymentMethods";
+import { GooglePlayBillingBridge, parseGooglePlayRtdn } from "./googlePlayBilling";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -345,6 +346,7 @@ export function createApp(deps?: {
   const reportStore = new ReportStore();
   const subscriptionStore = new SubscriptionStore();
   const paymentMethodStore = new PaymentMethodStore();
+  const googlePlayBillingBridge = new GooglePlayBillingBridge(subscriptionStore);
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2440,6 +2442,37 @@ export function createApp(deps?: {
       return;
     }
     res.status(204).send();
+  });
+
+  // Tinder's real "Google Play Billing in-app payment" (#193) — see
+  // googlePlayBilling.ts for the honest scoping (this repo has no
+  // native Android app, so there's no client to actually drive a
+  // purchase or a live Play Console subscription to receive real
+  // notifications from; what's real is the server-side entitlement
+  // bridge itself). /link is called by the Android client right after
+  // a purchase completes; /webhooks/google-play is where Google's
+  // Real-time Developer Notifications would arrive.
+  app.post("/api/subscriptions/google-play/link", (req, res) => {
+    const result = googlePlayBillingBridge.linkPurchase(req.body?.author, req.body?.purchaseToken, req.body?.productId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ linked: true });
+  });
+
+  app.post("/api/subscriptions/webhooks/google-play", (req, res) => {
+    const payload = parseGooglePlayRtdn(req.body);
+    if (!payload?.subscriptionNotification) {
+      res.status(400).json({ error: "Malformed Real-time Developer Notification payload" });
+      return;
+    }
+    const result = googlePlayBillingBridge.handleNotification(payload.subscriptionNotification);
+    if (!result.success) {
+      res.status(404).json({ error: result.error });
+      return;
+    }
+    res.json({ action: result.action });
   });
 
   // Bumble's real "Send broadcast messages and notifications" (#178) —
