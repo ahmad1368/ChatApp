@@ -248,6 +248,7 @@ export function createApp(deps?: {
   notificationPreferencesStore: NotificationPreferencesStore;
   notificationInboxStore: NotificationInboxStore;
   notificationSoundStore: NotificationSoundStore;
+  requireAdmin: (req: express.Request, res: express.Response) => boolean;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -4067,6 +4068,7 @@ export function createApp(deps?: {
     notificationSoundStore,
     presenceVisibilityStore,
     measurementUnitsStore,
+    requireAdmin,
   };
 }
 
@@ -4086,6 +4088,7 @@ export async function createChatServer() {
     matchExpiryStore,
     notificationPreferencesStore,
     banStore,
+    requireAdmin,
   } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -4096,6 +4099,21 @@ export async function createChatServer() {
   if (redisAdapter) io.adapter(redisAdapter);
 
   const messageRateLimiter = new RateLimiter(MESSAGE_RATE_LIMIT, MESSAGE_RATE_WINDOW_MS);
+
+  // Bumble's real "View server health status and active sockets" (#186)
+  // — genuine process uptime/memory plus a live Socket.io connection
+  // count (io.engine.clientsCount, not a separately-tracked counter that
+  // could drift), gated the same admin-key way as #171-185. Defined here
+  // rather than inside createApp() because io only exists once the HTTP
+  // server is created, after createApp() returns.
+  app.get("/api/admin/server-health", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({
+      uptimeSeconds: process.uptime(),
+      activeSockets: io.engine.clientsCount,
+      memory: process.memoryUsage(),
+    });
+  });
 
   io.on("connection", (socket) => {
     socket.on("join", (roomId: string = DEFAULT_ROOM_ID) => {

@@ -962,3 +962,35 @@ test("message:send with a recipient works end-to-end after a real match (#136)",
     httpServer.close();
   }
 });
+
+test("GET /api/admin/server-health (#186) requires the admin key and reports a live socket count", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { httpServer, baseUrl } = await startChatServer();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/server-health`);
+    assert.equal(noKeyRes.status, 401);
+
+    const beforeRes = await fetch(`${baseUrl}/api/admin/server-health`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const before = await beforeRes.json();
+    assert.equal(beforeRes.status, 200);
+    assert.equal(before.activeSockets, 0);
+    assert.equal(typeof before.uptimeSeconds, "number");
+    assert.equal(typeof before.memory.heapUsed, "number");
+
+    const clientA = await connectClient(baseUrl);
+    const clientB = await connectClient(baseUrl);
+    try {
+      const afterRes = await fetch(`${baseUrl}/api/admin/server-health`, { headers: { "x-admin-key": "test-admin-secret" } });
+      const after = await afterRes.json();
+      assert.equal(after.activeSockets, 2);
+    } finally {
+      clientA.close();
+      clientB.close();
+    }
+  } finally {
+    httpServer.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
