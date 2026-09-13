@@ -138,6 +138,9 @@ export default function SupportPage() {
         <li>
           <Link href="/login-streak">Check in daily for streak rewards</Link>
         </li>
+        <li>
+          <Link href="/achievements">View your achievement badges</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
