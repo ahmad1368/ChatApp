@@ -7930,6 +7930,53 @@ test("Payment methods (#192): a user can add, list, set default, and remove a pa
   }
 });
 
+test("Google Play Billing (#193): linking a purchase activates the mapped tier, and a real RTDN payload keeps it in sync", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const invalidLinkRes = await fetch(`${baseUrl}/api/subscriptions/google-play/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", purchaseToken: "tok-1", productId: "unknown_product" }),
+    });
+    assert.equal(invalidLinkRes.status, 400);
+
+    const linkRes = await fetch(`${baseUrl}/api/subscriptions/google-play/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", purchaseToken: "tok-1", productId: "gold_monthly" }),
+    });
+    assert.equal(linkRes.status, 201);
+
+    const statusRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    assert.equal((await statusRes.json()).subscription.tier, "gold");
+
+    const cancelPayload = {
+      packageName: "com.chatapp",
+      eventTimeMillis: `${Date.now()}`,
+      subscriptionNotification: { version: "1.0", notificationType: 3, purchaseToken: "tok-1", subscriptionId: "gold_monthly" },
+    };
+    const webhookRes = await fetch(`${baseUrl}/api/subscriptions/webhooks/google-play`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: { data: Buffer.from(JSON.stringify(cancelPayload)).toString("base64") } }),
+    });
+    assert.equal(webhookRes.status, 200);
+    assert.equal((await webhookRes.json()).action, "cancelled");
+
+    const statusAfterCancelRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    assert.deepEqual(await statusAfterCancelRes.json(), { subscription: null });
+
+    const malformedWebhookRes = await fetch(`${baseUrl}/api/subscriptions/webhooks/google-play`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(malformedWebhookRes.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {
