@@ -91,6 +91,32 @@ export class SubscriptionStore {
     return { success: true, subscription };
   }
 
+  /**
+   * #203's "Discount code and upgrade coupon system": grants a
+   * subscription for a custom duration (an admin-configured coupon's
+   * own day count), distinct from subscribe()'s fixed 30-day paid
+   * period or startTrial()'s fixed 3-day trial — this is the real
+   * effect an UpgradeCouponStore-validated redemption actually applies
+   * (see server.ts's POST /api/upgrade-coupons/redeem), not a
+   * fabricated "coupon applied" confirmation with nothing behind it.
+   */
+  grantDays(author: unknown, tier: unknown, days: number): SubscribeResult {
+    const authorText = typeof author === "string" ? author.trim() : "";
+    if (!authorText) return { success: false, error: "author is required" };
+    if (!isSubscriptionTier(tier)) return { success: false, error: `tier must be one of: ${SUBSCRIPTION_TIERS.join(", ")}` };
+
+    const now = new Date();
+    const subscription: Subscription = {
+      author: authorText,
+      tier,
+      subscribedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString(),
+      isTrial: false,
+    };
+    this.byAuthor.set(authorText, subscription);
+    return { success: true, subscription };
+  }
+
   cancel(author: string): boolean {
     return this.byAuthor.delete(author);
   }

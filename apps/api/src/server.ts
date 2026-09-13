@@ -51,6 +51,7 @@ import { ExperimentStore } from "./experiments";
 import { computeRetention } from "./retention";
 import { reportsToCsv, reportsToPdf } from "./reportExport";
 import { SubscriptionStore } from "./subscriptions";
+import { UpgradeCouponStore } from "./upgradeCoupons";
 import { PaymentMethodStore } from "./paymentMethods";
 import { GooglePlayBillingBridge, parseGooglePlayRtdn } from "./googlePlayBilling";
 import { AppleAppStoreBridge, parseAppleNotification } from "./appleAppStore";
@@ -360,6 +361,7 @@ export function createApp(deps?: {
   const onboardingStore = new OnboardingStore(verificationStore, discoveryBoundariesStore);
   const reportStore = new ReportStore();
   const subscriptionStore = new SubscriptionStore();
+  const upgradeCouponStore = new UpgradeCouponStore();
   const paymentMethodStore = new PaymentMethodStore();
   const googlePlayBillingBridge = new GooglePlayBillingBridge(subscriptionStore);
   const appleAppStoreBridge = new AppleAppStoreBridge(subscriptionStore);
@@ -2433,6 +2435,52 @@ export function createApp(deps?: {
       return;
     }
     res.json({ code: result.code });
+  });
+
+  // Tinder's real "Discount code and upgrade coupon system" (#203) —
+  // the "upgrade coupon" half, distinct from the discount codes above
+  // (which still have no checkout to apply a price cut to). Redeeming
+  // an upgrade coupon has a genuinely real effect: it grants #191's
+  // SubscriptionStore a real tier for the coupon's own configured
+  // number of days. See upgradeCoupons.ts for the validation/anti-abuse
+  // rules this endpoint relies on.
+  app.get("/api/admin/upgrade-coupons", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ coupons: upgradeCouponStore.list() });
+  });
+
+  app.post("/api/admin/upgrade-coupons", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = upgradeCouponStore.create(req.body?.code, req.body?.tier, req.body?.days, req.body?.maxRedemptions);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ coupon: result.coupon });
+  });
+
+  app.delete("/api/admin/upgrade-coupons/:code", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const deactivated = upgradeCouponStore.deactivate(req.params.code);
+    if (!deactivated) {
+      res.status(404).json({ error: "No active coupon found with this code" });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  app.post("/api/upgrade-coupons/redeem", (req, res) => {
+    const result = upgradeCouponStore.redeem(req.body?.code, req.body?.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    const grantResult = subscriptionStore.grantDays(req.body?.author, result.coupon.tier, result.coupon.days);
+    if (!grantResult.success) {
+      res.status(400).json({ error: grantResult.error });
+      return;
+    }
+    res.json({ subscription: grantResult.subscription });
   });
 
   // Tinder's real "Premium subscription plans (Gold, Platinum, VIP)"

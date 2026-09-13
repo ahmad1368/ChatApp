@@ -108,3 +108,22 @@ test("hasUsedTrial() is false before any trial is started", () => {
   const store = new SubscriptionStore();
   assert.equal(store.hasUsedTrial("alice"), false);
 });
+
+test("grantDays() rejects a missing author or invalid tier", () => {
+  const store = new SubscriptionStore();
+  assert.equal(store.grantDays("", "gold", 7).success, false);
+  assert.equal(store.grantDays("alice", "diamond", 7).success, false);
+});
+
+test("grantDays() grants a subscription for the exact custom duration given", () => {
+  const store = new SubscriptionStore();
+  const before = Date.now();
+  const result = store.grantDays("alice", "vip", 7);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  const expiresAt = new Date(result.subscription.expiresAt).getTime();
+  const expected = before + 7 * 24 * 60 * 60 * 1000;
+  assert.ok(Math.abs(expiresAt - expected) < 5000);
+  assert.equal(result.subscription.isTrial, false);
+  assert.equal(store.getStatus("alice")?.tier, "vip");
+});

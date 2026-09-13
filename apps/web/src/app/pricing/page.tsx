@@ -40,6 +40,8 @@ export default function PricingPage() {
   const [author, setAuthor] = useState("");
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [trialEligible, setTrialEligible] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponResult, setCouponResult] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/api/pricing-plans`)
@@ -77,6 +79,26 @@ export default function PricingPage() {
   const cancelSubscription = async () => {
     await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}`, { method: "DELETE" });
     setSubscription(null);
+  };
+
+  // #203's upgrade coupon — unlike the price-discount codes below, this
+  // actually grants a real subscription (see upgradeCoupons.ts).
+  const redeemCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCouponResult(null);
+    const res = await fetch(`${API_URL}/api/upgrade-coupons/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: couponCode, author }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setCouponResult(body.error ?? "That coupon isn't valid");
+      return;
+    }
+    setCouponCode("");
+    setCouponResult(`Upgraded to ${body.subscription.tier}!`);
+    loadSubscription();
   };
 
   const redeem = async (e: React.FormEvent) => {
@@ -168,6 +190,20 @@ export default function PricingPage() {
           ))}
         </div>
       )}
+
+      <form onSubmit={redeemCoupon} style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <input
+          type="text"
+          value={couponCode}
+          onChange={(e) => setCouponCode(e.target.value)}
+          placeholder="Have an upgrade coupon?"
+          style={{ flex: 1, padding: 8 }}
+        />
+        <button type="submit" disabled={!couponCode || !author}>
+          Redeem
+        </button>
+      </form>
+      {couponResult && <p style={{ marginTop: 8, fontSize: 13 }}>{couponResult}</p>}
 
       <p style={{ marginTop: 16, fontSize: 13 }}>
         <Link href="/settings/payment-methods">Manage your saved payment methods &rarr;</Link>

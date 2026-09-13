@@ -8345,6 +8345,71 @@ test("Free trial (#202): a user can start one free trial, which lapses without a
   }
 });
 
+test("Upgrade coupons (#203): admin creates a coupon and redeeming it grants a real subscription for the coupon's own duration", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/upgrade-coupons`);
+    assert.equal(noKeyRes.status, 401);
+
+    const invalidRes = await fetch(`${baseUrl}/api/admin/upgrade-coupons`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ code: "WELCOME7", tier: "diamond", days: 7 }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const createRes = await fetch(`${baseUrl}/api/admin/upgrade-coupons`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ code: "WELCOME7", tier: "platinum", days: 7, maxRedemptions: 1 }),
+    });
+    assert.equal(createRes.status, 201);
+
+    const listRes = await fetch(`${baseUrl}/api/admin/upgrade-coupons`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal((await listRes.json()).coupons.length, 1);
+
+    const redeemRes = await fetch(`${baseUrl}/api/upgrade-coupons/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "welcome7", author: "alice" }),
+    });
+    assert.equal(redeemRes.status, 200);
+    const redeemed = await redeemRes.json();
+    assert.equal(redeemed.subscription.tier, "platinum");
+
+    const statusRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    assert.equal((await statusRes.json()).subscription.tier, "platinum");
+
+    // Already redeemed by alice.
+    const secondRedeemRes = await fetch(`${baseUrl}/api/upgrade-coupons/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "WELCOME7", author: "alice" }),
+    });
+    assert.equal(secondRedeemRes.status, 400);
+
+    // maxRedemptions: 1 already used by alice.
+    const bobRedeemRes = await fetch(`${baseUrl}/api/upgrade-coupons/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "WELCOME7", author: "bob" }),
+    });
+    assert.equal(bobRedeemRes.status, 400);
+
+    const deactivateRes = await fetch(`${baseUrl}/api/admin/upgrade-coupons/WELCOME7`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(deactivateRes.status, 204);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

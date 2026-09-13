@@ -23,16 +23,29 @@ interface DiscountCode {
   active: boolean;
 }
 
+interface UpgradeCoupon {
+  code: string;
+  tier: "gold" | "platinum" | "vip";
+  days: number;
+  redemptionCount: number;
+  maxRedemptions: number | null;
+  active: boolean;
+}
+
 /**
  * Bumble's real "Manage financial plans, pricing and discount codes"
  * (#177). This app has no real payment processor, so a plan is
  * informational pricing data an admin curates, not a live billing
  * product — see pricingPlans.ts/discountCodes.ts for the honest scoping.
+ * The Upgrade coupons section is #203's real-effect coupon type — see
+ * upgradeCoupons.ts for why redeeming one actually grants a real #191
+ * subscription, unlike the discount codes above.
  */
 export default function AdminPricingPage() {
   const [adminKey, setAdminKey] = useState("");
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [codes, setCodes] = useState<DiscountCode[] | null>(null);
+  const [coupons, setCoupons] = useState<UpgradeCoupon[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [planName, setPlanName] = useState("");
@@ -44,20 +57,26 @@ export default function AdminPricingPage() {
   const [codeType, setCodeType] = useState<"percent" | "fixed">("percent");
   const [codeAmount, setCodeAmount] = useState("");
 
+  const [couponCode, setCouponCode] = useState("");
+  const [couponTier, setCouponTier] = useState<"gold" | "platinum" | "vip">("gold");
+  const [couponDays, setCouponDays] = useState("");
+
   const authHeaders = { "x-admin-key": adminKey };
 
   const loadAll = async () => {
     setError(null);
-    const [plansRes, codesRes] = await Promise.all([
+    const [plansRes, codesRes, couponsRes] = await Promise.all([
       fetch(`${API_URL}/api/admin/pricing-plans`, { headers: authHeaders }),
       fetch(`${API_URL}/api/admin/discount-codes`, { headers: authHeaders }),
+      fetch(`${API_URL}/api/admin/upgrade-coupons`, { headers: authHeaders }),
     ]);
-    if (!plansRes.ok || !codesRes.ok) {
+    if (!plansRes.ok || !codesRes.ok || !couponsRes.ok) {
       setError("Failed to load pricing data");
       return;
     }
     setPlans((await plansRes.json()).plans);
     setCodes((await codesRes.json()).codes);
+    setCoupons((await couponsRes.json()).coupons);
   };
 
   const createPlan = async (e: React.FormEvent) => {
@@ -110,6 +129,28 @@ export default function AdminPricingPage() {
 
   const deactivateCode = async (code: string) => {
     await fetch(`${API_URL}/api/admin/discount-codes/${code}`, { method: "DELETE", headers: authHeaders });
+    loadAll();
+  };
+
+  const createCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    const res = await fetch(`${API_URL}/api/admin/upgrade-coupons`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders },
+      body: JSON.stringify({ code: couponCode, tier: couponTier, days: Number(couponDays) }),
+    });
+    if (!res.ok) {
+      setError((await res.json().catch(() => ({}))).error ?? "Failed to create coupon");
+      return;
+    }
+    setCouponCode("");
+    setCouponDays("");
+    loadAll();
+  };
+
+  const deactivateCoupon = async (code: string) => {
+    await fetch(`${API_URL}/api/admin/upgrade-coupons/${code}`, { method: "DELETE", headers: authHeaders });
     loadAll();
   };
 
@@ -231,6 +272,50 @@ export default function AdminPricingPage() {
                 {!code.active && " (deactivated)"}
               </p>
               {code.active && <button onClick={() => deactivateCode(code.code)}>Deactivate</button>}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form onSubmit={createCoupon} style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 12, marginTop: 20 }}>
+        <h2 style={{ fontSize: 16, marginTop: 0 }}>New upgrade coupon</h2>
+        <input
+          type="text"
+          value={couponCode}
+          onChange={(e) => setCouponCode(e.target.value)}
+          placeholder="Code (e.g. WELCOME7)"
+          style={{ padding: 8, marginRight: 8 }}
+        />
+        <select value={couponTier} onChange={(e) => setCouponTier(e.target.value as "gold" | "platinum" | "vip")} style={{ padding: 8, marginRight: 8 }}>
+          <option value="gold">Gold</option>
+          <option value="platinum">Platinum</option>
+          <option value="vip">VIP</option>
+        </select>
+        <input
+          type="number"
+          min="1"
+          value={couponDays}
+          onChange={(e) => setCouponDays(e.target.value)}
+          placeholder="Days"
+          style={{ padding: 8, width: 100 }}
+        />
+        <div style={{ marginTop: 8 }}>
+          <button type="submit" disabled={!couponCode || !couponDays}>
+            Create coupon
+          </button>
+        </div>
+      </form>
+
+      {coupons && (
+        <ul style={{ listStyle: "none", padding: 0, marginTop: 16 }}>
+          {coupons.map((coupon) => (
+            <li key={coupon.code} style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 12, marginBottom: 8 }}>
+              <p style={{ margin: 0 }}>
+                <strong>{coupon.code}</strong> — {coupon.days} days of {coupon.tier} — {coupon.redemptionCount}
+                {coupon.maxRedemptions !== null ? `/${coupon.maxRedemptions}` : ""} redeemed
+                {!coupon.active && " (deactivated)"}
+              </p>
+              {coupon.active && <button onClick={() => deactivateCoupon(coupon.code)}>Deactivate</button>}
             </li>
           ))}
         </ul>
