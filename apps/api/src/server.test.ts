@@ -7977,6 +7977,56 @@ test("Google Play Billing (#193): linking a purchase activates the mapped tier, 
   }
 });
 
+function encodeJws(payload: unknown): string {
+  const header = Buffer.from(JSON.stringify({ alg: "ES256" })).toString("base64url");
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${header}.${body}.fake-signature`;
+}
+
+test("Apple In-App Purchase (#194): linking a purchase activates the mapped tier, and a real App Store Server Notification keeps it in sync", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const invalidLinkRes = await fetch(`${baseUrl}/api/subscriptions/apple/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", originalTransactionId: "txn-1", productId: "com.unknown.product" }),
+    });
+    assert.equal(invalidLinkRes.status, 400);
+
+    const linkRes = await fetch(`${baseUrl}/api/subscriptions/apple/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", originalTransactionId: "txn-1", productId: "com.chatapp.gold.monthly" }),
+    });
+    assert.equal(linkRes.status, 201);
+
+    const statusRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    assert.equal((await statusRes.json()).subscription.tier, "gold");
+
+    const signedTransactionInfo = encodeJws({ originalTransactionId: "txn-1", productId: "com.chatapp.gold.monthly" });
+    const signedPayload = encodeJws({ notificationType: "REVOKE", data: { signedTransactionInfo } });
+    const webhookRes = await fetch(`${baseUrl}/api/subscriptions/webhooks/apple`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signedPayload }),
+    });
+    assert.equal(webhookRes.status, 200);
+    assert.equal((await webhookRes.json()).action, "cancelled");
+
+    const statusAfterCancelRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    assert.deepEqual(await statusAfterCancelRes.json(), { subscription: null });
+
+    const malformedWebhookRes = await fetch(`${baseUrl}/api/subscriptions/webhooks/apple`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(malformedWebhookRes.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {
