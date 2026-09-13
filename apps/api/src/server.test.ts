@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AddressInfo } from "net";
+import { createHmac } from "crypto";
 import { authenticator } from "otplib";
 import { ChatMessage } from "@chatapp/shared";
 import { createApp } from "./server";
@@ -8024,6 +8025,59 @@ test("Apple In-App Purchase (#194): linking a purchase activates the mapped tier
     assert.equal(malformedWebhookRes.status, 400);
   } finally {
     server.close();
+  }
+});
+
+test("Crypto payment (#195): a charge can be created, fetched, and confirmed via a genuinely signature-verified webhook", async () => {
+  const previous = process.env.COINBASE_COMMERCE_WEBHOOK_SECRET;
+  process.env.COINBASE_COMMERCE_WEBHOOK_SECRET = "test-webhook-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const invalidRes = await fetch(`${baseUrl}/api/payments/crypto/charges`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", amountCents: -5, description: "Gold plan" }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const createRes = await fetch(`${baseUrl}/api/payments/crypto/charges`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", amountCents: 999, description: "Gold plan" }),
+    });
+    assert.equal(createRes.status, 201);
+    const charge = (await createRes.json()).charge;
+    assert.equal(charge.status, "pending");
+
+    const getRes = await fetch(`${baseUrl}/api/payments/crypto/charges/${charge.id}`);
+    assert.equal(getRes.status, 200);
+
+    const missingGetRes = await fetch(`${baseUrl}/api/payments/crypto/charges/does-not-exist`);
+    assert.equal(missingGetRes.status, 404);
+
+    const rawBody = JSON.stringify({ event: { type: "charge:confirmed", data: { code: charge.id } } });
+    const badSignatureRes = await fetch(`${baseUrl}/api/payments/crypto/webhooks/coinbase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CC-Webhook-Signature": "0".repeat(64) },
+      body: rawBody,
+    });
+    assert.equal(badSignatureRes.status, 401);
+
+    const signature = createHmac("sha256", "test-webhook-secret").update(rawBody).digest("hex");
+    const webhookRes = await fetch(`${baseUrl}/api/payments/crypto/webhooks/coinbase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CC-Webhook-Signature": signature },
+      body: rawBody,
+    });
+    assert.equal(webhookRes.status, 200);
+    assert.equal((await webhookRes.json()).handled, true);
+
+    const afterRes = await fetch(`${baseUrl}/api/payments/crypto/charges/${charge.id}`);
+    assert.equal((await afterRes.json()).charge.status, "confirmed");
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.COINBASE_COMMERCE_WEBHOOK_SECRET;
+    else process.env.COINBASE_COMMERCE_WEBHOOK_SECRET = previous;
   }
 });
 

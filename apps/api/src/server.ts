@@ -54,6 +54,7 @@ import { SubscriptionStore } from "./subscriptions";
 import { PaymentMethodStore } from "./paymentMethods";
 import { GooglePlayBillingBridge, parseGooglePlayRtdn } from "./googlePlayBilling";
 import { AppleAppStoreBridge, parseAppleNotification } from "./appleAppStore";
+import { CryptoChargeStore, verifyCoinbaseWebhookSignature } from "./cryptoPayments";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -285,8 +286,19 @@ export function createApp(deps?: {
   // Base64-encoded media is ~33% larger than its binary size, so allow a
   // generous body limit even though individual uploads are capped in their
   // own stores after decoding. Raised from 10mb to fit #63's 20MB video cap
-  // (~27MB base64) on top of the existing 5MB image/upload caps.
-  app.use(express.json({ limit: "30mb" }));
+  // (~27MB base64) on top of the existing 5MB image/upload caps. `verify`
+  // stashes the exact raw bytes alongside the parsed body — #195's Coinbase
+  // Commerce webhook signature has to be computed over the untouched raw
+  // request body, not a value re-serialized from the parsed JSON (which
+  // isn't guaranteed to byte-for-byte match what was actually sent).
+  app.use(
+    express.json({
+      limit: "30mb",
+      verify: (req, _res, buf) => {
+        (req as express.Request & { rawBody?: string }).rawBody = buf.toString("utf8");
+      },
+    })
+  );
 
   const messagesByRoom = new Map<string, ChatMessage[]>();
   const locations = new LocationStore();
@@ -349,6 +361,7 @@ export function createApp(deps?: {
   const paymentMethodStore = new PaymentMethodStore();
   const googlePlayBillingBridge = new GooglePlayBillingBridge(subscriptionStore);
   const appleAppStoreBridge = new AppleAppStoreBridge(subscriptionStore);
+  const cryptoChargeStore = new CryptoChargeStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2504,6 +2517,58 @@ export function createApp(deps?: {
       return;
     }
     res.json({ action: result.action });
+  });
+
+  // Tinder's real "Cryptocurrency payment" (#195) — see cryptoPayments.ts
+  // for the honest scoping. Unlike #193/#194's mobile IAP webhooks, this
+  // one's signature actually can be verified end-to-end (real HMAC-SHA256
+  // over the raw body, Coinbase Commerce's own documented scheme), gated
+  // the same fail-closed way as ADMIN_API_KEY.
+  app.post("/api/payments/crypto/charges", (req, res) => {
+    const result = cryptoChargeStore.create(req.body?.author, req.body?.amountCents, req.body?.description);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ charge: result.charge });
+  });
+
+  app.get("/api/payments/crypto/charges/:chargeId", (req, res) => {
+    const charge = cryptoChargeStore.get(req.params.chargeId);
+    if (!charge) {
+      res.status(404).json({ error: "Charge not found" });
+      return;
+    }
+    res.json({ charge });
+  });
+
+  app.post("/api/payments/crypto/webhooks/coinbase", (req, res) => {
+    const rawBody = (req as express.Request & { rawBody?: string }).rawBody ?? "";
+    if (!verifyCoinbaseWebhookSignature(rawBody, req.get("X-CC-Webhook-Signature"))) {
+      res.status(401).json({ error: "Invalid or missing webhook signature" });
+      return;
+    }
+    const chargeId = req.body?.event?.data?.code;
+    const eventType = req.body?.event?.type;
+    if (typeof chargeId !== "string" || typeof eventType !== "string") {
+      res.status(400).json({ error: "Malformed Coinbase Commerce webhook payload" });
+      return;
+    }
+
+    if (eventType === "charge:confirmed") {
+      const updated = cryptoChargeStore.markConfirmed(chargeId);
+      if (updated) {
+        const charge = cryptoChargeStore.get(chargeId);
+        if (charge) transactionLogStore.logPurchase(charge.author, charge.amountCents, charge.description);
+      }
+      res.json({ handled: updated });
+      return;
+    }
+    if (eventType === "charge:failed") {
+      res.json({ handled: cryptoChargeStore.markFailed(chargeId) });
+      return;
+    }
+    res.json({ handled: false });
   });
 
   // Bumble's real "Send broadcast messages and notifications" (#178) —
