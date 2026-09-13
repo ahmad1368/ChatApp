@@ -8624,6 +8624,66 @@ test("Direct message requests (#208): sending costs coins, only the recipient ca
   }
 });
 
+test("Unlimited Rewind package (#209): the free daily Rewind is capped, and purchasing removes the cap", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const beforeRes = await fetch(`${baseUrl}/api/rewinds-remaining/alice`);
+    assert.deepEqual(await beforeRes.json(), { remaining: 1, unlimited: false });
+
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    const firstUndoRes = await fetch(`${baseUrl}/api/swipes/undo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(firstUndoRes.status, 200);
+
+    const afterRes = await fetch(`${baseUrl}/api/rewinds-remaining/alice`);
+    assert.deepEqual(await afterRes.json(), { remaining: 0, unlimited: false });
+
+    // The free Rewind is used up for today, so a second one is rejected.
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "carol", direction: "like" }),
+    });
+    const secondUndoRes = await fetch(`${baseUrl}/api/swipes/undo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(secondUndoRes.status, 400);
+
+    const insufficientCoinsRes = await fetch(`${baseUrl}/api/rewinds/alice/purchase-unlimited`, { method: "POST" });
+    assert.equal(insufficientCoinsRes.status, 400);
+
+    await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "large" }),
+    });
+    const purchaseRes = await fetch(`${baseUrl}/api/rewinds/alice/purchase-unlimited`, { method: "POST" });
+    assert.equal(purchaseRes.status, 201);
+
+    const unlimitedRes = await fetch(`${baseUrl}/api/rewinds-remaining/alice`);
+    assert.deepEqual(await unlimitedRes.json(), { remaining: null, unlimited: true });
+
+    // Now a second Rewind in the same day succeeds.
+    const thirdUndoRes = await fetch(`${baseUrl}/api/swipes/undo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(thirdUndoRes.status, 200);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

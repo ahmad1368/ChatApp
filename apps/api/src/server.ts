@@ -117,7 +117,7 @@ import { ProfileColorThemeStore, PROFILE_COLOR_THEMES } from "./profileColorThem
 import { AchievementsInfoStore } from "./achievementsInfo";
 import { DisplayNameModeStore, DISPLAY_NAME_MODES } from "./displayNameMode";
 import { StylizedAvatarStore, AVATAR_STYLES } from "./stylizedAvatar";
-import { SwipeStore, SUPER_LIKE_PACKAGES, findSuperLikePackage } from "./swipes";
+import { SwipeStore, SUPER_LIKE_PACKAGES, findSuperLikePackage, UNLIMITED_REWIND_COST_COINS } from "./swipes";
 import { SmartScoreStore } from "./smartScore";
 import { DiscoveryFiltersStore, candidateMatchesFilters } from "./discoveryFilters";
 import { ExploreModeStore, candidateMatchesExploreMode } from "./exploreMode";
@@ -3280,6 +3280,27 @@ export function createApp(deps?: {
       return;
     }
     res.json({ swiped: result.swiped });
+  });
+
+  // Tinder's real "Purchase an unlimited Super Rewind package" (#209)
+  // — see swipes.ts for the honest scoping (a real daily cap on the
+  // previously-unlimited free Rewind, plus a real, coin-priced,
+  // time-bounded removal of it, rather than a credit-count package).
+  app.get("/api/rewinds-remaining/:author", (req, res) => {
+    res.json({
+      remaining: swipeStore.getRewindsRemainingToday(req.params.author),
+      unlimited: swipeStore.hasUnlimitedRewinds(req.params.author),
+    });
+  });
+
+  app.post("/api/rewinds/:author/purchase-unlimited", (req, res) => {
+    const spendResult = coinStore.spend(req.params.author, UNLIMITED_REWIND_COST_COINS);
+    if (!spendResult.success) {
+      res.status(400).json({ error: spendResult.error });
+      return;
+    }
+    const until = swipeStore.grantUnlimitedRewinds(req.params.author);
+    res.status(201).json({ unlimitedUntil: until });
   });
 
   // Tinder's Super Like (#93): shows special attention by counting toward
