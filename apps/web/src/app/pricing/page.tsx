@@ -28,6 +28,13 @@ interface SeasonalCampaign {
   discountAmount: number;
 }
 
+interface GiftPackage {
+  id: string;
+  tier: (typeof SUBSCRIPTION_TIERS)[number];
+  days: number;
+  coinCost: number;
+}
+
 /**
  * Bumble's real pricing page (#177) — lists whatever plans an admin has
  * published via /admin/pricing, plus a promo-code check. There's no real
@@ -49,6 +56,9 @@ interface SeasonalCampaign {
  * revoking it immediately (see subscriptions.ts's cancelAtPeriodEnd()),
  * the same behavior every real subscription platform has; "End access
  * immediately" below it is the separate, more drastic hard-removal path.
+ * #210's "Gift a subscription" spends the sender's real #196 coins on a
+ * fixed 7-day package and grants the recipient a real subscription via
+ * extendOrGrant() — see subscriptions.ts's GIFT_PACKAGES.
  */
 export default function PricingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -64,6 +74,9 @@ export default function PricingPage() {
   const [referralCount, setReferralCount] = useState(0);
   const [friendCode, setFriendCode] = useState("");
   const [referralResult, setReferralResult] = useState<string | null>(null);
+  const [giftPackages, setGiftPackages] = useState<GiftPackage[]>([]);
+  const [giftRecipient, setGiftRecipient] = useState("");
+  const [giftResult, setGiftResult] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/api/pricing-plans`)
@@ -72,6 +85,10 @@ export default function PricingPage() {
     fetch(`${API_URL}/api/seasonal-discounts/active`)
       .then((r) => r.json())
       .then((body) => setSeasonalCampaign(body.campaign ?? null))
+      .catch(() => {});
+    fetch(`${API_URL}/api/subscriptions/gift-packages`)
+      .then((r) => r.json())
+      .then((body) => setGiftPackages(body.packages ?? []))
       .catch(() => {});
   }, []);
 
@@ -173,6 +190,25 @@ export default function PricingPage() {
     setCouponCode("");
     setCouponResult(`Upgraded to ${body.subscription.tier}!`);
     loadSubscription();
+  };
+
+  // Coffee Meets Bagel's real "Ability to gift a subscription to other
+  // users" (#210) — spends the sender's real #196 coins and grants the
+  // recipient a real #191 subscription via extendOrGrant() (see
+  // subscriptions.ts's GIFT_PACKAGES).
+  const giftSubscription = async (packageId: string) => {
+    setGiftResult(null);
+    const res = await fetch(`${API_URL}/api/subscriptions/gift`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: author, to: giftRecipient, packageId }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setGiftResult(body.error ?? "Couldn't send that gift");
+      return;
+    }
+    setGiftResult(`Gifted ${body.subscription.tier} to ${giftRecipient}!`);
   };
 
   const redeem = async (e: React.FormEvent) => {
@@ -323,6 +359,27 @@ export default function PricingPage() {
             </button>
           </form>
           {referralResult && <p style={{ marginTop: 8, fontSize: 13 }}>{referralResult}</p>}
+        </div>
+      )}
+
+      {author && giftPackages.length > 0 && (
+        <div style={{ marginTop: 24, border: "1px solid var(--color-border)", borderRadius: 8, padding: 12 }}>
+          <h2 style={{ fontSize: 16, marginTop: 0 }}>Gift a subscription</h2>
+          <input
+            type="text"
+            value={giftRecipient}
+            onChange={(e) => setGiftRecipient(e.target.value)}
+            placeholder="Friend's name"
+            style={{ width: "100%", padding: 8, marginBottom: 8, boxSizing: "border-box" }}
+          />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {giftPackages.map((pkg) => (
+              <button key={pkg.id} onClick={() => giftSubscription(pkg.id)} disabled={!giftRecipient} style={{ fontSize: 12 }}>
+                {pkg.days}-day {pkg.tier} — {pkg.coinCost} coins
+              </button>
+            ))}
+          </div>
+          {giftResult && <p style={{ marginTop: 8, fontSize: 13 }}>{giftResult}</p>}
         </div>
       )}
 

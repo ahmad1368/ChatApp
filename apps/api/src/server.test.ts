@@ -10715,3 +10715,83 @@ test("PUT /api/measurement-units/:author rejects an invalid system", async () =>
     server.close();
   }
 });
+
+test("Gift a subscription (#210): GET /api/subscriptions/gift-packages lists the fixed catalog", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/subscriptions/gift-packages`);
+    assert.equal(res.status, 200);
+    const { packages } = await res.json();
+    assert.equal(packages.length, 3);
+    assert.equal(packages[0].id, "gold-7");
+  } finally {
+    server.close();
+  }
+});
+
+test("Gift a subscription (#210): rejects self-gifting and an unknown package before spending any coins", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "large" }),
+    });
+
+    const selfGiftRes = await fetch(`${baseUrl}/api/subscriptions/gift`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "alice", to: "alice", packageId: "gold-7" }),
+    });
+    assert.equal(selfGiftRes.status, 400);
+
+    const invalidPackageRes = await fetch(`${baseUrl}/api/subscriptions/gift`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "alice", to: "bob", packageId: "does-not-exist" }),
+    });
+    assert.equal(invalidPackageRes.status, 400);
+
+    const balanceRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.equal((await balanceRes.json()).balance, 1200);
+  } finally {
+    server.close();
+  }
+});
+
+test("Gift a subscription (#210): rejects an insufficient balance, and a successful gift spends coins and grants the recipient a real subscription", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const insufficientRes = await fetch(`${baseUrl}/api/subscriptions/gift`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "alice", to: "bob", packageId: "gold-7" }),
+    });
+    assert.equal(insufficientRes.status, 400);
+
+    await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "medium" }),
+    });
+
+    const giftRes = await fetch(`${baseUrl}/api/subscriptions/gift`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "alice", to: "bob", packageId: "gold-7" }),
+    });
+    assert.equal(giftRes.status, 201);
+    const giftBody = await giftRes.json();
+    assert.equal(giftBody.subscription.tier, "gold");
+    assert.equal(giftBody.balance, 550 - 150);
+
+    const recipientStatusRes = await fetch(`${baseUrl}/api/subscriptions/bob`);
+    const recipientStatus = (await recipientStatusRes.json()).subscription;
+    assert.equal(recipientStatus.tier, "gold");
+
+    const senderBalanceRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.equal((await senderBalanceRes.json()).balance, 550 - 150);
+  } finally {
+    server.close();
+  }
+});

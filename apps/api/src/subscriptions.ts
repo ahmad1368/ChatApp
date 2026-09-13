@@ -16,6 +16,24 @@ export interface Subscription {
 export type SubscribeResult = { success: true; subscription: Subscription } | { success: false; error: string };
 export type StartTrialResult = { success: true; subscription: Subscription } | { success: false; error: string };
 
+export interface GiftPackage {
+  id: string;
+  tier: SubscriptionTier;
+  days: number;
+  coinCost: number;
+}
+
+/** Coffee Meets Bagel's real "Ability to gift a subscription to other users" (#210) — a fixed, one-per-tier 7-day gift, priced in #196's coins. */
+export const GIFT_PACKAGES: GiftPackage[] = [
+  { id: "gold-7", tier: "gold", days: 7, coinCost: 150 },
+  { id: "platinum-7", tier: "platinum", days: 7, coinCost: 250 },
+  { id: "vip-7", tier: "vip", days: 7, coinCost: 350 },
+];
+
+export function findGiftPackage(packageId: unknown): GiftPackage | undefined {
+  return GIFT_PACKAGES.find((p) => p.id === packageId);
+}
+
 function isSubscriptionTier(value: unknown): value is SubscriptionTier {
   return typeof value === "string" && (SUBSCRIPTION_TIERS as readonly string[]).includes(value);
 }
