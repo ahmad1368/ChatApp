@@ -1742,13 +1742,17 @@ export function createApp(deps?: {
     res.json(peakHoursStore.getStatus());
   });
 
-  // Tinder's real "Likes You" (#103): free here since this app has no
-  // premium tier to gate it behind — see swipes.ts for why it only
-  // applies the block check, not the swiper's own discovery filters.
+  // Tinder's real "Likes You" (#103, gated by #200's "Ability to see who
+  // liked you as a paid feature"): the actual identities are unlocked
+  // only for a subscriber with an active #191 tier — anyone else still
+  // gets the real count (Tinder's own "blurred grid + count" pattern),
+  // just not the names, so #171's "no premium tier to gate it behind"
+  // gap is now genuinely closed. See swipes.ts for why the list itself
+  // only applies the block check, not the swiper's own discovery filters.
   app.get("/api/liked-you/:author", (req, res) => {
-    res.json({
-      likedBy: swipeStore.getLikedBy(req.params.author, isBlockedEitherWay, getCandidateCompatibility),
-    });
+    const likedBy = swipeStore.getLikedBy(req.params.author, isBlockedEitherWay, getCandidateCompatibility);
+    const unlocked = Boolean(subscriptionStore.getStatus(req.params.author));
+    res.json({ likedBy: unlocked ? likedBy : [], count: likedBy.length, unlocked });
   });
 
   // Tinder's real "Top Picks" (#101): a small, once-per-day curated list
