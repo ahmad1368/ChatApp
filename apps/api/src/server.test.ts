@@ -8249,6 +8249,37 @@ test("Super Like packages (#199): a purchased credit covers a Super Like once th
   }
 });
 
+test("Likes You (#200): identities are only unlocked for a subscriber, but the count is always real", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const lockedRes = await fetch(`${baseUrl}/api/liked-you/alice`);
+    const locked = await lockedRes.json();
+    assert.equal(locked.unlocked, false);
+    assert.equal(locked.count, 1);
+    assert.deepEqual(locked.likedBy, []);
+
+    await fetch(`${baseUrl}/api/subscriptions/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "gold" }),
+    });
+
+    const unlockedRes = await fetch(`${baseUrl}/api/liked-you/alice`);
+    const unlocked = await unlockedRes.json();
+    assert.equal(unlocked.unlocked, true);
+    assert.equal(unlocked.count, 1);
+    assert.equal(unlocked.likedBy[0].author, "bob");
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {
@@ -8409,7 +8440,7 @@ test("GET /api/liked-you/:author returns an empty list when nobody has liked thi
   try {
     const res = await fetch(`${baseUrl}/api/liked-you/alice`);
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { likedBy: [] });
+    assert.deepEqual(await res.json(), { likedBy: [], count: 0, unlocked: false });
   } finally {
     server.close();
   }
@@ -8445,8 +8476,15 @@ test("GET /api/liked-you/:author lists a real interest-compatibility score for s
       body: JSON.stringify({ blockerAuthor: "alice", blockedAuthor: "carol" }),
     });
 
+    // #200's gate: identities only unlock for a subscriber.
+    await fetch(`${baseUrl}/api/subscriptions/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "gold" }),
+    });
+
     const res = await fetch(`${baseUrl}/api/liked-you/alice`);
-    assert.deepEqual(await res.json(), { likedBy: [{ author: "bob", compatibility: 100 }] });
+    assert.deepEqual(await res.json(), { likedBy: [{ author: "bob", compatibility: 100 }], count: 1, unlocked: true });
   } finally {
     server.close();
   }
@@ -8467,7 +8505,7 @@ test("GET /api/liked-you/:author excludes someone once the author swipes back on
     });
 
     const res = await fetch(`${baseUrl}/api/liked-you/alice`);
-    assert.deepEqual(await res.json(), { likedBy: [] });
+    assert.deepEqual(await res.json(), { likedBy: [], count: 0, unlocked: false });
   } finally {
     server.close();
   }

@@ -12,16 +12,20 @@ interface LikedByEntry {
 }
 
 /**
- * Tinder's real "Likes You" (#103): everyone who's already liked or
- * superliked this author but hasn't been swiped back on yet — real
- * Tinder blurs this behind a paywall; this app has no premium tier, so
- * it's shown in full, same scoping call as #92's free Rewind. Liking or
- * passing here uses the same POST /api/swipes as /discover, so a mutual
- * like immediately creates a match.
+ * Tinder's real "Likes You" (#103), gated by #200's "Ability to see who
+ * liked you as a paid feature": everyone who's already liked or
+ * superliked this author but hasn't been swiped back on yet — now that
+ * #191 provides a real premium tier, real Tinder's own "blurred grid +
+ * count" pattern applies: a non-subscriber sees only the real count,
+ * a subscriber sees the actual people. Liking or passing here uses the
+ * same POST /api/swipes as /discover, so a mutual like immediately
+ * creates a match.
  */
 export default function LikedYouPage() {
   const [author] = useState(() => getOrCreateGuestIdentity());
   const [likedBy, setLikedBy] = useState<LikedByEntry[]>([]);
+  const [count, setCount] = useState(0);
+  const [unlocked, setUnlocked] = useState(false);
   const [matchNotice, setMatchNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +33,11 @@ export default function LikedYouPage() {
   const load = () => {
     fetch(`${API_URL}/api/liked-you/${encodeURIComponent(author)}`)
       .then((res) => res.json())
-      .then((body) => setLikedBy(body.likedBy ?? []))
+      .then((body) => {
+        setLikedBy(body.likedBy ?? []);
+        setCount(body.count ?? 0);
+        setUnlocked(body.unlocked ?? false);
+      })
       .catch(() => {});
   };
 
@@ -69,7 +77,21 @@ export default function LikedYouPage() {
           🎉 It&apos;s a match with {matchNotice}!
         </div>
       )}
-      {likedBy.length === 0 ? (
+      {!unlocked ? (
+        count === 0 ? (
+          <p style={{ color: "var(--color-muted)", marginTop: 16 }}>No one yet — check back later.</p>
+        ) : (
+          <div style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 16, marginTop: 16, textAlign: "center" }}>
+            <p style={{ fontSize: 20, fontWeight: "bold", filter: "blur(4px)" }}>
+              {count} {count === 1 ? "person" : "people"} liked you
+            </p>
+            <p style={{ color: "var(--color-muted)", fontSize: 13 }}>Subscribe to see who they are.</p>
+            <Link href="/pricing">
+              <button style={{ marginTop: 8 }}>See who liked you</button>
+            </Link>
+          </div>
+        )
+      ) : likedBy.length === 0 ? (
         <p style={{ color: "var(--color-muted)", marginTop: 16 }}>No one yet — check back later.</p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, marginTop: 16 }}>

@@ -376,13 +376,15 @@ export class SwipeStore {
 
   /**
    * Tinder's real "Likes You" (#103): everyone who's already liked or
-   * superliked this author but hasn't been swiped back on yet — real
-   * Tinder blurs this list behind a paywall; this app has no premium
-   * tier (same call as #92's free Rewind), so it's shown in full. Once
+   * superliked this author but hasn't been swiped back on yet. Once
    * `author` swipes back either way, that person either becomes a match
    * (visible in getMatches) or drops off this list — never both places
    * at once. Ranked the same way as getCandidates: superlikers first,
-   * then by compatibility.
+   * then by compatibility. Always returns the full list — #200's real
+   * paywall (real Tinder's own "blurred grid + count" pattern, now that
+   * #191 provides a real premium tier to gate it behind) is applied by
+   * the caller (server.ts's GET /api/liked-you/:author), not here, so
+   * this store stays free of any subscription-store dependency.
    */
   getLikedBy(author: string, isBlockedEitherWay: (a: string, b: string) => boolean, getCompatibility: CompatibilityScorer = () => 0): SwipeCandidate[] {
     const alreadySwipedByAuthor = this.swipesBySwiper.get(author);
