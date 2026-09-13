@@ -2593,6 +2593,25 @@ export function createApp(deps?: {
     res.status(204).send();
   });
 
+  // #206's "Auto-renewable subscriptions" — see subscriptions.ts for
+  // the honest scoping (a real self-service subscribe() defaults to
+  // autoRenew: true and getStatus() actually rolls it over on expiry;
+  // there's still no real recurring charge behind it, same disclosed
+  // gap as subscribe() itself). This toggle doesn't end access early —
+  // it only decides whether the *next* renewal happens.
+  app.put("/api/subscriptions/:author/auto-renew", (req, res) => {
+    if (typeof req.body?.autoRenew !== "boolean") {
+      res.status(400).json({ error: "autoRenew must be a boolean" });
+      return;
+    }
+    const updated = subscriptionStore.setAutoRenew(req.params.author, req.body.autoRenew);
+    if (!updated) {
+      res.status(404).json({ error: "No active subscription for that author" });
+      return;
+    }
+    res.json({ subscription: subscriptionStore.getStatus(req.params.author) });
+  });
+
   app.get("/api/admin/subscriptions", (req, res) => {
     if (!requireAdmin(req, res)) return;
     res.json({ subscriptions: subscriptionStore.listActive() });

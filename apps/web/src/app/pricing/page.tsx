@@ -19,6 +19,7 @@ interface Subscription {
   tier: (typeof SUBSCRIPTION_TIERS)[number];
   expiresAt: string;
   isTrial: boolean;
+  autoRenew: boolean;
 }
 
 interface SeasonalCampaign {
@@ -41,7 +42,9 @@ interface SeasonalCampaign {
  * gives both sides real free subscription days on redemption — see
  * referrals.ts. #205's seasonal banner (Valentine's/Black Friday) shows
  * only while that campaign's real calendar window is currently open —
- * see seasonalDiscounts.ts.
+ * see seasonalDiscounts.ts. #206's auto-renew toggle actually decides
+ * whether getStatus() rolls the subscription into another real period
+ * on expiry rather than just being a cosmetic switch.
  */
 export default function PricingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -123,6 +126,20 @@ export default function PricingPage() {
   const cancelSubscription = async () => {
     await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}`, { method: "DELETE" });
     setSubscription(null);
+  };
+
+  // #206's auto-renew toggle — see subscriptions.ts for why this
+  // actually decides whether getStatus() rolls the subscription into
+  // another real period on expiry, not just a cosmetic switch.
+  const toggleAutoRenew = async () => {
+    if (!subscription) return;
+    const res = await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}/auto-renew`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoRenew: !subscription.autoRenew }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) setSubscription(body.subscription);
   };
 
   // #203's upgrade coupon — unlike the price-discount codes below, this
@@ -222,6 +239,11 @@ export default function PricingPage() {
         <p>
           You're subscribed to <strong>{subscription.tier}</strong>
           {subscription.isTrial && " (free trial)"} until {new Date(subscription.expiresAt).toLocaleDateString()}.{" "}
+          {!subscription.isTrial && (
+            <label style={{ fontSize: 13 }}>
+              <input type="checkbox" checked={subscription.autoRenew} onChange={toggleAutoRenew} /> Auto-renew
+            </label>
+          )}{" "}
           <button onClick={cancelSubscription}>Cancel</button>
         </p>
       ) : (

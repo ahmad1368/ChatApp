@@ -8484,6 +8484,52 @@ test("Seasonal discounts (#205): the active-campaign endpoint and redemption agr
   }
 });
 
+test("Auto-renewable subscriptions (#206): subscribe() defaults to autoRenew on, and it can be toggled", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const subscribeRes = await fetch(`${baseUrl}/api/subscriptions/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "gold" }),
+    });
+    assert.equal((await subscribeRes.json()).subscription.autoRenew, true);
+
+    const invalidRes = await fetch(`${baseUrl}/api/subscriptions/alice/auto-renew`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoRenew: "yes" }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const missingAuthorRes = await fetch(`${baseUrl}/api/subscriptions/does-not-exist/auto-renew`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoRenew: false }),
+    });
+    assert.equal(missingAuthorRes.status, 404);
+
+    const toggleOffRes = await fetch(`${baseUrl}/api/subscriptions/alice/auto-renew`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoRenew: false }),
+    });
+    assert.equal(toggleOffRes.status, 200);
+    assert.equal((await toggleOffRes.json()).subscription.autoRenew, false);
+
+    const statusRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    assert.equal((await statusRes.json()).subscription.autoRenew, false);
+
+    const toggleOnRes = await fetch(`${baseUrl}/api/subscriptions/alice/auto-renew`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoRenew: true }),
+    });
+    assert.equal((await toggleOnRes.json()).subscription.autoRenew, true);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

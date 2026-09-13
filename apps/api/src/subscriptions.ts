@@ -10,6 +10,7 @@ export interface Subscription {
   subscribedAt: string;
   expiresAt: string;
   isTrial: boolean;
+  autoRenew: boolean;
 }
 
 export type SubscribeResult = { success: true; subscription: Subscription } | { success: false; error: string };
@@ -45,6 +46,19 @@ function isSubscriptionTier(value: unknown): value is SubscriptionTier {
  * author, the real anti-abuse rule Tinder also enforces, tracked in
  * `trialUsedByAuthor` independently of the subscription record itself
  * so cancelling or letting a trial lapse doesn't reset eligibility.
+ *
+ * #206's "Auto-renewable subscriptions": a real self-service
+ * subscribe() defaults to `autoRenew: true`, same as real Tinder — on
+ * expiry, `getStatus()` renews it for another full period at the same
+ * tier instead of deleting it, the actual entitlement-continuation
+ * behavior this issue asks for (there's still no real recurring charge
+ * behind it, same disclosed payment-processor gap as subscribe()
+ * itself). A trial, coupon grant, or referral reward is a one-time
+ * perk, not an ongoing plan, so those default to `autoRenew: false`
+ * and simply lapse, preserving #202's already-shipped trial behavior
+ * exactly. `setAutoRenew()` lets a subscriber turn it off (still active
+ * until the current period's real expiresAt, same as cancel() elsewhere
+ * — this only stops the *next* renewal) or back on.
  */
 export class SubscriptionStore {
   private byAuthor = new Map<string, Subscription>();
@@ -62,6 +76,7 @@ export class SubscriptionStore {
       subscribedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + SUBSCRIPTION_DURATION_DAYS * 24 * 60 * 60 * 1000).toISOString(),
       isTrial: false,
+      autoRenew: true,
     };
     this.byAuthor.set(authorText, subscription);
     return { success: true, subscription };
@@ -85,6 +100,7 @@ export class SubscriptionStore {
       subscribedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000).toISOString(),
       isTrial: true,
+      autoRenew: false,
     };
     this.byAuthor.set(authorText, subscription);
     this.trialUsedByAuthor.add(authorText);
@@ -112,6 +128,7 @@ export class SubscriptionStore {
       subscribedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString(),
       isTrial: false,
+      autoRenew: false,
     };
     this.byAuthor.set(authorText, subscription);
     return { success: true, subscription };
@@ -138,6 +155,7 @@ export class SubscriptionStore {
       subscribedAt: existing?.subscribedAt ?? new Date().toISOString(),
       expiresAt: new Date(baseTimeMs + days * 24 * 60 * 60 * 1000).toISOString(),
       isTrial: false,
+      autoRenew: existing?.autoRenew ?? false,
     };
     this.byAuthor.set(authorText, subscription);
     return { success: true, subscription };
@@ -147,13 +165,47 @@ export class SubscriptionStore {
     return this.byAuthor.delete(author);
   }
 
-  /** The active subscription, or undefined once it's lapsed (or never existed) — a real wall-clock expiry check, not just presence in the map. */
+  /**
+   * Turns auto-renewal on or off for an already-active subscription.
+   * Returns false if there's nothing active to change. Turning it off
+   * doesn't end access early — the current period's real expiresAt is
+   * untouched — it only stops the *next* renewal getStatus() would
+   * otherwise apply.
+   */
+  setAutoRenew(author: string, autoRenew: boolean): boolean {
+    const subscription = this.getStatus(author);
+    if (!subscription) return false;
+    subscription.autoRenew = autoRenew;
+    return true;
+  }
+
+  /**
+   * The active subscription, or undefined once it's lapsed (or never
+   * existed) — a real wall-clock expiry check, not just presence in the
+   * map. #206: an expired subscription with autoRenew on is rolled over
+   * for another full period at the same tier (from its own expiresAt,
+   * not "now", so a late check never drifts the schedule) instead of
+   * being deleted.
+   */
   getStatus(author: string): Subscription | undefined {
     const subscription = this.byAuthor.get(author);
     if (!subscription) return undefined;
-    if (new Date(subscription.expiresAt).getTime() <= Date.now()) {
-      this.byAuthor.delete(author);
-      return undefined;
+    const now = Date.now();
+    if (new Date(subscription.expiresAt).getTime() <= now) {
+      if (!subscription.autoRenew) {
+        this.byAuthor.delete(author);
+        return undefined;
+      }
+      // Rolls forward one full period at a time (rather than jumping
+      // straight to "now") so a subscriber who never happens to be
+      // checked for several periods still accrues exactly as many real
+      // renewals as actually elapsed, not just one.
+      let expiresAtMs = new Date(subscription.expiresAt).getTime();
+      while (expiresAtMs <= now) {
+        subscription.subscribedAt = new Date(expiresAtMs).toISOString();
+        expiresAtMs += SUBSCRIPTION_DURATION_DAYS * 24 * 60 * 60 * 1000;
+      }
+      subscription.expiresAt = new Date(expiresAtMs).toISOString();
     }
     return subscription;
   }
