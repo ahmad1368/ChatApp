@@ -7434,6 +7434,95 @@ test("Discovery boundaries (#183): PUT /api/admin/discovery-boundaries requires 
   }
 });
 
+test("Admin RBAC (#187): the master admin key acts as superadmin and can create/list/revoke role accounts", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/roles`);
+    assert.equal(noKeyRes.status, 401);
+
+    const invalidRes = await fetch(`${baseUrl}/api/admin/roles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ name: "Jamie", role: "owner" }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const createRes = await fetch(`${baseUrl}/api/admin/roles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ name: "Jamie", role: "moderator" }),
+    });
+    assert.equal(createRes.status, 201);
+    const created = await createRes.json();
+    assert.equal(created.role, "moderator");
+    assert.equal(typeof created.apiKey, "string");
+
+    const listRes = await fetch(`${baseUrl}/api/admin/roles`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const listBody = await listRes.json();
+    assert.equal(listBody.accounts.length, 1);
+    assert.equal(listBody.accounts[0].apiKey, undefined);
+
+    const revokeRes = await fetch(`${baseUrl}/api/admin/roles/${created.id}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(revokeRes.status, 204);
+
+    const secondRevokeRes = await fetch(`${baseUrl}/api/admin/roles/${created.id}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(secondRevokeRes.status, 404);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Admin RBAC (#187): a moderator account can list roles but can't create or revoke them; a revoked key stops working", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/admin/roles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ name: "Jamie", role: "moderator" }),
+    });
+    const moderator = await createRes.json();
+
+    const moderatorListRes = await fetch(`${baseUrl}/api/admin/roles`, { headers: { "x-admin-key": moderator.apiKey } });
+    assert.equal(moderatorListRes.status, 200);
+
+    const moderatorCreateRes = await fetch(`${baseUrl}/api/admin/roles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": moderator.apiKey },
+      body: JSON.stringify({ name: "Alex", role: "support" }),
+    });
+    assert.equal(moderatorCreateRes.status, 403);
+
+    const moderatorRevokeRes = await fetch(`${baseUrl}/api/admin/roles/${moderator.id}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": moderator.apiKey },
+    });
+    assert.equal(moderatorRevokeRes.status, 403);
+
+    await fetch(`${baseUrl}/api/admin/roles/${moderator.id}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    const afterRevokeRes = await fetch(`${baseUrl}/api/admin/roles`, { headers: { "x-admin-key": moderator.apiKey } });
+    assert.equal(afterRevokeRes.status, 401);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

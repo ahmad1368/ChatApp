@@ -83,6 +83,8 @@ export default function AdminDashboardPage() {
         <Link href="/admin/explore-themes">Explore themes &rarr;</Link>
         {" · "}
         <Link href="/admin/discovery-boundaries">Discovery radius boundaries &rarr;</Link>
+        {" · "}
+        <Link href="/admin/roles">Admin access roles &rarr;</Link>
       </p>
 
       <form
