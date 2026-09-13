@@ -39,6 +39,8 @@ export default function DiscoverPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [superLikesRemaining, setSuperLikesRemaining] = useState(0);
+  const [superLikeCredits, setSuperLikeCredits] = useState(0);
+  const [superLikePackages, setSuperLikePackages] = useState<{ id: string; superLikes: number; coinCost: number }[]>([]);
   const [likesRemaining, setLikesRemaining] = useState(0);
   const [bioKeyword, setBioKeyword] = useState("");
   const [viewMode, setViewModeState] = useState<ViewMode>("card");
@@ -62,6 +64,30 @@ export default function DiscoverPage() {
       .catch(() => {});
   };
 
+  // Tinder's real "Purchase a separate Super Like package" (#199) —
+  // see swipes.ts for the honest scoping (a coin-priced credit covers a
+  // Super Like once the free daily allowance above is used up).
+  const loadSuperLikeCredits = () => {
+    fetch(`${API_URL}/api/super-likes/${encodeURIComponent(author)}/credits`)
+      .then((res) => res.json())
+      .then((body) => setSuperLikeCredits(body.credits ?? 0))
+      .catch(() => {});
+  };
+
+  const purchaseSuperLikePackage = (packageId: string) => {
+    fetch(`${API_URL}/api/super-likes/${encodeURIComponent(author)}/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId }),
+    })
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => {
+        if (ok) setSuperLikeCredits(body.credits);
+        else setError(body.error ?? "Failed to purchase Super Like package");
+      })
+      .catch(() => setError("Failed to purchase Super Like package"));
+  };
+
   // Coffee Meets Bagel/Tinder's real free-tier daily like limit (#116).
   const loadLikesRemaining = () => {
     fetch(`${API_URL}/api/likes-remaining/${encodeURIComponent(author)}`)
@@ -77,6 +103,11 @@ export default function DiscoverPage() {
       body: JSON.stringify({ author }),
     }).then(() => loadCandidates());
     loadSuperLikesRemaining();
+    loadSuperLikeCredits();
+    fetch(`${API_URL}/api/super-likes/packages`)
+      .then((res) => res.json())
+      .then((body) => setSuperLikePackages(body.packages ?? []))
+      .catch(() => {});
     loadLikesRemaining();
     fetch(`${API_URL}/api/view-mode/${encodeURIComponent(author)}`)
       .then((res) => res.json())
@@ -122,6 +153,7 @@ export default function DiscoverPage() {
       setCandidates((prev) => prev.filter((c) => c.author !== candidate.author));
       if (direction === "superlike") {
         loadSuperLikesRemaining();
+        loadSuperLikeCredits();
       }
       if (direction === "like") {
         loadLikesRemaining();
@@ -156,6 +188,7 @@ export default function DiscoverPage() {
       setLastSwiped(null);
       setMatchNotice(null);
       loadSuperLikesRemaining();
+      loadSuperLikeCredits();
       loadLikesRemaining();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to undo");
@@ -258,9 +291,9 @@ export default function DiscoverPage() {
               </button>
               <button
                 onClick={() => swipe("superlike")}
-                disabled={busy || superLikesRemaining <= 0}
+                disabled={busy || superLikesRemaining + superLikeCredits <= 0}
                 style={{ fontSize: 24 }}
-                title={superLikesRemaining > 0 ? "Super Like" : "No Super Likes left today"}
+                title={superLikesRemaining + superLikeCredits > 0 ? "Super Like" : "No Super Likes left today"}
               >
                 ⭐
               </button>
@@ -274,9 +307,20 @@ export default function DiscoverPage() {
               </button>
             </div>
             <p style={{ color: "var(--color-muted)", fontSize: 12, marginTop: 8 }}>
-              {superLikesRemaining} Super Like{superLikesRemaining === 1 ? "" : "s"} &middot; {likesRemaining} Like
+              {superLikesRemaining + superLikeCredits} Super Like{superLikesRemaining + superLikeCredits === 1 ? "" : "s"}
+              {superLikeCredits > 0 && ` (${superLikeCredits} purchased)`} &middot; {likesRemaining} Like
               {likesRemaining === 1 ? "" : "s"} left today
             </p>
+            {superLikesRemaining <= 0 && superLikePackages.length > 0 && (
+              <div style={{ marginTop: 8, fontSize: 12 }}>
+                <span style={{ color: "var(--color-muted)" }}>Out of free Super Likes — buy more: </span>
+                {superLikePackages.map((p) => (
+                  <button key={p.id} onClick={() => purchaseSuperLikePackage(p.id)} style={{ marginLeft: 4 }}>
+                    {p.superLikes} for {p.coinCost} coins
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <p style={{ color: "var(--color-muted)", marginTop: 16 }}>No more profiles right now — check back later.</p>

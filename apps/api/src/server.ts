@@ -113,7 +113,7 @@ import { ProfileColorThemeStore, PROFILE_COLOR_THEMES } from "./profileColorThem
 import { AchievementsInfoStore } from "./achievementsInfo";
 import { DisplayNameModeStore, DISPLAY_NAME_MODES } from "./displayNameMode";
 import { StylizedAvatarStore, AVATAR_STYLES } from "./stylizedAvatar";
-import { SwipeStore } from "./swipes";
+import { SwipeStore, SUPER_LIKE_PACKAGES, findSuperLikePackage } from "./swipes";
 import { SmartScoreStore } from "./smartScore";
 import { DiscoveryFiltersStore, candidateMatchesFilters } from "./discoveryFilters";
 import { ExploreModeStore, candidateMatchesExploreMode } from "./exploreMode";
@@ -3076,6 +3076,33 @@ export function createApp(deps?: {
   // a match same as an ordinary like, but rate-limited per day.
   app.get("/api/super-likes-remaining/:author", (req, res) => {
     res.json({ remaining: swipeStore.getSuperLikesRemainingToday(req.params.author) });
+  });
+
+  // Tinder's real "Purchase a separate Super Like package" (#199) — see
+  // swipes.ts for the honest scoping (a purchased credit, priced in
+  // #196's coins, covers a Super Like once the free daily allowance
+  // above is used up).
+  app.get("/api/super-likes/packages", (_req, res) => {
+    res.json({ packages: SUPER_LIKE_PACKAGES });
+  });
+
+  app.get("/api/super-likes/:author/credits", (req, res) => {
+    res.json({ credits: swipeStore.getSuperLikeCredits(req.params.author) });
+  });
+
+  app.post("/api/super-likes/:author/purchase", (req, res) => {
+    const superLikePackage = findSuperLikePackage(req.body?.packageId);
+    if (!superLikePackage) {
+      res.status(400).json({ error: `packageId must be one of: ${SUPER_LIKE_PACKAGES.map((p) => p.id).join(", ")}` });
+      return;
+    }
+    const spendResult = coinStore.spend(req.params.author, superLikePackage.coinCost);
+    if (!spendResult.success) {
+      res.status(400).json({ error: spendResult.error });
+      return;
+    }
+    const credits = swipeStore.grantSuperLikeCredits(req.params.author, superLikePackage.superLikes);
+    res.status(201).json({ credits, package: superLikePackage });
   });
 
   // Coffee Meets Bagel/Tinder's real free-tier daily like limit (#116) —

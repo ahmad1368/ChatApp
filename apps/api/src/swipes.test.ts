@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SwipeStore } from "./swipes";
+import { SwipeStore, findSuperLikePackage } from "./swipes";
 
 const NEVER_BLOCKED = () => false;
 const NO_COMPATIBILITY = () => 0;
@@ -544,4 +544,53 @@ test("getMatchedAuthorCount() excludes an author after unmatch()", () => {
   store.recordSwipe("bob", "alice", "like");
   store.unmatch("alice", "bob");
   assert.equal(store.getMatchedAuthorCount(), 0);
+});
+
+test("findSuperLikePackage() resolves a known package id and returns undefined for an unknown one", () => {
+  assert.equal(findSuperLikePackage("single")?.superLikes, 1);
+  assert.equal(findSuperLikePackage("does-not-exist"), undefined);
+});
+
+test("getSuperLikeCredits() is 0 before any package is granted", () => {
+  const store = new SwipeStore();
+  assert.equal(store.getSuperLikeCredits("alice"), 0);
+});
+
+test("a superlike beyond the daily limit is rejected when there are no purchased credits", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "superlike");
+  const result = store.recordSwipe("alice", "carol", "superlike");
+  assert.equal(result.success, false);
+});
+
+test("a purchased credit covers a superlike once the daily limit is used up", () => {
+  const store = new SwipeStore();
+  store.grantSuperLikeCredits("alice", 1);
+  store.recordSwipe("alice", "bob", "superlike");
+
+  const result = store.recordSwipe("alice", "carol", "superlike");
+  assert.equal(result.success, true);
+  assert.equal(store.getSuperLikeCredits("alice"), 0);
+});
+
+test("undoLastSwipe() refunds a purchased credit (not the daily allowance) when that's what funded the superlike", () => {
+  const store = new SwipeStore();
+  store.grantSuperLikeCredits("alice", 1);
+  store.recordSwipe("alice", "bob", "superlike"); // uses the free daily allowance
+  store.recordSwipe("alice", "carol", "superlike"); // uses the purchased credit
+  assert.equal(store.getSuperLikeCredits("alice"), 0);
+
+  store.undoLastSwipe("alice");
+  assert.equal(store.getSuperLikeCredits("alice"), 1);
+  // The daily allowance is still exhausted — undoing the credit-funded
+  // swipe shouldn't also refund the free daily one.
+  assert.equal(store.getSuperLikesRemainingToday("alice"), 0);
+});
+
+test("undoLastSwipe() refunds the daily allowance (not a credit) when that's what funded the superlike", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "superlike");
+  store.undoLastSwipe("alice");
+  assert.equal(store.getSuperLikesRemainingToday("alice"), 1);
+  assert.equal(store.getSuperLikeCredits("alice"), 0);
 });
