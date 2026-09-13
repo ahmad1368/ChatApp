@@ -52,6 +52,7 @@ import { computeRetention } from "./retention";
 import { reportsToCsv, reportsToPdf } from "./reportExport";
 import { SubscriptionStore } from "./subscriptions";
 import { UpgradeCouponStore } from "./upgradeCoupons";
+import { ReferralStore, REFERRAL_REWARD_DAYS, REFERRAL_REWARD_TIER } from "./referrals";
 import { PaymentMethodStore } from "./paymentMethods";
 import { GooglePlayBillingBridge, parseGooglePlayRtdn } from "./googlePlayBilling";
 import { AppleAppStoreBridge, parseAppleNotification } from "./appleAppStore";
@@ -362,6 +363,7 @@ export function createApp(deps?: {
   const reportStore = new ReportStore();
   const subscriptionStore = new SubscriptionStore();
   const upgradeCouponStore = new UpgradeCouponStore();
+  const referralStore = new ReferralStore();
   const paymentMethodStore = new PaymentMethodStore();
   const googlePlayBillingBridge = new GooglePlayBillingBridge(subscriptionStore);
   const appleAppStoreBridge = new AppleAppStoreBridge(subscriptionStore);
@@ -2481,6 +2483,32 @@ export function createApp(deps?: {
       return;
     }
     res.json({ subscription: grantResult.subscription });
+  });
+
+  // Tinder's real "Referral system to invite friends for free
+  // subscription days" (#204) — see referrals.ts for the honest
+  // scoping. Redeeming a real, unique code actually credits both sides
+  // real #191 subscription days via #203's SubscriptionStore.
+  // extendOrGrant() (which extends rather than downgrades an already-
+  // active subscription), not a fabricated "invite sent" confirmation.
+  app.get("/api/referrals/:author/code", (req, res) => {
+    const code = referralStore.getOrCreateCode(req.params.author);
+    if (!code) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    res.json({ code, referralCount: referralStore.getReferralCount(req.params.author) });
+  });
+
+  app.post("/api/referrals/redeem", (req, res) => {
+    const result = referralStore.redeem(req.body?.code, req.body?.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    subscriptionStore.extendOrGrant(result.referrer, REFERRAL_REWARD_TIER, REFERRAL_REWARD_DAYS);
+    const refereeGrant = subscriptionStore.extendOrGrant(req.body?.author, REFERRAL_REWARD_TIER, REFERRAL_REWARD_DAYS);
+    res.json({ subscription: refereeGrant.success ? refereeGrant.subscription : null });
   });
 
   // Tinder's real "Premium subscription plans (Gold, Platinum, VIP)"
