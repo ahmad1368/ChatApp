@@ -7877,6 +7877,59 @@ test("Subscriptions (#191): GET /api/admin/subscriptions requires the admin key 
   }
 });
 
+test("Payment methods (#192): a user can add, list, set default, and remove a payment method on file", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const emptyRes = await fetch(`${baseUrl}/api/payment-methods/alice`);
+    assert.deepEqual(await emptyRes.json(), { methods: [] });
+
+    const invalidRes = await fetch(`${baseUrl}/api/payment-methods/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "card", brand: "Visa", last4: "not-4-digits" }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const firstRes = await fetch(`${baseUrl}/api/payment-methods/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "card", brand: "Visa", last4: "4242" }),
+    });
+    assert.equal(firstRes.status, 201);
+    const first = (await firstRes.json()).method;
+    assert.equal(first.isDefault, true);
+
+    const secondRes = await fetch(`${baseUrl}/api/payment-methods/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "bank", brand: "Chase", last4: "1234" }),
+    });
+    const second = (await secondRes.json()).method;
+    assert.equal(second.isDefault, false);
+
+    const setDefaultRes = await fetch(`${baseUrl}/api/payment-methods/alice/${second.id}/default`, { method: "PUT" });
+    assert.equal(setDefaultRes.status, 200);
+    const afterSetDefault = (await setDefaultRes.json()).methods;
+    assert.equal(afterSetDefault.find((m: { id: string }) => m.id === second.id).isDefault, true);
+
+    const missingSetDefaultRes = await fetch(`${baseUrl}/api/payment-methods/alice/does-not-exist/default`, { method: "PUT" });
+    assert.equal(missingSetDefaultRes.status, 404);
+
+    const removeRes = await fetch(`${baseUrl}/api/payment-methods/alice/${first.id}`, { method: "DELETE" });
+    assert.equal(removeRes.status, 204);
+
+    const listRes = await fetch(`${baseUrl}/api/payment-methods/alice`);
+    const list = (await listRes.json()).methods;
+    assert.equal(list.length, 1);
+    assert.equal(list[0].id, second.id);
+
+    const missingRemoveRes = await fetch(`${baseUrl}/api/payment-methods/alice/does-not-exist`, { method: "DELETE" });
+    assert.equal(missingRemoveRes.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

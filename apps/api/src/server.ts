@@ -51,6 +51,7 @@ import { ExperimentStore } from "./experiments";
 import { computeRetention } from "./retention";
 import { reportsToCsv, reportsToPdf } from "./reportExport";
 import { SubscriptionStore } from "./subscriptions";
+import { PaymentMethodStore } from "./paymentMethods";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -343,6 +344,7 @@ export function createApp(deps?: {
   const onboardingStore = new OnboardingStore(verificationStore, discoveryBoundariesStore);
   const reportStore = new ReportStore();
   const subscriptionStore = new SubscriptionStore();
+  const paymentMethodStore = new PaymentMethodStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2402,6 +2404,42 @@ export function createApp(deps?: {
   app.get("/api/admin/subscriptions", (req, res) => {
     if (!requireAdmin(req, res)) return;
     res.json({ subscriptions: subscriptionStore.listActive() });
+  });
+
+  // Raya's real "In-app credit/bank payment gateway" (#192) — see
+  // paymentMethods.ts for the honest scoping (a real payment-method-
+  // on-file record — brand + last 4 only, never a full card/account
+  // number — with no actual charge network call, since there's no
+  // payment processor credentialed here).
+  app.get("/api/payment-methods/:author", (req, res) => {
+    res.json({ methods: paymentMethodStore.list(req.params.author) });
+  });
+
+  app.post("/api/payment-methods/:author", (req, res) => {
+    const result = paymentMethodStore.add(req.params.author, req.body?.type, req.body?.brand, req.body?.last4);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ method: result.method });
+  });
+
+  app.put("/api/payment-methods/:author/:methodId/default", (req, res) => {
+    const updated = paymentMethodStore.setDefault(req.params.author, req.params.methodId);
+    if (!updated) {
+      res.status(404).json({ error: "Payment method not found" });
+      return;
+    }
+    res.json({ methods: paymentMethodStore.list(req.params.author) });
+  });
+
+  app.delete("/api/payment-methods/:author/:methodId", (req, res) => {
+    const removed = paymentMethodStore.remove(req.params.author, req.params.methodId);
+    if (!removed) {
+      res.status(404).json({ error: "Payment method not found" });
+      return;
+    }
+    res.status(204).send();
   });
 
   // Bumble's real "Send broadcast messages and notifications" (#178) —
