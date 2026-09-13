@@ -994,3 +994,60 @@ test("GET /api/admin/server-health (#186) requires the admin key and reports a l
     else process.env.ADMIN_API_KEY = previous;
   }
 });
+
+test("Virtual gifts (#197): message:send is rejected with invalid_gift for an unknown giftId", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    client.emit("join", "room-1");
+    const rejected = waitFor<{ reason?: string }>(client, "message:rejected");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "", giftId: "not-a-real-gift" });
+    const payload = await rejected;
+    assert.equal(payload.reason, "invalid_gift");
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
+
+test("Virtual gifts (#197): message:send is rejected with insufficient_coins when the sender hasn't bought any", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    client.emit("join", "room-1");
+    const rejected = waitFor<{ reason?: string }>(client, "message:rejected");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "", giftId: "rose" });
+    const payload = await rejected;
+    assert.equal(payload.reason, "insufficient_coins");
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
+
+test("Virtual gifts (#197): a sender with enough coins can send a gift, which debits the balance and carries the real cost/emoji", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "small" }),
+    });
+
+    client.emit("join", "room-1");
+    const received = waitFor<{ gift?: { id: string; cost: number; emoji: string }; text: string }>(client, "message:new");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "", giftId: "rose" });
+    const message = await received;
+
+    assert.equal(message.gift?.id, "rose");
+    assert.equal(message.gift?.cost, 20);
+    assert.ok(message.text.includes(message.gift?.emoji ?? ""));
+
+    const balanceRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.equal((await balanceRes.json()).balance, 80);
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
