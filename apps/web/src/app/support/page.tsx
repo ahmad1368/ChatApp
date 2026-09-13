@@ -135,6 +135,9 @@ export default function SupportPage() {
         <li>
           <Link href="/daily-spin">Spin the daily wheel for free coins</Link>
         </li>
+        <li>
+          <Link href="/login-streak">Check in daily for streak rewards</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>

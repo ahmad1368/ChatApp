@@ -10828,3 +10828,43 @@ test("Daily Spin wheel (#211): spinning once credits coins, a second spin the sa
     server.close();
   }
 });
+
+test("Login streak (#212): checking in awards day-1 coins, a same-day repeat is idempotent, and status reflects the streak", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const initialStatusRes = await fetch(`${baseUrl}/api/login-streak/alice`);
+    const initialStatus = await initialStatusRes.json();
+    assert.equal(initialStatus.streak, 0);
+    assert.equal(initialStatus.lastCheckInDate, null);
+    assert.ok(initialStatus.rewards.length > 0);
+
+    const checkInRes = await fetch(`${baseUrl}/api/login-streak/alice/check-in`, { method: "POST" });
+    assert.equal(checkInRes.status, 200);
+    const checkInBody = await checkInRes.json();
+    assert.equal(checkInBody.streak, 1);
+    assert.equal(checkInBody.coinsAwarded, initialStatus.rewards[0].coins);
+    assert.equal(checkInBody.alreadyCheckedInToday, false);
+
+    const balanceRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.equal((await balanceRes.json()).balance, checkInBody.coinsAwarded);
+
+    const repeatCheckInRes = await fetch(`${baseUrl}/api/login-streak/alice/check-in`, { method: "POST" });
+    assert.equal(repeatCheckInRes.status, 200);
+    const repeatCheckInBody = await repeatCheckInRes.json();
+    assert.equal(repeatCheckInBody.coinsAwarded, 0);
+    assert.equal(repeatCheckInBody.alreadyCheckedInToday, true);
+
+    const balanceAfterRepeatRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.equal((await balanceAfterRepeatRes.json()).balance, checkInBody.coinsAwarded);
+
+    const statusAfterCheckInRes = await fetch(`${baseUrl}/api/login-streak/alice`);
+    const statusAfterCheckIn = await statusAfterCheckInRes.json();
+    assert.equal(statusAfterCheckIn.streak, 1);
+    assert.ok(statusAfterCheckIn.lastCheckInDate);
+
+    const otherAuthorStatusRes = await fetch(`${baseUrl}/api/login-streak/bob`);
+    assert.equal((await otherAuthorStatusRes.json()).streak, 0);
+  } finally {
+    server.close();
+  }
+});
