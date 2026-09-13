@@ -7434,6 +7434,99 @@ test("Discovery boundaries (#183): PUT /api/admin/discovery-boundaries requires 
   }
 });
 
+test("Transaction log (#185): requires the admin key, validates, logs a purchase, and lists it", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/transactions`);
+    assert.equal(noKeyRes.status, 401);
+
+    const invalidRes = await fetch(`${baseUrl}/api/admin/transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ author: "alice", amountCents: -5, description: "Gold plan" }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const createRes = await fetch(`${baseUrl}/api/admin/transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ author: "alice", amountCents: 999, description: "Gold plan (monthly)" }),
+    });
+    assert.equal(createRes.status, 201);
+    const created = await createRes.json();
+    assert.equal(created.type, "purchase");
+    assert.equal(created.amountCents, 999);
+
+    const listRes = await fetch(`${baseUrl}/api/admin/transactions`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const listBody = await listRes.json();
+    assert.equal(listBody.transactions.length, 1);
+    assert.equal(listBody.transactions[0].id, created.id);
+
+    const filteredRes = await fetch(`${baseUrl}/api/admin/transactions?author=bob`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.deepEqual((await filteredRes.json()).transactions, []);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Transaction log (#185): POST /api/admin/transactions/:id/refund marks the purchase refunded and logs a linked entry", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/admin/transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ author: "alice", amountCents: 999, description: "Gold plan (monthly)" }),
+    });
+    const created = await createRes.json();
+
+    const noKeyRefundRes = await fetch(`${baseUrl}/api/admin/transactions/${created.id}/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "customer request" }),
+    });
+    assert.equal(noKeyRefundRes.status, 401);
+
+    const missingRes = await fetch(`${baseUrl}/api/admin/transactions/does-not-exist/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reason: "customer request" }),
+    });
+    assert.equal(missingRes.status, 404);
+
+    const refundRes = await fetch(`${baseUrl}/api/admin/transactions/${created.id}/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reason: "customer request" }),
+    });
+    assert.equal(refundRes.status, 201);
+    const refund = await refundRes.json();
+    assert.equal(refund.type, "refund");
+    assert.equal(refund.amountCents, -999);
+    assert.equal(refund.relatedTransactionId, created.id);
+
+    const secondRefundRes = await fetch(`${baseUrl}/api/admin/transactions/${created.id}/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reason: "trying again" }),
+    });
+    assert.equal(secondRefundRes.status, 400);
+
+    const listRes = await fetch(`${baseUrl}/api/admin/transactions`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const listBody = await listRes.json();
+    assert.equal(listBody.transactions.length, 2);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

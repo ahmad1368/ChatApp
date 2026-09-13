@@ -44,6 +44,7 @@ import { GenderInfoStore } from "./genderInfo";
 import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
 import { VerificationStore } from "./verification";
 import { DiscoveryBoundariesStore } from "./discoveryBoundaries";
+import { TransactionLogStore } from "./transactionLog";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -169,6 +170,7 @@ export function createApp(deps?: {
   webAuthnService: WebAuthnService;
   onboardingStore: OnboardingStore;
   discoveryBoundariesStore: DiscoveryBoundariesStore;
+  transactionLogStore: TransactionLogStore;
   verificationStore: VerificationStore;
   banStore: BanStore;
   pricingPlanStore: PricingPlanStore;
@@ -307,6 +309,7 @@ export function createApp(deps?: {
   const broadcastStore = new BroadcastStore();
   const supportTicketStore = new SupportTicketStore();
   const discoveryBoundariesStore = new DiscoveryBoundariesStore();
+  const transactionLogStore = new TransactionLogStore();
   const onboardingStore = new OnboardingStore(verificationStore, discoveryBoundariesStore);
   const reportStore = new ReportStore();
   const messageDraftStore = new MessageDraftStore();
@@ -2944,6 +2947,37 @@ export function createApp(deps?: {
     res.json(result.boundaries);
   });
 
+  // Tinder's real "Detailed logging of all financial transactions and
+  // refunds" (#185) — see transactionLog.ts for the honest scoping (a
+  // manual ledger, since this app has no integrated payment processor
+  // yet). Gated the same admin-key way as #171-184.
+  app.get("/api/admin/transactions", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const author = typeof req.query.author === "string" ? req.query.author : undefined;
+    const type = req.query.type === "purchase" || req.query.type === "refund" ? req.query.type : undefined;
+    res.json({ transactions: transactionLogStore.list({ author, type }) });
+  });
+
+  app.post("/api/admin/transactions", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = transactionLogStore.logPurchase(req.body?.author, req.body?.amountCents, req.body?.description);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.transaction);
+  });
+
+  app.post("/api/admin/transactions/:transactionId/refund", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = transactionLogStore.refund(req.params.transactionId, req.body?.reason);
+    if (!result.success) {
+      res.status(result.error === "Transaction not found" ? 404 : 400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.refund);
+  });
+
   // Two orthogonal, backward-compatible filters on top of the full history:
   // `since` (ISO timestamp) lets a reconnecting client fetch only the
   // messages it missed. `limit` opts into cursor pagination instead — the
@@ -3908,6 +3942,7 @@ export function createApp(deps?: {
     webAuthnService,
     onboardingStore,
     discoveryBoundariesStore,
+    transactionLogStore,
     verificationStore,
     banStore,
     pricingPlanStore,
