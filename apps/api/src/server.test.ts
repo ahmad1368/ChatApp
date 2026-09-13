@@ -10929,3 +10929,54 @@ test("Achievement badges (#213): a 100%-complete profile awards the Profile Perf
     server.close();
   }
 });
+
+test("Daily poll (#214): voting records a choice, rejects a second vote the same day, and the aggregate reflects both voters", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const initialStatusRes = await fetch(`${baseUrl}/api/daily-poll/alice`);
+    const initialStatus = await initialStatusRes.json();
+    assert.equal(initialStatus.myVote, null);
+    assert.equal(initialStatus.totalVotes, 0);
+    const optionId = initialStatus.poll.options[0].id;
+
+    const invalidVoteRes = await fetch(`${baseUrl}/api/daily-poll/alice/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ optionId: "not-a-real-option" }),
+    });
+    assert.equal(invalidVoteRes.status, 400);
+
+    const voteRes = await fetch(`${baseUrl}/api/daily-poll/alice/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ optionId }),
+    });
+    assert.equal(voteRes.status, 200);
+    const voteBody = await voteRes.json();
+    assert.equal(voteBody.myVote, optionId);
+    assert.equal(voteBody.totalVotes, 1);
+
+    const repeatVoteRes = await fetch(`${baseUrl}/api/daily-poll/alice/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ optionId }),
+    });
+    assert.equal(repeatVoteRes.status, 400);
+
+    const secondOptionId = initialStatus.poll.options[1].id;
+    await fetch(`${baseUrl}/api/daily-poll/bob/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ optionId: secondOptionId }),
+    });
+
+    const bobStatusRes = await fetch(`${baseUrl}/api/daily-poll/bob`);
+    const bobStatus = await bobStatusRes.json();
+    assert.equal(bobStatus.myVote, secondOptionId);
+    assert.equal(bobStatus.totalVotes, 2);
+    assert.equal(bobStatus.results.find((r: { id: string }) => r.id === optionId)?.votes, 1);
+    assert.equal(bobStatus.results.find((r: { id: string }) => r.id === secondOptionId)?.votes, 1);
+  } finally {
+    server.close();
+  }
+});

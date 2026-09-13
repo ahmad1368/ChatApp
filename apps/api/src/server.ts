@@ -63,6 +63,7 @@ import { CoinStore, COIN_PACKAGES } from "./coins";
 import { DailySpinStore } from "./dailySpin";
 import { LoginStreakStore } from "./loginStreak";
 import { AchievementBadgeStore, ACHIEVEMENT_BADGES } from "./achievementBadges";
+import { DailyPollStore } from "./dailyPolls";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -272,6 +273,7 @@ export function createApp(deps?: {
   dailySpinStore: DailySpinStore;
   loginStreakStore: LoginStreakStore;
   achievementBadgeStore: AchievementBadgeStore;
+  dailyPollStore: DailyPollStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -382,6 +384,7 @@ export function createApp(deps?: {
   const dailySpinStore = new DailySpinStore();
   const loginStreakStore = new LoginStreakStore();
   const achievementBadgeStore = new AchievementBadgeStore();
+  const dailyPollStore = new DailyPollStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2975,6 +2978,23 @@ export function createApp(deps?: {
     res.json({ earned: achievementBadgeStore.getEarnedBadges(req.params.author) });
   });
 
+  // OkCupid's real "Daily polls focused on relationships and
+  // personality" (#214) — see dailyPolls.ts for the honest scoping (one
+  // shared question per UTC day, cycled from a fixed catalog, with a
+  // real aggregate percentage breakdown once an author has voted).
+  app.get("/api/daily-poll/:author", (req, res) => {
+    res.json(dailyPollStore.getStatus(req.params.author));
+  });
+
+  app.post("/api/daily-poll/:author/vote", (req, res) => {
+    const result = dailyPollStore.vote(req.params.author, req.body?.optionId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(result.status);
+  });
+
   // Bumble's real "Send broadcast messages and notifications" (#178) —
   // reuses PushService.broadcast() (every currently-subscribed device,
   // no exclusion) and records one #159 in-app inbox entry per recipient
@@ -4887,6 +4907,7 @@ export function createApp(deps?: {
     dailySpinStore,
     loginStreakStore,
     achievementBadgeStore,
+    dailyPollStore,
   };
 }
 
