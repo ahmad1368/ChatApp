@@ -84,6 +84,12 @@ export default function AdminDashboardPage() {
         {" · "}
         <Link href="/admin/discovery-boundaries">Discovery radius boundaries &rarr;</Link>
         {" · "}
+        <Link href="/admin/allowed-domains">Allowed domains &rarr;</Link>
+        {" · "}
+        <Link href="/admin/transactions">Financial transactions &rarr;</Link>
+        {" · "}
+        <Link href="/admin/server-health">Server health &rarr;</Link>
+        {" · "}
         <Link href="/admin/roles">Admin access roles &rarr;</Link>
       </p>
 

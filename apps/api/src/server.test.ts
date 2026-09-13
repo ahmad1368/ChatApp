@@ -7434,6 +7434,170 @@ test("Discovery boundaries (#183): PUT /api/admin/discovery-boundaries requires 
   }
 });
 
+test("Allowed domains (#184): empty allowlist permits any origin, and admin can add/list/remove entries", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/allowed-domains`);
+    assert.equal(noKeyRes.status, 401);
+
+    const emptyListRes = await fetch(`${baseUrl}/api/admin/allowed-domains`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.deepEqual((await emptyListRes.json()).origins, []);
+
+    const invalidRes = await fetch(`${baseUrl}/api/admin/allowed-domains`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ origin: "not-a-url" }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const addRes = await fetch(`${baseUrl}/api/admin/allowed-domains`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ origin: "https://chatapp.example/" }),
+    });
+    assert.equal(addRes.status, 201);
+    assert.equal((await addRes.json()).origin, "https://chatapp.example");
+
+    const listRes = await fetch(`${baseUrl}/api/admin/allowed-domains`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.deepEqual((await listRes.json()).origins, ["https://chatapp.example"]);
+
+    const deleteRes = await fetch(`${baseUrl}/api/admin/allowed-domains/${encodeURIComponent("https://chatapp.example")}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(deleteRes.status, 204);
+
+    const secondDeleteRes = await fetch(`${baseUrl}/api/admin/allowed-domains/${encodeURIComponent("https://chatapp.example")}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(secondDeleteRes.status, 404);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Allowed domains (#184): once a domain is added, CORS actually rejects a request from an unlisted origin", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/admin/allowed-domains`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ origin: "https://allowed.example" }),
+    });
+
+    const allowedRes = await fetch(`${baseUrl}/health`, { headers: { Origin: "https://allowed.example" } });
+    assert.equal(allowedRes.status, 200);
+    assert.equal(allowedRes.headers.get("access-control-allow-origin"), "https://allowed.example");
+
+    const blockedRes = await fetch(`${baseUrl}/health`, { headers: { Origin: "https://evil.example" } });
+    assert.equal(blockedRes.headers.get("access-control-allow-origin"), null);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Transaction log (#185): requires the admin key, validates, logs a purchase, and lists it", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/transactions`);
+    assert.equal(noKeyRes.status, 401);
+
+    const invalidRes = await fetch(`${baseUrl}/api/admin/transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ author: "alice", amountCents: -5, description: "Gold plan" }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const createRes = await fetch(`${baseUrl}/api/admin/transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ author: "alice", amountCents: 999, description: "Gold plan (monthly)" }),
+    });
+    assert.equal(createRes.status, 201);
+    const created = await createRes.json();
+    assert.equal(created.type, "purchase");
+    assert.equal(created.amountCents, 999);
+
+    const listRes = await fetch(`${baseUrl}/api/admin/transactions`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const listBody = await listRes.json();
+    assert.equal(listBody.transactions.length, 1);
+    assert.equal(listBody.transactions[0].id, created.id);
+
+    const filteredRes = await fetch(`${baseUrl}/api/admin/transactions?author=bob`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.deepEqual((await filteredRes.json()).transactions, []);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("Transaction log (#185): POST /api/admin/transactions/:id/refund marks the purchase refunded and logs a linked entry", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/admin/transactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ author: "alice", amountCents: 999, description: "Gold plan (monthly)" }),
+    });
+    const created = await createRes.json();
+
+    const noKeyRefundRes = await fetch(`${baseUrl}/api/admin/transactions/${created.id}/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "customer request" }),
+    });
+    assert.equal(noKeyRefundRes.status, 401);
+
+    const missingRes = await fetch(`${baseUrl}/api/admin/transactions/does-not-exist/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reason: "customer request" }),
+    });
+    assert.equal(missingRes.status, 404);
+
+    const refundRes = await fetch(`${baseUrl}/api/admin/transactions/${created.id}/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reason: "customer request" }),
+    });
+    assert.equal(refundRes.status, 201);
+    const refund = await refundRes.json();
+    assert.equal(refund.type, "refund");
+    assert.equal(refund.amountCents, -999);
+    assert.equal(refund.relatedTransactionId, created.id);
+
+    const secondRefundRes = await fetch(`${baseUrl}/api/admin/transactions/${created.id}/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reason: "trying again" }),
+    });
+    assert.equal(secondRefundRes.status, 400);
+
+    const listRes = await fetch(`${baseUrl}/api/admin/transactions`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const listBody = await listRes.json();
+    assert.equal(listBody.transactions.length, 2);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("Admin RBAC (#187): the master admin key acts as superadmin and can create/list/revoke role accounts", async () => {
   const previous = process.env.ADMIN_API_KEY;
   process.env.ADMIN_API_KEY = "test-admin-secret";
