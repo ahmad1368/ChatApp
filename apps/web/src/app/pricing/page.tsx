@@ -5,6 +5,8 @@ import Link from "next/link";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+const SUBSCRIPTION_TIERS = ["gold", "platinum", "vip"] as const;
+
 interface Plan {
   id: string;
   name: string;
@@ -13,23 +15,53 @@ interface Plan {
   features: string[];
 }
 
+interface Subscription {
+  tier: (typeof SUBSCRIPTION_TIERS)[number];
+  expiresAt: string;
+}
+
 /**
  * Bumble's real pricing page (#177) — lists whatever plans an admin has
  * published via /admin/pricing, plus a promo-code check. There's no real
  * checkout behind this (this app has no payment processor), so "Redeem"
  * only validates the code and records the usage rather than pretending
- * to charge a card — see discountCodes.ts.
+ * to charge a card — see discountCodes.ts. The Premium section below is
+ * #191's real named-tier subscription (Gold/Platinum/VIP) — see
+ * subscriptions.ts for why "Subscribe" activates immediately instead of
+ * charging anything.
  */
 export default function PricingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [code, setCode] = useState("");
   const [result, setResult] = useState<string | null>(null);
+  const [author, setAuthor] = useState("");
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/api/pricing-plans`)
       .then((r) => r.json())
       .then((body) => setPlans(body.plans ?? []));
   }, []);
+
+  const loadSubscription = async () => {
+    const res = await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}`);
+    const body = await res.json().catch(() => ({}));
+    setSubscription(body.subscription ?? null);
+  };
+
+  const subscribe = async (tier: (typeof SUBSCRIPTION_TIERS)[number]) => {
+    await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier }),
+    });
+    loadSubscription();
+  };
+
+  const cancelSubscription = async () => {
+    await fetch(`${API_URL}/api/subscriptions/${encodeURIComponent(author)}`, { method: "DELETE" });
+    setSubscription(null);
+  };
 
   const redeem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,6 +118,34 @@ export default function PricingPage() {
         </button>
       </form>
       {result && <p style={{ marginTop: 8, fontSize: 13 }}>{result}</p>}
+
+      <h1 style={{ marginTop: 32 }}>Premium</h1>
+      <input
+        type="text"
+        value={author}
+        onChange={(e) => setAuthor(e.target.value)}
+        onBlur={loadSubscription}
+        placeholder="Your name"
+        style={{ width: "100%", padding: 8, marginBottom: 12, boxSizing: "border-box" }}
+      />
+
+      {subscription ? (
+        <p>
+          You're subscribed to <strong>{subscription.tier}</strong> until {new Date(subscription.expiresAt).toLocaleDateString()}.{" "}
+          <button onClick={cancelSubscription}>Cancel</button>
+        </p>
+      ) : (
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {SUBSCRIPTION_TIERS.map((tier) => (
+            <div key={tier} style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 16, flex: "1 1 150px" }}>
+              <h2 style={{ fontSize: 18, marginTop: 0, textTransform: "capitalize" }}>{tier}</h2>
+              <button onClick={() => subscribe(tier)} disabled={!author}>
+                Subscribe
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </main>
   );
 }

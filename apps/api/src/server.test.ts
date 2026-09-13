@@ -7812,6 +7812,71 @@ test("Report export (#190): requires the admin key and exports a real CSV and PD
   }
 });
 
+test("Subscriptions (#191): a user can subscribe to a named tier, see its status, and cancel it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const noneRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    assert.deepEqual(await noneRes.json(), { subscription: null });
+
+    const invalidRes = await fetch(`${baseUrl}/api/subscriptions/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "diamond" }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const subscribeRes = await fetch(`${baseUrl}/api/subscriptions/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "gold" }),
+    });
+    assert.equal(subscribeRes.status, 201);
+    const created = await subscribeRes.json();
+    assert.equal(created.subscription.tier, "gold");
+
+    const statusRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    const status = await statusRes.json();
+    assert.equal(status.subscription.tier, "gold");
+
+    const cancelRes = await fetch(`${baseUrl}/api/subscriptions/alice`, { method: "DELETE" });
+    assert.equal(cancelRes.status, 204);
+
+    const afterCancelRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    assert.deepEqual(await afterCancelRes.json(), { subscription: null });
+
+    const secondCancelRes = await fetch(`${baseUrl}/api/subscriptions/alice`, { method: "DELETE" });
+    assert.equal(secondCancelRes.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("Subscriptions (#191): GET /api/admin/subscriptions requires the admin key and lists active subscribers", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/subscriptions`);
+    assert.equal(noKeyRes.status, 401);
+
+    await fetch(`${baseUrl}/api/subscriptions/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "vip" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/subscriptions`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.subscriptions.length, 1);
+    assert.equal(body.subscriptions[0].tier, "vip");
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {
