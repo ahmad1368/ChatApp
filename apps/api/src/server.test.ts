@@ -8530,6 +8530,35 @@ test("Auto-renewable subscriptions (#206): subscribe() defaults to autoRenew on,
   }
 });
 
+test("Cancel from within the app (#207): cancelling keeps access until the real period end instead of revoking it immediately", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const missingRes = await fetch(`${baseUrl}/api/subscriptions/alice/cancel`, { method: "POST" });
+    assert.equal(missingRes.status, 404);
+
+    const subscribeRes = await fetch(`${baseUrl}/api/subscriptions/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "gold" }),
+    });
+    const subscribed = (await subscribeRes.json()).subscription;
+
+    const cancelRes = await fetch(`${baseUrl}/api/subscriptions/alice/cancel`, { method: "POST" });
+    assert.equal(cancelRes.status, 200);
+    assert.equal((await cancelRes.json()).expiresAt, subscribed.expiresAt);
+
+    // Access is retained right after cancelling — this isn't an
+    // immediate hard removal like DELETE /api/subscriptions/:author.
+    const statusRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    const status = (await statusRes.json()).subscription;
+    assert.ok(status);
+    assert.equal(status.autoRenew, false);
+    assert.equal(status.tier, "gold");
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {
