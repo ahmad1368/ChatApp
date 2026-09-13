@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ProfileBoostStore, BOOST_DURATION_MS } from "./profileBoost";
+import { ProfileBoostStore, BOOST_DURATION_MS, BOOST_PACKAGES, findBoostPackage } from "./profileBoost";
 
 test("isBoosted() is false before any activation", () => {
   const store = new ProfileBoostStore();
@@ -86,4 +86,51 @@ test("getBoostLevel() ranks superboost above boost, and boost above nothing", ()
   store.activateBoost("bob", "superboost", now);
   assert.ok(store.getBoostLevel("bob", now) > store.getBoostLevel("alice", now));
   assert.ok(store.getBoostLevel("alice", now) > store.getBoostLevel("carol", now));
+});
+
+test("findBoostPackage() resolves a known package id and returns undefined for an unknown one", () => {
+  assert.equal(findBoostPackage("single")?.boosts, 1);
+  assert.equal(findBoostPackage("does-not-exist"), undefined);
+});
+
+test("getCredits() is 0 before any package is granted", () => {
+  const store = new ProfileBoostStore();
+  assert.equal(store.getCredits("alice"), 0);
+});
+
+test("grantCredits() accumulates across multiple grants", () => {
+  const store = new ProfileBoostStore();
+  store.grantCredits("alice", BOOST_PACKAGES[0].boosts);
+  const total = store.grantCredits("alice", BOOST_PACKAGES[1].boosts);
+  assert.equal(total, BOOST_PACKAGES[0].boosts + BOOST_PACKAGES[1].boosts);
+});
+
+test("activateBoostWithCredit() rejects a missing author or a zero credit balance", () => {
+  const store = new ProfileBoostStore();
+  assert.equal(store.activateBoostWithCredit("", "boost").success, false);
+  assert.equal(store.activateBoostWithCredit("alice", "boost").success, false);
+});
+
+test("activateBoostWithCredit() consumes exactly one credit per successful activation", () => {
+  const store = new ProfileBoostStore();
+  store.grantCredits("alice", 2);
+
+  const first = store.activateBoostWithCredit("alice", "boost");
+  assert.equal(first.success, true);
+  assert.equal(store.getCredits("alice"), 1);
+
+  const second = store.activateBoostWithCredit("alice", "superboost");
+  assert.equal(second.success, true);
+  assert.equal(store.getCredits("alice"), 0);
+
+  const third = store.activateBoostWithCredit("alice", "boost");
+  assert.equal(third.success, false);
+});
+
+test("activateBoostWithCredit() actually activates the boost, same as the free path", () => {
+  const store = new ProfileBoostStore();
+  store.grantCredits("alice", 1);
+  store.activateBoostWithCredit("alice", "superboost");
+  assert.equal(store.isBoosted("alice"), true);
+  assert.equal(store.getStatus("alice").tier, "superboost");
 });

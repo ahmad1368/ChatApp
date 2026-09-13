@@ -8129,6 +8129,65 @@ test("Coin packages (#196): the fixed catalog is listed, and a user can purchase
   }
 });
 
+test("Boost packages (#198): purchasing a package spends coins and credits boosts, which activate-with-credit then consumes", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const packagesRes = await fetch(`${baseUrl}/api/profile-boost/packages`);
+    const packages = (await packagesRes.json()).packages;
+    assert.ok(packages.length >= 2);
+
+    const emptyCreditsRes = await fetch(`${baseUrl}/api/profile-boost/alice/credits`);
+    assert.deepEqual(await emptyCreditsRes.json(), { credits: 0 });
+
+    const invalidPurchaseRes = await fetch(`${baseUrl}/api/profile-boost/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "jumbo" }),
+    });
+    assert.equal(invalidPurchaseRes.status, 400);
+
+    const insufficientCoinsRes = await fetch(`${baseUrl}/api/profile-boost/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: packages[0].id }),
+    });
+    assert.equal(insufficientCoinsRes.status, 400);
+
+    await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "medium" }),
+    });
+
+    const purchaseRes = await fetch(`${baseUrl}/api/profile-boost/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: packages[0].id }),
+    });
+    assert.equal(purchaseRes.status, 201);
+    const afterPurchase = await purchaseRes.json();
+    assert.equal(afterPurchase.credits, packages[0].boosts);
+
+    const coinBalanceRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.equal((await coinBalanceRes.json()).balance, 550 - packages[0].coinCost);
+
+    const activateRes = await fetch(`${baseUrl}/api/profile-boost/alice/activate-with-credit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "boost" }),
+    });
+    assert.equal(activateRes.status, 201);
+
+    const statusRes = await fetch(`${baseUrl}/api/profile-boost/alice`);
+    assert.equal((await statusRes.json()).active, true);
+
+    const creditsAfterRes = await fetch(`${baseUrl}/api/profile-boost/alice/credits`);
+    assert.equal((await creditsAfterRes.json()).credits, packages[0].boosts - 1);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

@@ -13,6 +13,12 @@ function formatRemaining(ms: number): string {
 
 const TIER_LABELS: Record<string, string> = { boost: "🚀 Boost", superboost: "⚡ Super Boost" };
 
+interface BoostPackage {
+  id: string;
+  boosts: number;
+  coinCost: number;
+}
+
 /**
  * Tinder's real "Boost"/"Super Boost" (#105, extended by #106): activating
  * puts this author at the front of everyone else's discovery order for 30
@@ -20,8 +26,11 @@ const TIER_LABELS: Record<string, string> = { boost: "🚀 Boost", superboost: "
  * and swipes.ts's getCandidates for the ranking rule. The peak-hours hint
  * is #106's "smart" half: it tells the user when boosting will actually
  * reach the most people, based on real recorded swipe activity (see
- * peakHours.ts) rather than leaving them to guess. Free here since this
- * app has no premium tier to gate either behind.
+ * peakHours.ts) rather than leaving them to guess. The buttons above stay
+ * free, exactly as #105/#106 shipped them; #198's "Purchase a single
+ * Boost or Boost package" adds the section below — a real coin-priced
+ * package that credits a boost the "Use a boost credit" button then
+ * draws down, the purchasable alternative real Tinder also has.
  */
 export default function ProfileBoost({ author }: { author: string }) {
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -30,6 +39,8 @@ export default function ProfileBoost({ author }: { author: string }) {
   const [isPeakHourNow, setIsPeakHourNow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [packages, setPackages] = useState<BoostPackage[]>([]);
+  const [credits, setCredits] = useState(0);
   const tickRef = useRef<ReturnType<typeof setInterval>>();
 
   const load = () => {
@@ -42,7 +53,62 @@ export default function ProfileBoost({ author }: { author: string }) {
       .catch(() => {});
   };
 
+  const loadCredits = () => {
+    fetch(`${API_URL}/api/profile-boost/${encodeURIComponent(author)}/credits`)
+      .then((res) => res.json())
+      .then((body) => setCredits(body.credits ?? 0))
+      .catch(() => {});
+  };
+
   useEffect(load, [author]);
+  useEffect(loadCredits, [author]);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/profile-boost/packages`)
+      .then((res) => res.json())
+      .then((body) => setPackages(body.packages ?? []))
+      .catch(() => {});
+  }, []);
+
+  const purchasePackage = async (packageId: string) => {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/profile-boost/${encodeURIComponent(author)}/purchase`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packageId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Failed to purchase boost package");
+      setCredits(body.credits);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to purchase boost package");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const activateWithCredit = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/profile-boost/${encodeURIComponent(author)}/activate-with-credit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier: "boost" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Failed to activate Boost");
+      setExpiresAt(body.expiresAt);
+      setTier(body.tier);
+      loadCredits();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to activate Boost");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     fetch(`${API_URL}/api/peak-hours`)
@@ -111,6 +177,24 @@ export default function ProfileBoost({ author }: { author: string }) {
         </>
       )}
       {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
+
+      <div style={{ marginTop: 12, fontSize: 12 }}>
+        <p style={{ color: "var(--color-muted)", margin: "0 0 4px" }}>
+          Or buy a boost package with coins — {credits} credit{credits === 1 ? "" : "s"} available
+          {credits > 0 && !active && (
+            <button onClick={activateWithCredit} disabled={busy} style={{ marginLeft: 8 }}>
+              Use a credit
+            </button>
+          )}
+        </p>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          {packages.map((p) => (
+            <button key={p.id} onClick={() => purchasePackage(p.id)} disabled={busy}>
+              {p.boosts} boost{p.boosts === 1 ? "" : "s"} · {p.coinCost} coins
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

@@ -120,7 +120,7 @@ import { ExploreModeStore, candidateMatchesExploreMode } from "./exploreMode";
 import { ExploreThemeStore } from "./exploreThemes";
 import { TopPicksStore } from "./topPicks";
 import { ProfileVisitsStore } from "./profileVisits";
-import { ProfileBoostStore } from "./profileBoost";
+import { ProfileBoostStore, BOOST_PACKAGES, findBoostPackage } from "./profileBoost";
 import { PeakHoursStore } from "./peakHours";
 import { scanCandidateForFakeProfile } from "./fakeProfileDetector";
 import { isSenderPhotoSuspicious } from "./photoWarning";
@@ -1691,8 +1691,46 @@ export function createApp(deps?: {
     res.status(201).json({ tier: result.tier, expiresAt: result.expiresAt });
   });
 
+  // Tinder's real "Purchase a single Boost or Boost package" (#198) —
+  // see profileBoost.ts for the honest scoping (the free path above is
+  // untouched; this is the genuinely purchasable alternative real
+  // Tinder also has, priced in #196's coins). Registered before the
+  // "/:author" route right below so "packages" is never swallowed as
+  // an author name.
+  app.get("/api/profile-boost/packages", (_req, res) => {
+    res.json({ packages: BOOST_PACKAGES });
+  });
+
   app.get("/api/profile-boost/:author", (req, res) => {
     res.json(profileBoostStore.getStatus(req.params.author));
+  });
+
+  app.get("/api/profile-boost/:author/credits", (req, res) => {
+    res.json({ credits: profileBoostStore.getCredits(req.params.author) });
+  });
+
+  app.post("/api/profile-boost/:author/purchase", (req, res) => {
+    const boostPackage = findBoostPackage(req.body?.packageId);
+    if (!boostPackage) {
+      res.status(400).json({ error: `packageId must be one of: ${BOOST_PACKAGES.map((p) => p.id).join(", ")}` });
+      return;
+    }
+    const spendResult = coinStore.spend(req.params.author, boostPackage.coinCost);
+    if (!spendResult.success) {
+      res.status(400).json({ error: spendResult.error });
+      return;
+    }
+    const credits = profileBoostStore.grantCredits(req.params.author, boostPackage.boosts);
+    res.status(201).json({ credits, package: boostPackage });
+  });
+
+  app.post("/api/profile-boost/:author/activate-with-credit", (req, res) => {
+    const result = profileBoostStore.activateBoostWithCredit(req.params.author, req.body?.tier);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ tier: result.tier, expiresAt: result.expiresAt });
   });
 
   // #106's "smart" half of Super Boost: the hours (UTC) with the most
