@@ -1,4 +1,5 @@
 const SUBSCRIPTION_DURATION_DAYS = 30;
+const TRIAL_DURATION_DAYS = 3;
 
 export const SUBSCRIPTION_TIERS = ["gold", "platinum", "vip"] as const;
 export type SubscriptionTier = (typeof SUBSCRIPTION_TIERS)[number];
@@ -8,9 +9,11 @@ export interface Subscription {
   tier: SubscriptionTier;
   subscribedAt: string;
   expiresAt: string;
+  isTrial: boolean;
 }
 
 export type SubscribeResult = { success: true; subscription: Subscription } | { success: false; error: string };
+export type StartTrialResult = { success: true; subscription: Subscription } | { success: false; error: string };
 
 function isSubscriptionTier(value: unknown): value is SubscriptionTier {
   return typeof value === "string" && (SUBSCRIPTION_TIERS as readonly string[]).includes(value);
@@ -32,9 +35,20 @@ function isSubscriptionTier(value: unknown): value is SubscriptionTier {
  * (unlimited likes, see-who-liked-you, etc.) to require a tier is
  * separate, feature-specific follow-up, the same "infrastructure now,
  * adoption later" scoping call #187/#188 made for their own primitives.
+ *
+ * #202's "Free trial for a few days of subscription": real Tinder's
+ * trial auto-converts to a real paid period on expiry via its billing
+ * provider — this app has none, so a trial here just lapses like any
+ * other subscription (`getStatus()` already handles that uniformly via
+ * `isTrial`'s real 3-day `expiresAt` vs. a paid one's real 30 days); a
+ * user still has to actually subscribe afterward. One-time-only per
+ * author, the real anti-abuse rule Tinder also enforces, tracked in
+ * `trialUsedByAuthor` independently of the subscription record itself
+ * so cancelling or letting a trial lapse doesn't reset eligibility.
  */
 export class SubscriptionStore {
   private byAuthor = new Map<string, Subscription>();
+  private trialUsedByAuthor = new Set<string>();
 
   subscribe(author: unknown, tier: unknown): SubscribeResult {
     const authorText = typeof author === "string" ? author.trim() : "";
@@ -47,8 +61,33 @@ export class SubscriptionStore {
       tier,
       subscribedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + SUBSCRIPTION_DURATION_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+      isTrial: false,
     };
     this.byAuthor.set(authorText, subscription);
+    return { success: true, subscription };
+  }
+
+  hasUsedTrial(author: string): boolean {
+    return this.trialUsedByAuthor.has(author);
+  }
+
+  startTrial(author: unknown, tier: unknown): StartTrialResult {
+    const authorText = typeof author === "string" ? author.trim() : "";
+    if (!authorText) return { success: false, error: "author is required" };
+    if (!isSubscriptionTier(tier)) return { success: false, error: `tier must be one of: ${SUBSCRIPTION_TIERS.join(", ")}` };
+    if (this.hasUsedTrial(authorText)) return { success: false, error: "You've already used your free trial" };
+    if (this.getStatus(authorText)) return { success: false, error: "You already have an active subscription" };
+
+    const now = new Date();
+    const subscription: Subscription = {
+      author: authorText,
+      tier,
+      subscribedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+      isTrial: true,
+    };
+    this.byAuthor.set(authorText, subscription);
+    this.trialUsedByAuthor.add(authorText);
     return { success: true, subscription };
   }
 

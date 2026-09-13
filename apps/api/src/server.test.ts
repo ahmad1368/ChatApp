@@ -8304,6 +8304,47 @@ test("Ad-free for pro (#201): ads show for a non-subscriber and are removed once
   }
 });
 
+test("Free trial (#202): a user can start one free trial, which lapses without auto-charging, and can't start a second", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const eligibleRes = await fetch(`${baseUrl}/api/subscriptions/alice/trial-eligible`);
+    assert.deepEqual(await eligibleRes.json(), { eligible: true });
+
+    const invalidRes = await fetch(`${baseUrl}/api/subscriptions/alice/trial`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "diamond" }),
+    });
+    assert.equal(invalidRes.status, 400);
+
+    const trialRes = await fetch(`${baseUrl}/api/subscriptions/alice/trial`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "gold" }),
+    });
+    assert.equal(trialRes.status, 201);
+    const trial = (await trialRes.json()).subscription;
+    assert.equal(trial.isTrial, true);
+
+    const statusRes = await fetch(`${baseUrl}/api/subscriptions/alice`);
+    assert.equal((await statusRes.json()).subscription.isTrial, true);
+
+    await fetch(`${baseUrl}/api/subscriptions/alice`, { method: "DELETE" });
+
+    const noLongerEligibleRes = await fetch(`${baseUrl}/api/subscriptions/alice/trial-eligible`);
+    assert.deepEqual(await noLongerEligibleRes.json(), { eligible: false });
+
+    const secondTrialRes = await fetch(`${baseUrl}/api/subscriptions/alice/trial`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: "vip" }),
+    });
+    assert.equal(secondTrialRes.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/view-mode/:author defaults to card before anything is set (#115)", async () => {
   const { server, baseUrl } = listen();
   try {

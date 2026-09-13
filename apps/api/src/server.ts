@@ -2471,6 +2471,23 @@ export function createApp(deps?: {
     res.status(201).json({ subscription: result.subscription });
   });
 
+  // #202's "Free trial for a few days of subscription" — see
+  // subscriptions.ts for the honest scoping (a real, once-per-author
+  // trial that lapses like any other subscription rather than
+  // auto-converting to a real charge).
+  app.get("/api/subscriptions/:author/trial-eligible", (req, res) => {
+    res.json({ eligible: !subscriptionStore.hasUsedTrial(req.params.author) });
+  });
+
+  app.post("/api/subscriptions/:author/trial", (req, res) => {
+    const result = subscriptionStore.startTrial(req.params.author, req.body?.tier);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ subscription: result.subscription });
+  });
+
   app.delete("/api/subscriptions/:author", (req, res) => {
     const cancelled = subscriptionStore.cancel(req.params.author);
     if (!cancelled) {
