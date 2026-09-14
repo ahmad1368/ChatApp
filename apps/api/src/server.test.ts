@@ -11334,3 +11334,46 @@ test("Group events (#221): capacity-limited RSVP waitlists once full, and cancel
     server.close();
   }
 });
+
+test("Group dates at cafes or in nature (#222): a cafe/outdoor event requires a location, reusing #221's RSVP engine", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const missingLocationRes = await fetch(`${baseUrl}/api/group-events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        host: "alice",
+        title: "Coffee meetup",
+        type: "cafe",
+        startsAt: new Date(Date.now() + 3600_000).toISOString(),
+        capacity: 4,
+      }),
+    });
+    assert.equal(missingLocationRes.status, 400);
+
+    const createRes = await fetch(`${baseUrl}/api/group-events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        host: "alice",
+        title: "Coffee meetup",
+        type: "cafe",
+        location: "Blue Bottle Coffee",
+        startsAt: new Date(Date.now() + 3600_000).toISOString(),
+        capacity: 4,
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const { event } = await createRes.json();
+    assert.equal(event.location, "Blue Bottle Coffee");
+
+    const rsvpRes = await fetch(`${baseUrl}/api/group-events/${event.id}/rsvp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    assert.equal((await rsvpRes.json()).status, "confirmed");
+  } finally {
+    server.close();
+  }
+});

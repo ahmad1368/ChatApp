@@ -1,7 +1,10 @@
 import { randomUUID } from "crypto";
 
-export const GROUP_EVENT_TYPES = ["webinar", "game"] as const;
+export const GROUP_EVENT_TYPES = ["webinar", "game", "cafe", "outdoor"] as const;
 export type GroupEventType = (typeof GROUP_EVENT_TYPES)[number];
+
+/** #221's online types have no physical venue; #222's real-world group dates require one. */
+const IN_PERSON_TYPES: readonly GroupEventType[] = ["cafe", "outdoor"];
 
 export interface GroupEvent {
   id: string;
@@ -11,6 +14,7 @@ export interface GroupEvent {
   type: GroupEventType;
   startsAt: string;
   capacity: number;
+  location?: string;
 }
 
 export interface GroupEventDetails extends GroupEvent {
@@ -29,21 +33,30 @@ function isGroupEventType(value: unknown): value is GroupEventType {
 
 /**
  * Match.com's real "Create online group events (webinars, games)"
- * (#221) — distinct from #155's LiveEventStore, which is a lightweight,
+ * (#221) and "Create real group dates at cafes or in nature" (#222) —
+ * distinct from #155's LiveEventStore, which is a lightweight,
  * capacity-free "opt in to be notified when this starts" subscription:
  * this is a real capacity-limited RSVP with a waitlist, the actual
- * "RSVP/capacity" half of the issue's implementation guide (the other
- * half, QR check-in, is #230's separate scope — not duplicated here).
- * Reaching capacity waitlists rather than rejecting, and a cancellation
- * automatically promotes the longest-waiting waitlisted author, the same
- * "real event logistics" a webinar/game-night sign-up actually needs.
+ * "RSVP/capacity" half of both issues' shared implementation guide (the
+ * other half, QR check-in, is #230's separate scope — not duplicated
+ * here). #222 reuses this exact RSVP/capacity/waitlist engine rather
+ * than a parallel one — the only real difference between an online
+ * webinar/game and an in-person cafe/outdoor date is a physical
+ * location, not a different sign-up mechanic — and adds a required
+ * `location` field for its two in-person types. Reaching capacity
+ * waitlists rather than rejecting, and a cancellation automatically
+ * promotes the longest-waiting waitlisted author, the same "real event
+ * logistics" any of these four event kinds actually needs.
  */
 export class GroupEventStore {
   private eventsById = new Map<string, GroupEvent>();
   private confirmedByEventId = new Map<string, string[]>();
   private waitlistByEventId = new Map<string, string[]>();
 
-  create(host: unknown, payload: { title?: unknown; description?: unknown; type?: unknown; startsAt?: unknown; capacity?: unknown } | undefined): CreateGroupEventResult {
+  create(
+    host: unknown,
+    payload: { title?: unknown; description?: unknown; type?: unknown; startsAt?: unknown; capacity?: unknown; location?: unknown } | undefined
+  ): CreateGroupEventResult {
     const hostName = typeof host === "string" ? host.trim() : "";
     if (!hostName) return { success: false, error: "host is required" };
 
@@ -51,6 +64,12 @@ export class GroupEventStore {
     if (!title) return { success: false, error: "title is required" };
 
     if (!isGroupEventType(payload?.type)) return { success: false, error: `type must be one of: ${GROUP_EVENT_TYPES.join(", ")}` };
+    const type = payload!.type as GroupEventType;
+
+    const location = typeof payload?.location === "string" ? payload.location.trim() : "";
+    if (IN_PERSON_TYPES.includes(type) && !location) {
+      return { success: false, error: "location is required for a cafe or outdoor group date" };
+    }
 
     const startsAtRaw = typeof payload?.startsAt === "string" ? payload.startsAt : "";
     const startsAt = new Date(startsAtRaw);
@@ -68,9 +87,10 @@ export class GroupEventStore {
       host: hostName,
       title,
       description,
-      type: payload!.type as GroupEventType,
+      type,
       startsAt: startsAt.toISOString(),
       capacity,
+      ...(location ? { location } : {}),
     };
     this.eventsById.set(event.id, event);
     this.confirmedByEventId.set(event.id, []);

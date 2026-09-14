@@ -4,7 +4,10 @@ import { GroupEventStore } from "./groupEvents";
 
 const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-function createEvent(store: GroupEventStore, overrides: Partial<{ title: string; type: string; startsAt: string; capacity: number }> = {}) {
+function createEvent(
+  store: GroupEventStore,
+  overrides: Partial<{ title: string; type: string; startsAt: string; capacity: number; location: string }> = {}
+) {
   return store.create("host", {
     title: "Trivia Night",
     description: "A fun game night",
@@ -31,6 +34,20 @@ test("create() succeeds with valid data", () => {
   if (!result.success) return;
   assert.equal(result.event.host, "host");
   assert.equal(result.event.capacity, 2);
+});
+
+test("create() requires a location for cafe/outdoor group dates but not for webinar/game", () => {
+  const store = new GroupEventStore();
+  assert.equal(createEvent(store, { type: "cafe" }).success, false);
+  assert.equal(createEvent(store, { type: "outdoor" }).success, false);
+
+  const withLocation = createEvent(store, { type: "cafe", location: "Blue Bottle Coffee" });
+  assert.equal(withLocation.success, true);
+  if (withLocation.success) assert.equal(withLocation.event.location, "Blue Bottle Coffee");
+
+  const onlineEvent = createEvent(store, { type: "webinar" });
+  assert.equal(onlineEvent.success, true);
+  if (onlineEvent.success) assert.equal(onlineEvent.event.location, undefined);
 });
 
 test("rsvp() confirms attendees up to capacity, then waitlists", () => {
