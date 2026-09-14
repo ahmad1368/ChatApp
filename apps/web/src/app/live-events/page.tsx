@@ -93,7 +93,7 @@ export default function LiveEventsPage() {
     <main style={{ maxWidth: 480, margin: "48px auto", padding: 16, fontFamily: "sans-serif" }}>
       <h1>Live Events</h1>
       <p>
-        <Link href="/discover">&larr; Back to Discover</Link>
+        <Link href="/discover">&larr; Back to Discover</Link> &middot; <Link href="/group-events">Group Events (webinars/games)</Link>
       </p>
 
       <section style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, marginTop: 12 }}>

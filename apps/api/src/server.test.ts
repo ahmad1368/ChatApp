@@ -11275,3 +11275,62 @@ test("Weekly leaderboard (#220): swiping counts as activity, being liked counts 
     server.close();
   }
 });
+
+test("Group events (#221): capacity-limited RSVP waitlists once full, and cancelling promotes the waitlist", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/group-events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        host: "alice",
+        title: "Trivia Night",
+        type: "game",
+        startsAt: new Date(Date.now() + 3600_000).toISOString(),
+        capacity: 1,
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const { event } = await createRes.json();
+
+    const listRes = await fetch(`${baseUrl}/api/group-events`);
+    assert.equal((await listRes.json()).events.length, 1);
+
+    const firstRsvpRes = await fetch(`${baseUrl}/api/group-events/${event.id}/rsvp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    assert.equal((await firstRsvpRes.json()).status, "confirmed");
+
+    const secondRsvpRes = await fetch(`${baseUrl}/api/group-events/${event.id}/rsvp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+    assert.equal((await secondRsvpRes.json()).status, "waitlisted");
+
+    const detailsRes = await fetch(`${baseUrl}/api/group-events/${event.id}`);
+    const details = (await detailsRes.json()).event;
+    assert.deepEqual(details.confirmedAttendees, ["bob"]);
+    assert.deepEqual(details.waitlist, ["carol"]);
+    assert.equal(details.spotsRemaining, 0);
+
+    const cancelRes = await fetch(`${baseUrl}/api/group-events/${event.id}/rsvp`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    assert.equal(cancelRes.status, 200);
+
+    const detailsAfterRes = await fetch(`${baseUrl}/api/group-events/${event.id}`);
+    const detailsAfter = (await detailsAfterRes.json()).event;
+    assert.deepEqual(detailsAfter.confirmedAttendees, ["carol"]);
+    assert.deepEqual(detailsAfter.waitlist, []);
+
+    const notFoundRes = await fetch(`${baseUrl}/api/group-events/not-a-real-event`);
+    assert.equal(notFoundRes.status, 404);
+  } finally {
+    server.close();
+  }
+});

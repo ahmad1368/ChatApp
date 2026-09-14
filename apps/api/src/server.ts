@@ -70,6 +70,7 @@ import { BlindChatStore } from "./blindChat";
 import { KarmaScoreStore } from "./karmaScore";
 import { DailyChallengeStore } from "./dailyChallenges";
 import { WeeklyLeaderboardStore } from "./weeklyLeaderboard";
+import { GroupEventStore } from "./groupEvents";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -286,6 +287,7 @@ export function createApp(deps?: {
   karmaScoreStore: KarmaScoreStore;
   dailyChallengeStore: DailyChallengeStore;
   weeklyLeaderboardStore: WeeklyLeaderboardStore;
+  groupEventStore: GroupEventStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -403,6 +405,7 @@ export function createApp(deps?: {
   const karmaScoreStore = new KarmaScoreStore();
   const dailyChallengeStore = new DailyChallengeStore();
   const weeklyLeaderboardStore = new WeeklyLeaderboardStore();
+  const groupEventStore = new GroupEventStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2077,6 +2080,53 @@ export function createApp(deps?: {
       return;
     }
     res.json({ subscribed: result.subscribed });
+  });
+
+  // Match.com's real "Create online group events (webinars, games)"
+  // (#221) — see groupEvents.ts for the honest scoping (a real
+  // capacity-limited RSVP with a waitlist, distinct from #155's
+  // capacity-free LiveEventStore subscription; QR check-in is #230's
+  // separate scope, not duplicated here).
+  app.post("/api/group-events", (req, res) => {
+    const result = groupEventStore.create(req.body?.host, req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ event: result.event });
+  });
+
+  app.get("/api/group-events", (_req, res) => {
+    res.json({ events: groupEventStore.getUpcoming() });
+  });
+
+  app.get("/api/group-events/:eventId", (req, res) => {
+    const event = groupEventStore.getEvent(req.params.eventId);
+    if (!event) {
+      res.status(404).json({ error: "Event not found" });
+      return;
+    }
+    res.json({ event });
+  });
+
+  app.post("/api/group-events/:eventId/rsvp", (req, res) => {
+    const result = groupEventStore.rsvp(req.body?.author, req.params.eventId);
+    if (!result.success) {
+      const status = result.error === "Event not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ status: result.status });
+  });
+
+  app.delete("/api/group-events/:eventId/rsvp", (req, res) => {
+    const result = groupEventStore.cancelRsvp(req.body?.author, req.params.eventId);
+    if (!result.success) {
+      const status = result.error === "Event not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
@@ -5103,6 +5153,7 @@ export function createApp(deps?: {
     karmaScoreStore,
     dailyChallengeStore,
     weeklyLeaderboardStore,
+    groupEventStore,
   };
 }
 

@@ -162,6 +162,9 @@ export default function SupportPage() {
         <li>
           <Link href="/leaderboard">View the Weekly Leaderboard</Link>
         </li>
+        <li>
+          <Link href="/group-events">Create or RSVP to a Group Event</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
