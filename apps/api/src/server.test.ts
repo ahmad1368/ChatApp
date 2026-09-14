@@ -11141,3 +11141,45 @@ test("Blind Chat (#217): photos stay hidden until both sides request an early re
     server.close();
   }
 });
+
+test("Karma/Respect Score (#218): reports and blocks dock points, and a mutual match rewards both sides", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const initialRes = await fetch(`${baseUrl}/api/karma/bob`);
+    const initial = (await initialRes.json()).score;
+    assert.equal(initial, 80);
+
+    await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "bob", reason: "harassment" }),
+    });
+    const afterReportRes = await fetch(`${baseUrl}/api/karma/bob`);
+    assert.equal((await afterReportRes.json()).score, initial - 15);
+
+    await fetch(`${baseUrl}/api/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockerAuthor: "carol", blockedAuthor: "bob" }),
+    });
+    const afterBlockRes = await fetch(`${baseUrl}/api/karma/bob`);
+    assert.equal((await afterBlockRes.json()).score, initial - 15 - 5);
+
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "dave", swiped: "erin", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "erin", swiped: "dave", direction: "like" }),
+    });
+    const daveScoreRes = await fetch(`${baseUrl}/api/karma/dave`);
+    const erinScoreRes = await fetch(`${baseUrl}/api/karma/erin`);
+    assert.equal((await daveScoreRes.json()).score, 82);
+    assert.equal((await erinScoreRes.json()).score, 82);
+  } finally {
+    server.close();
+  }
+});

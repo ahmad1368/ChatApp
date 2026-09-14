@@ -153,6 +153,9 @@ export default function SupportPage() {
         <li>
           <Link href="/blind-chat">Start a Blind Chat</Link>
         </li>
+        <li>
+          <Link href="/karma">View your Respect Score</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
