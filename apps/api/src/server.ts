@@ -67,6 +67,7 @@ import { DailyPollStore } from "./dailyPolls";
 import { CoupleQuizStore } from "./coupleQuiz";
 import { SpeedDatingStore } from "./speedDating";
 import { BlindChatStore } from "./blindChat";
+import { KarmaScoreStore } from "./karmaScore";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -280,6 +281,7 @@ export function createApp(deps?: {
   coupleQuizStore: CoupleQuizStore;
   speedDatingStore: SpeedDatingStore;
   blindChatStore: BlindChatStore;
+  karmaScoreStore: KarmaScoreStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -394,6 +396,7 @@ export function createApp(deps?: {
   const coupleQuizStore = new CoupleQuizStore();
   const speedDatingStore = new SpeedDatingStore();
   const blindChatStore = new BlindChatStore();
+  const karmaScoreStore = new KarmaScoreStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -609,6 +612,9 @@ export function createApp(deps?: {
       res.status(status).json({ error: result.error });
       return;
     }
+    // #218's Karma/Respect Score — being reported docks real points,
+    // once per report id.
+    karmaScoreStore.recordReportReceived(result.report.reportedAuthor, result.report.id);
     res.status(201).json({ id: result.report.id });
   });
 
@@ -657,6 +663,9 @@ export function createApp(deps?: {
       res.status(400).json({ error: result.error });
       return;
     }
+    // #218's Karma/Respect Score — being blocked docks real points,
+    // once per distinct blocker.
+    karmaScoreStore.recordBlockReceived(req.body?.blockedAuthor, req.body?.blockerAuthor);
     res.status(201).json(result.record);
   });
 
@@ -3115,6 +3124,14 @@ export function createApp(deps?: {
     res.json(result.status);
   });
 
+  // Tinder's real "Scoring system for positive behavior (Karma / Respect
+  // Score)" (#218) — see karmaScore.ts for the honest scoping (everyone
+  // starts at 80/100, moving from real report/block/match signals
+  // already tracked elsewhere in this app).
+  app.get("/api/karma/:author", (req, res) => {
+    res.json({ score: karmaScoreStore.getScore(req.params.author) });
+  });
+
   // Bumble's real "Send broadcast messages and notifications" (#178) —
   // reuses PushService.broadcast() (every currently-subscribed device,
   // no exclusion) and records one #159 in-app inbox entry per recipient
@@ -3409,6 +3426,8 @@ export function createApp(deps?: {
       // #213's "First Match" badge — awarded to both sides of a real match.
       achievementBadgeStore.award(swiperName, "first-match");
       achievementBadgeStore.award(swipedName, "first-match");
+      // #218's Karma/Respect Score — a mutual match rewards both sides once.
+      karmaScoreStore.recordMatch(swiperName, swipedName);
       // Tinder's real "Push notification for a new Match" (#151) — each
       // side gets their own notification naming the other person;
       // fire-and-forget the same way message:send's push above doesn't
@@ -5031,6 +5050,7 @@ export function createApp(deps?: {
     coupleQuizStore,
     speedDatingStore,
     blindChatStore,
+    karmaScoreStore,
   };
 }
 
