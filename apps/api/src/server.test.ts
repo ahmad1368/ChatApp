@@ -11183,3 +11183,60 @@ test("Karma/Respect Score (#218): reports and blocks dock points, and a mutual m
     server.close();
   }
 });
+
+test("Daily challenges (#219): swiping and answering prompts progress challenges, and completing one lets you claim coins once", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const initialRes = await fetch(`${baseUrl}/api/daily-challenges/alice`);
+    const initial = (await initialRes.json()).challenges;
+    const swipesTarget = initial.find((c: { id: string }) => c.id === "swipes").target;
+
+    for (let i = 0; i < swipesTarget; i++) {
+      await fetch(`${baseUrl}/api/swipes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ swiper: "alice", swiped: `candidate${i}`, direction: "like" }),
+      });
+    }
+
+    const afterSwipesRes = await fetch(`${baseUrl}/api/daily-challenges/alice`);
+    const swipesChallenge = (await afterSwipesRes.json()).challenges.find((c: { id: string }) => c.id === "swipes");
+    assert.equal(swipesChallenge.progress, swipesTarget);
+    assert.equal(swipesChallenge.completed, true);
+
+    await fetch(`${baseUrl}/api/profile-prompts/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers: [{ promptId: "two-truths-a-lie", answer: "a real answer" }] }),
+    });
+    const afterPromptsRes = await fetch(`${baseUrl}/api/daily-challenges/alice`);
+    const promptsChallenge = (await afterPromptsRes.json()).challenges.find((c: { id: string }) => c.id === "prompt-answers");
+    assert.equal(promptsChallenge.progress, 1);
+
+    const claimTooEarlyRes = await fetch(`${baseUrl}/api/daily-challenges/alice/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ challengeId: "prompt-answers" }),
+    });
+    assert.equal(claimTooEarlyRes.status, 400);
+
+    const claimRes = await fetch(`${baseUrl}/api/daily-challenges/alice/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ challengeId: "swipes" }),
+    });
+    assert.equal(claimRes.status, 200);
+    const claimBody = await claimRes.json();
+    assert.equal(claimBody.coinReward, swipesChallenge.coinReward);
+    assert.equal(claimBody.balance, swipesChallenge.coinReward);
+
+    const secondClaimRes = await fetch(`${baseUrl}/api/daily-challenges/alice/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ challengeId: "swipes" }),
+    });
+    assert.equal(secondClaimRes.status, 400);
+  } finally {
+    server.close();
+  }
+});
