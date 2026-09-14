@@ -11097,3 +11097,47 @@ test("Speed Dating (#216): joining, generating rounds, and mutual interest produ
     server.close();
   }
 });
+
+test("Blind Chat (#217): photos stay hidden until both sides request an early reveal", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const startRes = await fetch(`${baseUrl}/api/blind-chat/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", partner: "bob" }),
+    });
+    assert.equal(startRes.status, 201);
+    const startBody = await startRes.json();
+    assert.equal(startBody.photosRevealed, false);
+    assert.ok(startBody.secondsRemaining > 0);
+
+    const statusBeforeRes = await fetch(`${baseUrl}/api/blind-chat/status?author=bob&partner=alice`);
+    assert.equal((await statusBeforeRes.json()).photosRevealed, false);
+
+    const aliceRequestRes = await fetch(`${baseUrl}/api/blind-chat/reveal-request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", partner: "bob" }),
+    });
+    const aliceRequestBody = await aliceRequestRes.json();
+    assert.equal(aliceRequestBody.photosRevealed, false);
+    assert.equal(aliceRequestBody.bothRequestedReveal, false);
+
+    const bobRequestRes = await fetch(`${baseUrl}/api/blind-chat/reveal-request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob", partner: "alice" }),
+    });
+    const bobRequestBody = await bobRequestRes.json();
+    assert.equal(bobRequestBody.bothRequestedReveal, true);
+    assert.equal(bobRequestBody.photosRevealed, true);
+
+    const statusAfterRes = await fetch(`${baseUrl}/api/blind-chat/status?author=alice&partner=bob`);
+    assert.equal((await statusAfterRes.json()).photosRevealed, true);
+
+    const neverStartedRes = await fetch(`${baseUrl}/api/blind-chat/status?author=carol&partner=dave`);
+    assert.equal(neverStartedRes.status, 400);
+  } finally {
+    server.close();
+  }
+});

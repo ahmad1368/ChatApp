@@ -66,6 +66,7 @@ import { AchievementBadgeStore, ACHIEVEMENT_BADGES } from "./achievementBadges";
 import { DailyPollStore } from "./dailyPolls";
 import { CoupleQuizStore } from "./coupleQuiz";
 import { SpeedDatingStore } from "./speedDating";
+import { BlindChatStore } from "./blindChat";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -278,6 +279,7 @@ export function createApp(deps?: {
   dailyPollStore: DailyPollStore;
   coupleQuizStore: CoupleQuizStore;
   speedDatingStore: SpeedDatingStore;
+  blindChatStore: BlindChatStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -391,6 +393,7 @@ export function createApp(deps?: {
   const dailyPollStore = new DailyPollStore();
   const coupleQuizStore = new CoupleQuizStore();
   const speedDatingStore = new SpeedDatingStore();
+  const blindChatStore = new BlindChatStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -3078,6 +3081,40 @@ export function createApp(deps?: {
     res.json({ matches: speedDatingStore.getMatches(req.params.sessionKey, author) });
   });
 
+  // Hinge's real "Blind Chat without seeing photos for the first few
+  // minutes" (#217) — see blindChat.ts for the honest scoping (a real
+  // per-pair timer that decides whether the client may render photos
+  // yet; an early reveal needs both sides' consent, the same mutual
+  // shape #215/#216 already use).
+  app.post("/api/blind-chat/start", (req, res) => {
+    const result = blindChatStore.start(req.body?.author, req.body?.partner);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.status);
+  });
+
+  app.post("/api/blind-chat/reveal-request", (req, res) => {
+    const result = blindChatStore.requestReveal(req.body?.author, req.body?.partner);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(result.status);
+  });
+
+  app.get("/api/blind-chat/status", (req, res) => {
+    const author = typeof req.query.author === "string" ? req.query.author : "";
+    const partner = typeof req.query.partner === "string" ? req.query.partner : "";
+    const result = blindChatStore.getStatus(author, partner);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(result.status);
+  });
+
   // Bumble's real "Send broadcast messages and notifications" (#178) —
   // reuses PushService.broadcast() (every currently-subscribed device,
   // no exclusion) and records one #159 in-app inbox entry per recipient
@@ -4993,6 +5030,7 @@ export function createApp(deps?: {
     dailyPollStore,
     coupleQuizStore,
     speedDatingStore,
+    blindChatStore,
   };
 }
 
