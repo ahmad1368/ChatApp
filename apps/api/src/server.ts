@@ -64,6 +64,7 @@ import { DailySpinStore } from "./dailySpin";
 import { LoginStreakStore } from "./loginStreak";
 import { AchievementBadgeStore, ACHIEVEMENT_BADGES } from "./achievementBadges";
 import { DailyPollStore } from "./dailyPolls";
+import { CoupleQuizStore } from "./coupleQuiz";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -274,6 +275,7 @@ export function createApp(deps?: {
   loginStreakStore: LoginStreakStore;
   achievementBadgeStore: AchievementBadgeStore;
   dailyPollStore: DailyPollStore;
+  coupleQuizStore: CoupleQuizStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -385,6 +387,7 @@ export function createApp(deps?: {
   const loginStreakStore = new LoginStreakStore();
   const achievementBadgeStore = new AchievementBadgeStore();
   const dailyPollStore = new DailyPollStore();
+  const coupleQuizStore = new CoupleQuizStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2995,6 +2998,41 @@ export function createApp(deps?: {
     res.json(result.status);
   });
 
+  // Hinge's real "Two-person quiz to compare views before chatting"
+  // (#215) — see coupleQuiz.ts for the honest scoping (a private
+  // per-pair session, distinct from #214's public daily poll, that only
+  // reveals both sides' answers and a real agreement percentage once
+  // both participants have submitted).
+  app.post("/api/couple-quiz/start", (req, res) => {
+    const result = coupleQuizStore.start(req.body?.initiator, req.body?.invitee);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ quizId: result.quizId });
+  });
+
+  app.post("/api/couple-quiz/:quizId/answers", (req, res) => {
+    const result = coupleQuizStore.submitAnswers(req.params.quizId, req.body?.author, req.body?.answers);
+    if (!result.success) {
+      const status = result.error === "Quiz not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ success: true });
+  });
+
+  app.get("/api/couple-quiz/:quizId", (req, res) => {
+    const author = typeof req.query.author === "string" ? req.query.author : "";
+    const result = coupleQuizStore.getResult(req.params.quizId, author);
+    if (!result.success) {
+      const status = result.error === "Quiz not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json(result.result);
+  });
+
   // Bumble's real "Send broadcast messages and notifications" (#178) —
   // reuses PushService.broadcast() (every currently-subscribed device,
   // no exclusion) and records one #159 in-app inbox entry per recipient
@@ -4908,6 +4946,7 @@ export function createApp(deps?: {
     loginStreakStore,
     achievementBadgeStore,
     dailyPollStore,
+    coupleQuizStore,
   };
 }
 
