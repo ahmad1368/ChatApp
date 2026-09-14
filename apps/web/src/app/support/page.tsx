@@ -147,6 +147,9 @@ export default function SupportPage() {
         <li>
           <Link href="/couple-quiz">Take a two-person quiz with someone</Link>
         </li>
+        <li>
+          <Link href="/speed-dating">Join this week's Speed Dating event</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>

@@ -65,6 +65,7 @@ import { LoginStreakStore } from "./loginStreak";
 import { AchievementBadgeStore, ACHIEVEMENT_BADGES } from "./achievementBadges";
 import { DailyPollStore } from "./dailyPolls";
 import { CoupleQuizStore } from "./coupleQuiz";
+import { SpeedDatingStore } from "./speedDating";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -276,6 +277,7 @@ export function createApp(deps?: {
   achievementBadgeStore: AchievementBadgeStore;
   dailyPollStore: DailyPollStore;
   coupleQuizStore: CoupleQuizStore;
+  speedDatingStore: SpeedDatingStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -388,6 +390,7 @@ export function createApp(deps?: {
   const achievementBadgeStore = new AchievementBadgeStore();
   const dailyPollStore = new DailyPollStore();
   const coupleQuizStore = new CoupleQuizStore();
+  const speedDatingStore = new SpeedDatingStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -3033,6 +3036,48 @@ export function createApp(deps?: {
     res.json(result.result);
   });
 
+  // Match.com's real "Speed Dating event at set times of the week"
+  // (#216) — see speedDating.ts for the honest scoping (a fixed weekly
+  // UTC slot, a real round-robin pairing into timed rounds, and mutual
+  // interest revealed the same way #94's swipe matching is).
+  app.get("/api/speed-dating/next-session", (_req, res) => {
+    res.json(speedDatingStore.getNextSession());
+  });
+
+  app.post("/api/speed-dating/join", (req, res) => {
+    const result = speedDatingStore.join(req.body?.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.session);
+  });
+
+  app.post("/api/speed-dating/:sessionKey/generate-rounds", (req, res) => {
+    const result = speedDatingStore.generateRounds(req.params.sessionKey);
+    if (!result.success) {
+      const status = result.error === "Session not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ rounds: result.rounds });
+  });
+
+  app.post("/api/speed-dating/:sessionKey/interest", (req, res) => {
+    const result = speedDatingStore.expressInterest(req.params.sessionKey, req.body?.author, req.body?.partner);
+    if (!result.success) {
+      const status = result.error === "Session not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ matched: result.matched });
+  });
+
+  app.get("/api/speed-dating/:sessionKey/matches", (req, res) => {
+    const author = typeof req.query.author === "string" ? req.query.author : "";
+    res.json({ matches: speedDatingStore.getMatches(req.params.sessionKey, author) });
+  });
+
   // Bumble's real "Send broadcast messages and notifications" (#178) —
   // reuses PushService.broadcast() (every currently-subscribed device,
   // no exclusion) and records one #159 in-app inbox entry per recipient
@@ -4947,6 +4992,7 @@ export function createApp(deps?: {
     achievementBadgeStore,
     dailyPollStore,
     coupleQuizStore,
+    speedDatingStore,
   };
 }
 
