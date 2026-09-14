@@ -10980,3 +10980,62 @@ test("Daily poll (#214): voting records a choice, rejects a second vote the same
     server.close();
   }
 });
+
+test("Two-person quiz (#215): both answers and a match percentage are only revealed once both participants submit", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const startRes = await fetch(`${baseUrl}/api/couple-quiz/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initiator: "alice", invitee: "bob" }),
+    });
+    assert.equal(startRes.status, 201);
+    const { quizId } = await startRes.json();
+
+    const restartRes = await fetch(`${baseUrl}/api/couple-quiz/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initiator: "bob", invitee: "alice" }),
+    });
+    assert.equal((await restartRes.json()).quizId, quizId);
+
+    const questionsRes = await fetch(`${baseUrl}/api/couple-quiz/${quizId}?author=alice`);
+    const questions = (await questionsRes.json()).questions;
+    const aliceAnswers: Record<string, string> = {};
+    const bobAnswers: Record<string, string> = {};
+    for (const q of questions) {
+      aliceAnswers[q.id] = q.options[0].id;
+      bobAnswers[q.id] = q.options[0].id;
+    }
+
+    const aliceSubmitRes = await fetch(`${baseUrl}/api/couple-quiz/${quizId}/answers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", answers: aliceAnswers }),
+    });
+    assert.equal(aliceSubmitRes.status, 201);
+
+    const resultBeforeBobRes = await fetch(`${baseUrl}/api/couple-quiz/${quizId}?author=alice`);
+    const resultBeforeBob = await resultBeforeBobRes.json();
+    assert.equal(resultBeforeBob.bothSubmitted, false);
+    assert.equal(resultBeforeBob.theirAnswers, null);
+
+    const carolResultRes = await fetch(`${baseUrl}/api/couple-quiz/${quizId}?author=carol`);
+    assert.equal(carolResultRes.status, 400);
+
+    const bobSubmitRes = await fetch(`${baseUrl}/api/couple-quiz/${quizId}/answers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob", answers: bobAnswers }),
+    });
+    assert.equal(bobSubmitRes.status, 201);
+
+    const finalResultRes = await fetch(`${baseUrl}/api/couple-quiz/${quizId}?author=bob`);
+    const finalResult = await finalResultRes.json();
+    assert.equal(finalResult.bothSubmitted, true);
+    assert.equal(finalResult.matchPercentage, 100);
+    assert.deepEqual(finalResult.theirAnswers, aliceAnswers);
+  } finally {
+    server.close();
+  }
+});

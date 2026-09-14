@@ -144,6 +144,9 @@ export default function SupportPage() {
         <li>
           <Link href="/daily-poll">Answer today's relationship poll</Link>
         </li>
+        <li>
+          <Link href="/couple-quiz">Take a two-person quiz with someone</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
