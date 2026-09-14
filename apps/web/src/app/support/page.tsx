@@ -150,6 +150,9 @@ export default function SupportPage() {
         <li>
           <Link href="/speed-dating">Join this week's Speed Dating event</Link>
         </li>
+        <li>
+          <Link href="/blind-chat">Start a Blind Chat</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
