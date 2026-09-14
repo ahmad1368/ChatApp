@@ -11039,3 +11039,61 @@ test("Two-person quiz (#215): both answers and a match percentage are only revea
     server.close();
   }
 });
+
+test("Speed Dating (#216): joining, generating rounds, and mutual interest producing a match", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const nextSessionRes = await fetch(`${baseUrl}/api/speed-dating/next-session`);
+    const nextSession = await nextSessionRes.json();
+    assert.equal(nextSession.participants.length, 0);
+
+    const joinAliceRes = await fetch(`${baseUrl}/api/speed-dating/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(joinAliceRes.status, 201);
+    const sessionAfterAlice = await joinAliceRes.json();
+    const sessionKey = sessionAfterAlice.sessionKey;
+
+    const tooFewRoundsRes = await fetch(`${baseUrl}/api/speed-dating/${sessionKey}/generate-rounds`, { method: "POST" });
+    assert.equal(tooFewRoundsRes.status, 400);
+
+    await fetch(`${baseUrl}/api/speed-dating/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    const roundsRes = await fetch(`${baseUrl}/api/speed-dating/${sessionKey}/generate-rounds`, { method: "POST" });
+    assert.equal(roundsRes.status, 200);
+    const { rounds } = await roundsRes.json();
+    assert.ok(rounds.length > 0);
+
+    const strangerInterestRes = await fetch(`${baseUrl}/api/speed-dating/${sessionKey}/interest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", partner: "carol" }),
+    });
+    assert.equal(strangerInterestRes.status, 400);
+
+    const aliceInterestRes = await fetch(`${baseUrl}/api/speed-dating/${sessionKey}/interest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", partner: "bob" }),
+    });
+    assert.equal((await aliceInterestRes.json()).matched, false);
+
+    const bobInterestRes = await fetch(`${baseUrl}/api/speed-dating/${sessionKey}/interest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob", partner: "alice" }),
+    });
+    assert.equal((await bobInterestRes.json()).matched, true);
+
+    const aliceMatchesRes = await fetch(`${baseUrl}/api/speed-dating/${sessionKey}/matches?author=alice`);
+    assert.deepEqual(await aliceMatchesRes.json(), { matches: ["bob"] });
+  } finally {
+    server.close();
+  }
+});
