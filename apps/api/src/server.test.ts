@@ -11240,3 +11240,38 @@ test("Daily challenges (#219): swiping and answering prompts progress challenges
     server.close();
   }
 });
+
+test("Weekly leaderboard (#220): swiping counts as activity, being liked counts as popularity, and both rank on the leaderboard", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const emptyRes = await fetch(`${baseUrl}/api/leaderboard/weekly`);
+    assert.deepEqual((await emptyRes.json()).entries, []);
+
+    const noRankRes = await fetch(`${baseUrl}/api/leaderboard/weekly/alice`);
+    assert.deepEqual(await noRankRes.json(), { rank: null });
+
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+
+    const leaderboardRes = await fetch(`${baseUrl}/api/leaderboard/weekly`);
+    const { weekStart, entries } = await leaderboardRes.json();
+    assert.ok(weekStart);
+    const aliceEntry = entries.find((e: { author: string }) => e.author === "alice");
+    const bobEntry = entries.find((e: { author: string }) => e.author === "bob");
+    assert.equal(aliceEntry.activityCount, 1);
+    assert.equal(bobEntry.popularityCount, 1);
+    // bob's like-received (weight 2) outranks alice's raw swipe (weight 1).
+    assert.equal(entries[0].author, "bob");
+
+    const bobRankRes = await fetch(`${baseUrl}/api/leaderboard/weekly/bob`);
+    assert.equal((await bobRankRes.json()).rank, 1);
+
+    const limitedRes = await fetch(`${baseUrl}/api/leaderboard/weekly?limit=1`);
+    assert.equal((await limitedRes.json()).entries.length, 1);
+  } finally {
+    server.close();
+  }
+});

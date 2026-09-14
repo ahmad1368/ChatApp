@@ -159,6 +159,9 @@ export default function SupportPage() {
         <li>
           <Link href="/daily-challenges">View today's Daily Challenges</Link>
         </li>
+        <li>
+          <Link href="/leaderboard">View the Weekly Leaderboard</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>

@@ -69,6 +69,7 @@ import { SpeedDatingStore } from "./speedDating";
 import { BlindChatStore } from "./blindChat";
 import { KarmaScoreStore } from "./karmaScore";
 import { DailyChallengeStore } from "./dailyChallenges";
+import { WeeklyLeaderboardStore } from "./weeklyLeaderboard";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -284,6 +285,7 @@ export function createApp(deps?: {
   blindChatStore: BlindChatStore;
   karmaScoreStore: KarmaScoreStore;
   dailyChallengeStore: DailyChallengeStore;
+  weeklyLeaderboardStore: WeeklyLeaderboardStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -400,6 +402,7 @@ export function createApp(deps?: {
   const blindChatStore = new BlindChatStore();
   const karmaScoreStore = new KarmaScoreStore();
   const dailyChallengeStore = new DailyChallengeStore();
+  const weeklyLeaderboardStore = new WeeklyLeaderboardStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -3161,6 +3164,19 @@ export function createApp(deps?: {
     res.json({ coinReward: result.coinReward, balance: creditResult.balance });
   });
 
+  // Hinge's real "Weekly leaderboards based on activity/popularity"
+  // (#220) — see weeklyLeaderboard.ts for the honest scoping (a rolling
+  // 7-day window, distinct from #95's lifetime SmartScoreStore).
+  app.get("/api/leaderboard/weekly", (req, res) => {
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 10;
+    res.json(weeklyLeaderboardStore.getLeaderboard(limit));
+  });
+
+  app.get("/api/leaderboard/weekly/:author", (req, res) => {
+    res.json({ rank: weeklyLeaderboardStore.getRank(req.params.author) });
+  });
+
   // Bumble's real "Send broadcast messages and notifications" (#178) —
   // reuses PushService.broadcast() (every currently-subscribed device,
   // no exclusion) and records one #159 in-app inbox entry per recipient
@@ -3446,6 +3462,9 @@ export function createApp(deps?: {
     smartScoreStore.recordSwipeOutcome(swiperName, swipedName, liked);
     // #219's "Swipe on 10 profiles" daily challenge.
     dailyChallengeStore.incrementProgress(swiperName, "swipes");
+    // #220's weekly activity/popularity leaderboard.
+    weeklyLeaderboardStore.recordActivity(swiperName);
+    if (liked) weeklyLeaderboardStore.recordPopularity(swipedName);
     // #106's "peak network hours": each swipe counts as one unit of
     // real network activity for the hour it happened in — see
     // peakHours.ts.
@@ -5083,6 +5102,7 @@ export function createApp(deps?: {
     blindChatStore,
     karmaScoreStore,
     dailyChallengeStore,
+    weeklyLeaderboardStore,
   };
 }
 
