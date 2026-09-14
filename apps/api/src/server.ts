@@ -68,6 +68,7 @@ import { CoupleQuizStore } from "./coupleQuiz";
 import { SpeedDatingStore } from "./speedDating";
 import { BlindChatStore } from "./blindChat";
 import { KarmaScoreStore } from "./karmaScore";
+import { DailyChallengeStore } from "./dailyChallenges";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -282,6 +283,7 @@ export function createApp(deps?: {
   speedDatingStore: SpeedDatingStore;
   blindChatStore: BlindChatStore;
   karmaScoreStore: KarmaScoreStore;
+  dailyChallengeStore: DailyChallengeStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -397,6 +399,7 @@ export function createApp(deps?: {
   const speedDatingStore = new SpeedDatingStore();
   const blindChatStore = new BlindChatStore();
   const karmaScoreStore = new KarmaScoreStore();
+  const dailyChallengeStore = new DailyChallengeStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -997,6 +1000,9 @@ export function createApp(deps?: {
       res.status(400).json({ error: result.error });
       return;
     }
+    // #219's "Answer 3 profile prompts" daily challenge — a level, not an
+    // increment, since setAnswers() replaces the whole answer set.
+    dailyChallengeStore.setProgress(req.params.author, "prompt-answers", result.answers.length);
     res.json({ answers: result.answers });
   });
 
@@ -3132,6 +3138,29 @@ export function createApp(deps?: {
     res.json({ score: karmaScoreStore.getScore(req.params.author) });
   });
 
+  // Coffee Meets Bagel's real "Daily challenges (e.g., complete 3 prompt
+  // answers or send 2 voice notes)" (#219) — see dailyChallenges.ts for
+  // the honest scoping (a fixed daily checklist driven by real events
+  // already tracked elsewhere — swipes, messages, voice notes, prompt
+  // answers — with an explicit claim step per completed challenge).
+  app.get("/api/daily-challenges/:author", (req, res) => {
+    res.json({ challenges: dailyChallengeStore.getStatus(req.params.author) });
+  });
+
+  app.post("/api/daily-challenges/:author/claim", (req, res) => {
+    const result = dailyChallengeStore.claimReward(req.params.author, req.body?.challengeId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    const creditResult = coinStore.credit(req.params.author, result.coinReward);
+    if (!creditResult.success) {
+      res.status(400).json({ error: creditResult.error });
+      return;
+    }
+    res.json({ coinReward: result.coinReward, balance: creditResult.balance });
+  });
+
   // Bumble's real "Send broadcast messages and notifications" (#178) —
   // reuses PushService.broadcast() (every currently-subscribed device,
   // no exclusion) and records one #159 in-app inbox entry per recipient
@@ -3415,6 +3444,8 @@ export function createApp(deps?: {
     const swiperName = typeof req.body?.swiper === "string" ? req.body.swiper.trim() : "";
     const swipedName = typeof req.body?.swiped === "string" ? req.body.swiped.trim() : "";
     smartScoreStore.recordSwipeOutcome(swiperName, swipedName, liked);
+    // #219's "Swipe on 10 profiles" daily challenge.
+    dailyChallengeStore.incrementProgress(swiperName, "swipes");
     // #106's "peak network hours": each swipe counts as one unit of
     // real network activity for the hour it happened in — see
     // peakHours.ts.
@@ -5051,6 +5082,7 @@ export function createApp(deps?: {
     speedDatingStore,
     blindChatStore,
     karmaScoreStore,
+    dailyChallengeStore,
   };
 }
 
@@ -5072,6 +5104,7 @@ export async function createChatServer() {
     banStore,
     requireAdmin,
     coinStore,
+    dailyChallengeStore,
   } = createApp();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -5352,6 +5385,9 @@ export async function createChatServer() {
       // Sending a message counts as activity even for the rare case where
       // presence:online was never announced on this socket (see presence.ts).
       presenceStore.recordActivity(message.author);
+      // #219's "Send 5 messages"/"Send 2 voice notes" daily challenges.
+      dailyChallengeStore.incrementProgress(message.author, "messages");
+      if (message.audioUrl) dailyChallengeStore.incrementProgress(message.author, "voice-notes");
       io.to(roomId).emit("message:new", message);
       // #156's "newMessage" category preference — recipients who turned
       // this off in /settings/notifications are skipped.

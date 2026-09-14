@@ -156,6 +156,9 @@ export default function SupportPage() {
         <li>
           <Link href="/karma">View your Respect Score</Link>
         </li>
+        <li>
+          <Link href="/daily-challenges">View today's Daily Challenges</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>

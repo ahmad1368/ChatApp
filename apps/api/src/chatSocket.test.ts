@@ -1051,3 +1051,27 @@ test("Virtual gifts (#197): a sender with enough coins can send a gift, which de
     httpServer.close();
   }
 });
+
+test("Daily challenges (#219): sending a message and a voice note progresses their respective challenges", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    client.emit("join", "room-1");
+
+    const textReceived = waitFor(client, "message:new");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "hi" });
+    await textReceived;
+
+    const voiceReceived = waitFor(client, "message:new");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "", audioUrl: "/api/voice-notes/1", waveform: [1, 2, 3] });
+    await voiceReceived;
+
+    const challengesRes = await fetch(`${baseUrl}/api/daily-challenges/alice`);
+    const challenges = (await challengesRes.json()).challenges;
+    assert.equal(challenges.find((c: { id: string }) => c.id === "messages").progress, 2);
+    assert.equal(challenges.find((c: { id: string }) => c.id === "voice-notes").progress, 1);
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
