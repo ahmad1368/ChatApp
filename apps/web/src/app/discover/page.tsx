@@ -12,6 +12,7 @@ import MusicMatches from "../MusicMatches";
 import WeekendPlanMatches from "../WeekendPlanMatches";
 import BioMatches from "../BioMatches";
 import AdBanner from "../AdBanner";
+import VoiceSwipeControl from "../VoiceSwipeControl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -316,6 +317,14 @@ export default function DiscoverPage() {
             </button>
           )}
         </div>
+      )}
+      {viewMode === "card" && (
+        <VoiceSwipeControl
+          onLike={() => swipe("like")}
+          onPass={() => swipe("pass")}
+          onSuperLike={() => swipe("superlike")}
+          onUndo={undo}
+        />
       )}
       {viewMode === "card" ? (
         current ? (
