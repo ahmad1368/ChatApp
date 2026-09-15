@@ -79,6 +79,7 @@ import { LocalSinglesEventStore } from "./localSinglesEvents";
 import { InterestGroupStore } from "./interestGroups";
 import { DateSpotReviewStore } from "./dateSpotReviews";
 import { EventCheckInStore } from "./eventCheckIns";
+import { analyzeBio } from "./bioOptimizer";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2577,6 +2578,15 @@ export function createApp(deps?: {
       return;
     }
     res.json({ ticket: result.ticket });
+  });
+
+  // Hinge's real "Personal AI assistant for writing an optimized bio"
+  // (#231) — see bioOptimizer.ts for the honest scoping (a deterministic
+  // rule-based feedback engine, not a fabricated LLM call). Stateless:
+  // nothing here needs a store, same shape as #120's bioAnalysis.ts.
+  app.post("/api/bio-optimizer/analyze", (req, res) => {
+    const bio = typeof req.body?.bio === "string" ? req.body.bio : "";
+    res.json({ analysis: analyzeBio(bio) });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
