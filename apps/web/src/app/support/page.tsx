@@ -204,6 +204,9 @@ export default function SupportPage() {
         <li>
           <Link href="/date-location-suggestions">Get date location ideas</Link>
         </li>
+        <li>
+          <Link href="/match-probability">See your Match Probability Score</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>

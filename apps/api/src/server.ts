@@ -86,6 +86,7 @@ import { listTopics as listFirstDateTopics, getTopic as getFirstDateTopic, ask a
 import { summarizeConversation } from "./conversationSummarizer";
 import { analyzeTypingPattern } from "./typingPatternDetector";
 import { suggestDateLocations } from "./dateLocationSuggestions";
+import { computeMatchProbability, type MatchSignal } from "./matchProbability";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2676,6 +2677,58 @@ export function createApp(deps?: {
     const interestsA = interestsInfoStore.get(authorA).interests;
     const interestsB = interestsInfoStore.get(authorB).interests;
     res.json(suggestDateLocations(interestsA, interestsB));
+  });
+
+  // eHarmony's real "Predict relationship success probability (Match
+  // Probability Score)" (#238) — see matchProbability.ts for the honest
+  // scoping (a weighted composite of every real compatibility signal
+  // this app already computes, not a fabricated single AI prediction
+  // model). Each signal is only included when both sides actually have
+  // real data for it, so the confidence level genuinely reflects how
+  // much is known about this pair.
+  app.get("/api/match-probability", (req, res) => {
+    const authorA = typeof req.query.authorA === "string" ? req.query.authorA : "";
+    const authorB = typeof req.query.authorB === "string" ? req.query.authorB : "";
+    const roomId = typeof req.query.roomId === "string" ? req.query.roomId : "";
+
+    const signals: MatchSignal[] = [];
+
+    const interestsA = interestsInfoStore.get(authorA).interests;
+    const interestsB = interestsInfoStore.get(authorB).interests;
+    if (interestsA.length > 0 && interestsB.length > 0) {
+      signals.push({ label: "interests", score: computeInterestCompatibility(interestsA, interestsB), weight: 1 });
+    }
+
+    const spotifyA = spotifyInfoStore.get(authorA);
+    const spotifyB = spotifyInfoStore.get(authorB);
+    if (spotifyA.connected && !spotifyA.hideSpotify && spotifyB.connected && !spotifyB.hideSpotify) {
+      signals.push({ label: "music", score: computeMusicMatch(spotifyA.topTracks, spotifyB.topTracks).compatibility, weight: 1 });
+    }
+
+    const plansA = weekendPlansStore.get(authorA);
+    const plansB = weekendPlansStore.get(authorB);
+    if (!plansA.hideWeekendPlans && plansA.weekendPlans.length > 0 && !plansB.hideWeekendPlans && plansB.weekendPlans.length > 0) {
+      signals.push({
+        label: "weekendPlans",
+        score: computeWeekendPlanMatch(plansA.weekendPlans, plansB.weekendPlans).compatibility,
+        weight: 1,
+      });
+    }
+
+    const bioA = bioStore.get(authorA);
+    const bioB = bioStore.get(authorB);
+    if (bioA && bioB) {
+      signals.push({ label: "bio", score: computeBioMatch(bioA, bioB).compatibility, weight: 1 });
+    }
+
+    if (roomId) {
+      const conversation = analyzeConversationCompatibility(messagesByRoom.get(roomId) ?? [], authorA, authorB);
+      if (conversation.hasEnoughData) {
+        signals.push({ label: "conversation", score: conversation.compatibilityScore, weight: 2 });
+      }
+    }
+
+    res.json(computeMatchProbability(signals));
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
