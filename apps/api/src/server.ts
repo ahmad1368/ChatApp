@@ -81,6 +81,7 @@ import { DateSpotReviewStore } from "./dateSpotReviews";
 import { EventCheckInStore } from "./eventCheckIns";
 import { analyzeBio } from "./bioOptimizer";
 import { suggestBestPhoto } from "./bestPhotoSuggestion";
+import { analyzeConversationCompatibility } from "./conversationCompatibility";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2602,6 +2603,17 @@ export function createApp(deps?: {
       noteCount: photoInteractionStore.getNotes(owner, photoId).length,
     }));
     res.json(suggestBestPhoto(entries));
+  });
+
+  // OkCupid's real "Smart analysis of personality compatibility based on
+  // conversations" (#233) — see conversationCompatibility.ts for the
+  // honest scoping (real, explainable signals from the two people's
+  // actual chat history, not a fabricated LLM personality profiler).
+  app.get("/api/rooms/:roomId/conversation-compatibility", (req, res) => {
+    const authorA = typeof req.query.authorA === "string" ? req.query.authorA : "";
+    const authorB = typeof req.query.authorB === "string" ? req.query.authorB : "";
+    const messages = messagesByRoom.get(req.params.roomId) ?? [];
+    res.json(analyzeConversationCompatibility(messages, authorA, authorB));
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
