@@ -80,6 +80,7 @@ import { InterestGroupStore } from "./interestGroups";
 import { DateSpotReviewStore } from "./dateSpotReviews";
 import { EventCheckInStore } from "./eventCheckIns";
 import { analyzeBio } from "./bioOptimizer";
+import { suggestBestPhoto } from "./bestPhotoSuggestion";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2587,6 +2588,20 @@ export function createApp(deps?: {
   app.post("/api/bio-optimizer/analyze", (req, res) => {
     const bio = typeof req.body?.bio === "string" ? req.body.bio : "";
     res.json({ analysis: analyzeBio(bio) });
+  });
+
+  // Hinge's real "Automatic suggestion of the best photos based on
+  // others' feedback" (#232) — see bestPhotoSuggestion.ts for the honest
+  // scoping (ranks by #112's real like/note engagement signal, not a
+  // fabricated computer-vision quality model).
+  app.get("/api/photos/:owner/best-photo-suggestion", (req, res) => {
+    const owner = req.params.owner;
+    const entries = photoAlbumStore.listPhotos(owner).map((photoId) => ({
+      photoId,
+      likeCount: photoInteractionStore.getLikeCount(owner, photoId),
+      noteCount: photoInteractionStore.getNotes(owner, photoId).length,
+    }));
+    res.json(suggestBestPhoto(entries));
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven

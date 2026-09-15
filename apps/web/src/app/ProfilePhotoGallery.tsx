@@ -116,6 +116,56 @@ function PhotoCard({ owner, viewer, photoId }: { owner: string; viewer: string; 
   );
 }
 
+interface BestPhotoSuggestion {
+  ranked: { photoId: string; likeCount: number; noteCount: number; score: number }[];
+  suggestedPhotoId: string | null;
+  hasEnoughFeedback: boolean;
+}
+
+/**
+ * Hinge's real "Automatic suggestion of the best photos based on
+ * others' feedback" (#232) — only shown to the album's own owner, and
+ * only once #112's like/note engagement gives it real signal to act on
+ * (see bestPhotoSuggestion.ts).
+ */
+function BestPhotoBanner({ owner, photoIds, onReordered }: { owner: string; photoIds: string[]; onReordered: () => void }) {
+  const [suggestion, setSuggestion] = useState<BestPhotoSuggestion | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/photos/${encodeURIComponent(owner)}/best-photo-suggestion`)
+      .then((res) => res.json())
+      .then(setSuggestion)
+      .catch(() => {});
+  }, [owner, photoIds]);
+
+  if (!suggestion?.suggestedPhotoId || suggestion.suggestedPhotoId === photoIds[0]) return null;
+
+  const makePrimary = async () => {
+    setBusy(true);
+    try {
+      const reordered = [suggestion.suggestedPhotoId!, ...photoIds.filter((id) => id !== suggestion.suggestedPhotoId)];
+      const res = await fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(owner)}/photos/order`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoIds: reordered }),
+      });
+      if (res.ok) onReordered();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 8, marginBottom: 8, fontSize: 13 }}>
+      Based on likes and notes from others, your best-performing photo isn&apos;t your primary one.
+      <button onClick={makePrimary} disabled={busy} style={{ marginLeft: 8 }}>
+        Make it primary
+      </button>
+    </div>
+  );
+}
+
 /**
  * Hinge's real "like or comment on one specific photo" (#112) — each photo
  * in the owner's album (#59-#62) gets its own heart toggle and note thread,
@@ -124,18 +174,21 @@ function PhotoCard({ owner, viewer, photoId }: { owner: string; viewer: string; 
 export default function ProfilePhotoGallery({ owner, viewer }: { owner: string; viewer: string }) {
   const [photoIds, setPhotoIds] = useState<string[]>([]);
 
-  useEffect(() => {
+  const loadPhotoIds = () => {
     fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(owner)}/photos`)
       .then((res) => res.json())
       .then((body) => setPhotoIds(body.photoIds ?? []))
       .catch(() => {});
-  }, [owner]);
+  };
+
+  useEffect(loadPhotoIds, [owner]);
 
   if (photoIds.length === 0) return null;
 
   return (
     <section style={{ marginTop: 16 }}>
       <h2 style={{ fontSize: 14 }}>Photos</h2>
+      {owner === viewer && <BestPhotoBanner owner={owner} photoIds={photoIds} onReordered={loadPhotoIds} />}
       {photoIds.map((photoId) => (
         <PhotoCard key={photoId} owner={owner} viewer={viewer} photoId={photoId} />
       ))}
