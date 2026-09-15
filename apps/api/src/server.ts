@@ -76,6 +76,7 @@ import { VenueCheckInStore } from "./venueCheckIns";
 import { AudioRoomStore } from "./audioRooms";
 import { RelationshipBlogStore } from "./relationshipBlog";
 import { LocalSinglesEventStore } from "./localSinglesEvents";
+import { InterestGroupStore } from "./interestGroups";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -298,6 +299,7 @@ export function createApp(deps?: {
   audioRoomStore: AudioRoomStore;
   relationshipBlogStore: RelationshipBlogStore;
   localSinglesEventStore: LocalSinglesEventStore;
+  interestGroupStore: InterestGroupStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -421,6 +423,7 @@ export function createApp(deps?: {
   const audioRoomStore = new AudioRoomStore();
   const relationshipBlogStore = new RelationshipBlogStore();
   const localSinglesEventStore = new LocalSinglesEventStore();
+  const interestGroupStore = new InterestGroupStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2422,6 +2425,87 @@ export function createApp(deps?: {
     const result = localSinglesEventStore.cancelRsvp(req.body?.author, req.params.eventId);
     if (!result.success) {
       const status = result.error === "Event not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  // Match.com's real "Ability to form interest groups (e.g., a hiking
+  // group)" (#228) — see interestGroups.ts for the honest scoping (a
+  // persistent, joinable membership circle, distinct from #223's
+  // discussion-only ForumStore, that can organize its own
+  // members-only RSVP'd activities).
+  app.post("/api/interest-groups", (req, res) => {
+    const result = interestGroupStore.createGroup(req.body?.creator, req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ group: result.group });
+  });
+
+  app.get("/api/interest-groups", (_req, res) => {
+    res.json({ groups: interestGroupStore.listGroups() });
+  });
+
+  app.get("/api/interest-groups/:groupId", (req, res) => {
+    const group = interestGroupStore.getGroup(req.params.groupId);
+    if (!group) {
+      res.status(404).json({ error: "Group not found" });
+      return;
+    }
+    res.json({ group, isMember: interestGroupStore.isMember(req.params.groupId, req.query.member) });
+  });
+
+  app.post("/api/interest-groups/:groupId/members", (req, res) => {
+    const result = interestGroupStore.join(req.body?.member, req.params.groupId);
+    if (!result.success) {
+      const status = result.error === "Group not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ memberCount: result.memberCount });
+  });
+
+  app.delete("/api/interest-groups/:groupId/members", (req, res) => {
+    const result = interestGroupStore.leave(req.body?.member, req.params.groupId);
+    if (!result.success) {
+      const status = result.error === "Group not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ memberCount: result.memberCount });
+  });
+
+  app.post("/api/interest-groups/:groupId/activities", (req, res) => {
+    const result = interestGroupStore.createActivity(req.body?.host, req.params.groupId, req.body ?? {});
+    if (!result.success) {
+      const status = result.error === "Group not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ activity: result.activity });
+  });
+
+  app.get("/api/interest-groups/:groupId/activities", (req, res) => {
+    res.json({ activities: interestGroupStore.listActivities(req.params.groupId) });
+  });
+
+  app.post("/api/interest-group-activities/:activityId/rsvp", (req, res) => {
+    const result = interestGroupStore.rsvp(req.body?.author, req.params.activityId);
+    if (!result.success) {
+      const status = result.error === "Activity not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ status: result.status });
+  });
+
+  app.delete("/api/interest-group-activities/:activityId/rsvp", (req, res) => {
+    const result = interestGroupStore.cancelRsvp(req.body?.author, req.params.activityId);
+    if (!result.success) {
+      const status = result.error === "Activity not found" ? 404 : 400;
       res.status(status).json({ error: result.error });
       return;
     }
@@ -5458,6 +5542,7 @@ export function createApp(deps?: {
     audioRoomStore,
     relationshipBlogStore,
     localSinglesEventStore,
+    interestGroupStore,
   };
 }
 
