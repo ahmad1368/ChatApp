@@ -97,6 +97,8 @@ export default function AdminDashboardPage() {
         <Link href="/admin/retention">User retention &rarr;</Link>
         {" · "}
         <Link href="/admin/subscriptions">Active subscriptions &rarr;</Link>
+        {" · "}
+        <Link href="/admin/bot-detection">Bot detection &rarr;</Link>
       </p>
 
       <form
