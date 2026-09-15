@@ -87,6 +87,8 @@ import { summarizeConversation } from "./conversationSummarizer";
 import { analyzeTypingPattern } from "./typingPatternDetector";
 import { suggestDateLocations } from "./dateLocationSuggestions";
 import { computeMatchProbability, type MatchSignal } from "./matchProbability";
+import { StickerStore } from "./stickers";
+import { STICKER_STYLES } from "./stickerGenerator";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -311,6 +313,7 @@ export function createApp(deps?: {
   localSinglesEventStore: LocalSinglesEventStore;
   interestGroupStore: InterestGroupStore;
   dateSpotReviewStore: DateSpotReviewStore;
+  stickerStore: StickerStore;
   eventCheckInStore: EventCheckInStore;
 } {
   const app = express();
@@ -437,6 +440,7 @@ export function createApp(deps?: {
   const localSinglesEventStore = new LocalSinglesEventStore();
   const interestGroupStore = new InterestGroupStore();
   const dateSpotReviewStore = new DateSpotReviewStore();
+  const stickerStore = new StickerStore();
   const eventCheckInStore = new EventCheckInStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
@@ -2729,6 +2733,46 @@ export function createApp(deps?: {
     }
 
     res.json(computeMatchProbability(signals));
+  });
+
+  // Hinge's real "Generate custom chat stickers based on the user's face
+  // using AI" (#239) — see stickerGenerator.ts for the honest scoping
+  // (a real Jimp filter pipeline over the user's own uploaded photo, not
+  // a fabricated face-generation model). Takes an existing album photo
+  // (#45's PhotoStore) rather than a second raw upload path.
+  app.get("/api/sticker-styles", (_req, res) => {
+    res.json({ styles: STICKER_STYLES });
+  });
+
+  app.post("/api/stickers", async (req, res) => {
+    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
+    const photoId = typeof req.body?.photoId === "string" ? req.body.photoId : "";
+    const photo = photoStore.get(photoId);
+    if (!photo || photo.author !== author) {
+      res.status(404).json({ error: "Photo not found" });
+      return;
+    }
+    const result = await stickerStore.generate(author, photo.data, req.body?.style);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ id: result.sticker.id, style: result.sticker.style, createdAt: result.sticker.createdAt });
+  });
+
+  app.get("/api/stickers/:id", (req, res) => {
+    const sticker = stickerStore.get(req.params.id);
+    if (!sticker) {
+      res.status(404).json({ error: "Sticker not found" });
+      return;
+    }
+    res.setHeader("Content-Type", "image/png");
+    res.status(200).send(sticker.data);
+  });
+
+  app.get("/api/stickers/author/:author", (req, res) => {
+    const stickers = stickerStore.listByAuthor(req.params.author).map((s) => ({ id: s.id, style: s.style, createdAt: s.createdAt }));
+    res.json({ stickers });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
@@ -5764,6 +5808,7 @@ export function createApp(deps?: {
     interestGroupStore,
     dateSpotReviewStore,
     eventCheckInStore,
+    stickerStore,
   };
 }
 
