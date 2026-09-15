@@ -165,6 +165,9 @@ export default function SupportPage() {
         <li>
           <Link href="/group-events">Create or RSVP to a Group Event or group date</Link>
         </li>
+        <li>
+          <Link href="/forums">Browse Community Hubs and join a discussion</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
