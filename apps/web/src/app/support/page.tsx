@@ -183,6 +183,9 @@ export default function SupportPage() {
         <li>
           <Link href="/interest-groups">Form or join an interest group</Link>
         </li>
+        <li>
+          <Link href="/date-spot-reviews">Read or post date spot reviews</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
