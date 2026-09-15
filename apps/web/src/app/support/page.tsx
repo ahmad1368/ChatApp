@@ -180,6 +180,9 @@ export default function SupportPage() {
         <li>
           <Link href="/local-events">Browse the local singles events calendar</Link>
         </li>
+        <li>
+          <Link href="/interest-groups">Form or join an interest group</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
