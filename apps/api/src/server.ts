@@ -78,6 +78,7 @@ import { RelationshipBlogStore } from "./relationshipBlog";
 import { LocalSinglesEventStore } from "./localSinglesEvents";
 import { InterestGroupStore } from "./interestGroups";
 import { DateSpotReviewStore } from "./dateSpotReviews";
+import { EventCheckInStore } from "./eventCheckIns";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -302,6 +303,7 @@ export function createApp(deps?: {
   localSinglesEventStore: LocalSinglesEventStore;
   interestGroupStore: InterestGroupStore;
   dateSpotReviewStore: DateSpotReviewStore;
+  eventCheckInStore: EventCheckInStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -427,6 +429,7 @@ export function createApp(deps?: {
   const localSinglesEventStore = new LocalSinglesEventStore();
   const interestGroupStore = new InterestGroupStore();
   const dateSpotReviewStore = new DateSpotReviewStore();
+  const eventCheckInStore = new EventCheckInStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2536,6 +2539,44 @@ export function createApp(deps?: {
   app.get("/api/date-spot-reviews", (req, res) => {
     const venue = typeof req.query.venue === "string" ? req.query.venue : "";
     res.json({ reviews: dateSpotReviewStore.listReviews(venue), summary: dateSpotReviewStore.getVenueSummary(venue) ?? null });
+  });
+
+  // Match.com's real "Ability to confirm event attendance with a QR
+  // code" (#230) — the QR check-in half of the "RSVP/capacity/QR
+  // check-in" implementation guide #221/#222/#227/#228 each explicitly
+  // deferred to here. See eventCheckIns.ts for the honest scoping (a
+  // generic per-event-id ticket usable against any of those RSVP'd
+  // event types).
+  app.post("/api/event-check-ins/tickets", async (req, res) => {
+    const result = await eventCheckInStore.issueTicket(req.body?.eventId, req.body?.host, req.body?.attendee);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ ticket: result.ticket, qrCodeDataUrl: result.qrCodeDataUrl });
+  });
+
+  app.get("/api/event-check-ins/tickets/:eventId/:attendee", (req, res) => {
+    const ticket = eventCheckInStore.getTicket(req.params.eventId, req.params.attendee);
+    if (!ticket) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+    res.json({ ticket });
+  });
+
+  app.get("/api/event-check-ins/:eventId", (req, res) => {
+    res.json({ tickets: eventCheckInStore.listTickets(req.params.eventId) });
+  });
+
+  app.post("/api/event-check-ins/confirm", (req, res) => {
+    const result = eventCheckInStore.confirmCheckIn(req.body?.scannedBy, req.body?.token);
+    if (!result.success) {
+      const status = result.error === "Ticket not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ ticket: result.ticket });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
@@ -5570,6 +5611,7 @@ export function createApp(deps?: {
     localSinglesEventStore,
     interestGroupStore,
     dateSpotReviewStore,
+    eventCheckInStore,
   };
 }
 
