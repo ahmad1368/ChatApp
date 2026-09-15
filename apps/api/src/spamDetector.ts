@@ -4,7 +4,10 @@ const URL_REGEX = /\bhttps?:\/\/\S+/i;
 
 // Common spam/promo phrasing from real dating-app spam scripts (fake
 // modeling/cam-site pushes, "follow me" prompts, work-from-home schemes).
-const SPAM_PHRASES = [
+// Exported for #240's messageCleanupFilter.ts, which reuses this exact
+// list for a different mechanism (redacting the phrase before it's sent)
+// instead of duplicating it.
+export const SPAM_PHRASES = [
   "click the link in my bio",
   "check out my onlyfans",
   "dm me for a good time",
