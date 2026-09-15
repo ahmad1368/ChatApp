@@ -23,6 +23,22 @@
   --chat-font-size: 1rem;
 }
 
+/* User-adjustable text size (#242) — wins over the desktop breakpoint's
+   own --chat-font-size bump below via specificity ([data-font-size]
+   adds an attribute selector on top of :root), regardless of source
+   order, so an explicit choice always sticks across screen sizes. */
+:root[data-font-size="small"] {
+  --chat-font-size: 0.875rem;
+}
+
+:root[data-font-size="large"] {
+  --chat-font-size: 1.2rem;
+}
+
+:root[data-font-size="xlarge"] {
+  --chat-font-size: 1.4rem;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --color-bg: #0b0f19;
