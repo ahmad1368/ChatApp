@@ -172,6 +172,7 @@ import { buildAdminMetrics, isAdminConfigured, isValidAdminKey } from "./adminMe
 import { buildConversionFunnel } from "./analyticsFunnel";
 import { PhotoReviewStore } from "./photoReview";
 import { PhotoInteractionStore } from "./photoInteractions";
+import { PhotoAltTextStore } from "./photoAltText";
 import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
 import { ViewModeStore } from "./viewMode";
@@ -281,6 +282,7 @@ export function createApp(deps?: {
   cacheClearLogStore: CacheClearLogStore;
   termsAcceptanceStore: TermsAcceptanceStore;
   photoInteractionStore: PhotoInteractionStore;
+  photoAltTextStore: PhotoAltTextStore;
   contactsGraphStore: ContactsGraphStore;
   viewModeStore: ViewModeStore;
   weekendPlansStore: WeekendPlansStore;
@@ -513,6 +515,7 @@ export function createApp(deps?: {
   const cacheClearLogStore = new CacheClearLogStore();
   const termsAcceptanceStore = new TermsAcceptanceStore();
   const photoInteractionStore = new PhotoInteractionStore();
+  const photoAltTextStore = new PhotoAltTextStore();
   const contactsGraphStore = new ContactsGraphStore();
   const viewModeStore = new ViewModeStore();
   const weekendPlansStore = new WeekendPlansStore();
@@ -4039,6 +4042,23 @@ export function createApp(deps?: {
     res.json({ notes: photoInteractionStore.getNotes(req.params.owner, req.params.photoId) });
   });
 
+  // Bumble's real "Text descriptions on photos (Alt Text) for
+  // accessibility" (#245) — see photoAltText.ts for the honest scoping
+  // (a real, author-written description per photo, not a fabricated
+  // image-captioning model).
+  app.put("/api/photos/:owner/:photoId/alt-text", (req, res) => {
+    const result = photoAltTextStore.setAltText(req.params.owner, req.params.photoId, req.body?.altText);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ altText: result.altText });
+  });
+
+  app.get("/api/photos/:owner/:photoId/alt-text", (req, res) => {
+    res.json({ altText: photoAltTextStore.getAltText(req.params.owner, req.params.photoId) ?? null });
+  });
+
   // Tinder's real Explore Mode (#99): a curated themed deck instead of the
   // normal, unfiltered discovery deck — the catalog itself is #182's
   // admin-managed ExploreThemeStore, so this returns whatever themes are
@@ -5822,6 +5842,7 @@ export function createApp(deps?: {
     dateSpotReviewStore,
     eventCheckInStore,
     stickerStore,
+    photoAltTextStore,
   };
 }
 
