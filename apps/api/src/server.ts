@@ -72,6 +72,7 @@ import { DailyChallengeStore } from "./dailyChallenges";
 import { WeeklyLeaderboardStore } from "./weeklyLeaderboard";
 import { GroupEventStore } from "./groupEvents";
 import { ForumStore } from "./forums";
+import { VenueCheckInStore } from "./venueCheckIns";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -290,6 +291,7 @@ export function createApp(deps?: {
   weeklyLeaderboardStore: WeeklyLeaderboardStore;
   groupEventStore: GroupEventStore;
   forumStore: ForumStore;
+  venueCheckInStore: VenueCheckInStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -409,6 +411,7 @@ export function createApp(deps?: {
   const weeklyLeaderboardStore = new WeeklyLeaderboardStore();
   const groupEventStore = new GroupEventStore();
   const forumStore = new ForumStore();
+  const venueCheckInStore = new VenueCheckInStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2209,6 +2212,42 @@ export function createApp(deps?: {
       return;
     }
     res.status(201).json({ reply: result.reply });
+  });
+
+  // Match.com's real "Check-in at public places and see who's there"
+  // (#224): an explicit named-venue check-in, distinct from #108's
+  // CrossedPathsStore (raw GPS-coordinate proximity never shown as a
+  // place) — see venueCheckIns.ts for the honest scoping (a single active
+  // check-in per person that auto-expires after a few hours).
+  app.post("/api/venue-check-ins", (req, res) => {
+    const result = venueCheckInStore.checkIn(req.body?.author, req.body?.venue);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ checkIn: result.checkIn });
+  });
+
+  app.delete("/api/venue-check-ins/:author", (req, res) => {
+    const result = venueCheckInStore.checkOut(req.params.author);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  app.get("/api/venue-check-ins/mine/:author", (req, res) => {
+    res.json({ checkIn: venueCheckInStore.getMyCheckIn(req.params.author) ?? null });
+  });
+
+  app.get("/api/venue-check-ins/venues", (_req, res) => {
+    res.json({ venues: venueCheckInStore.listActiveVenues() });
+  });
+
+  app.get("/api/venue-check-ins/venues/at", (req, res) => {
+    const venue = typeof req.query.venue === "string" ? req.query.venue : "";
+    res.json({ checkIns: venueCheckInStore.getVenueCheckIns(venue) });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
@@ -5237,6 +5276,7 @@ export function createApp(deps?: {
     weeklyLeaderboardStore,
     groupEventStore,
     forumStore,
+    venueCheckInStore,
   };
 }
 

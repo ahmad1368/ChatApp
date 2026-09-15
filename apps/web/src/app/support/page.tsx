@@ -168,6 +168,9 @@ export default function SupportPage() {
         <li>
           <Link href="/forums">Browse Community Hubs and join a discussion</Link>
         </li>
+        <li>
+          <Link href="/check-in">Check in at a venue and see who's there</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
