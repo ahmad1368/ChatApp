@@ -73,6 +73,7 @@ import { WeeklyLeaderboardStore } from "./weeklyLeaderboard";
 import { GroupEventStore } from "./groupEvents";
 import { ForumStore } from "./forums";
 import { VenueCheckInStore } from "./venueCheckIns";
+import { AudioRoomStore } from "./audioRooms";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -292,6 +293,7 @@ export function createApp(deps?: {
   groupEventStore: GroupEventStore;
   forumStore: ForumStore;
   venueCheckInStore: VenueCheckInStore;
+  audioRoomStore: AudioRoomStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -412,6 +414,7 @@ export function createApp(deps?: {
   const groupEventStore = new GroupEventStore();
   const forumStore = new ForumStore();
   const venueCheckInStore = new VenueCheckInStore();
+  const audioRoomStore = new AudioRoomStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2248,6 +2251,93 @@ export function createApp(deps?: {
   app.get("/api/venue-check-ins/venues/at", (req, res) => {
     const venue = typeof req.query.venue === "string" ? req.query.venue : "";
     res.json({ checkIns: venueCheckInStore.getVenueCheckIns(venue) });
+  });
+
+  // Match.com's real "Support for podcasts or group audio rooms (Audio
+  // Rooms)" (#225): the real live-membership/moderation half of a
+  // Clubhouse-style room (host/speakers/listeners, hand-raising, invite
+  // to speak) — see audioRooms.ts for the honest scoping (no SFU in this
+  // app's infra to actually mix N-way audio).
+  app.post("/api/audio-rooms", (req, res) => {
+    const result = audioRoomStore.createRoom(req.body?.host, req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ room: result.room });
+  });
+
+  app.get("/api/audio-rooms", (_req, res) => {
+    res.json({ rooms: audioRoomStore.listActiveRooms() });
+  });
+
+  app.get("/api/audio-rooms/:roomId", (req, res) => {
+    const room = audioRoomStore.getRoom(req.params.roomId);
+    if (!room) {
+      res.status(404).json({ error: "Room not found" });
+      return;
+    }
+    res.json({ room });
+  });
+
+  app.post("/api/audio-rooms/:roomId/join", (req, res) => {
+    const result = audioRoomStore.join(req.body?.author, req.params.roomId);
+    if (!result.success) {
+      const status = result.error === "Room not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ room: result.room });
+  });
+
+  app.post("/api/audio-rooms/:roomId/leave", (req, res) => {
+    const result = audioRoomStore.leave(req.body?.author, req.params.roomId);
+    if (!result.success) {
+      const status = result.error === "Room not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ ended: result.ended, newHost: result.newHost });
+  });
+
+  app.post("/api/audio-rooms/:roomId/raise-hand", (req, res) => {
+    const result = audioRoomStore.raiseHand(req.body?.author, req.params.roomId);
+    if (!result.success) {
+      const status = result.error === "Room not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  app.post("/api/audio-rooms/:roomId/invite-to-speak", (req, res) => {
+    const result = audioRoomStore.inviteToSpeak(req.body?.host, req.params.roomId, req.body?.author);
+    if (!result.success) {
+      const status = result.error === "Room not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ room: result.room });
+  });
+
+  app.post("/api/audio-rooms/:roomId/move-to-listener", (req, res) => {
+    const result = audioRoomStore.moveToListener(req.body?.host, req.params.roomId, req.body?.author);
+    if (!result.success) {
+      const status = result.error === "Room not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ room: result.room });
+  });
+
+  app.delete("/api/audio-rooms/:roomId", (req, res) => {
+    const result = audioRoomStore.endRoom(req.body?.host, req.params.roomId);
+    if (!result.success) {
+      const status = result.error === "Room not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
@@ -5277,6 +5367,7 @@ export function createApp(deps?: {
     groupEventStore,
     forumStore,
     venueCheckInStore,
+    audioRoomStore,
   };
 }
 
