@@ -210,6 +210,9 @@ export default function SupportPage() {
         <li>
           <Link href="/stickers">Make a chat sticker from your photo</Link>
         </li>
+        <li>
+          <Link href="/message-cleanup">Clean up a message before sending</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>

@@ -89,6 +89,7 @@ import { suggestDateLocations } from "./dateLocationSuggestions";
 import { computeMatchProbability, type MatchSignal } from "./matchProbability";
 import { StickerStore } from "./stickers";
 import { STICKER_STYLES } from "./stickerGenerator";
+import { cleanMessageBeforeSending } from "./messageCleanupFilter";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2773,6 +2774,18 @@ export function createApp(deps?: {
   app.get("/api/stickers/author/:author", (req, res) => {
     const stickers = stickerStore.listByAuthor(req.params.author).map((s) => ({ id: s.id, style: s.style, createdAt: s.createdAt }));
     res.json({ stickers });
+  });
+
+  // OkCupid's real "Smart filter to remove offensive or spam text before
+  // sending" (#240) — see messageCleanupFilter.ts for the honest scoping
+  // (an actual pre-send text transformation reusing #176's profanity
+  // masking and spamDetector.ts's promo-phrase list, distinct from
+  // #143's interactive warning and spamDetector.ts's own silent
+  // post-send flag). Stateless: the client calls this for a cleaned
+  // preview and decides whether to send it.
+  app.post("/api/messages/clean-preview", (req, res) => {
+    const text = typeof req.body?.text === "string" ? req.body.text : "";
+    res.json(cleanMessageBeforeSending(text));
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
