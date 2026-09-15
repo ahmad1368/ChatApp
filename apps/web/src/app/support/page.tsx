@@ -186,6 +186,9 @@ export default function SupportPage() {
         <li>
           <Link href="/date-spot-reviews">Read or post date spot reviews</Link>
         </li>
+        <li>
+          <Link href="/event-check-in">Get or scan an event check-in QR code</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
