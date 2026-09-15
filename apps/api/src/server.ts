@@ -74,6 +74,7 @@ import { GroupEventStore } from "./groupEvents";
 import { ForumStore } from "./forums";
 import { VenueCheckInStore } from "./venueCheckIns";
 import { AudioRoomStore } from "./audioRooms";
+import { RelationshipBlogStore } from "./relationshipBlog";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -294,6 +295,7 @@ export function createApp(deps?: {
   forumStore: ForumStore;
   venueCheckInStore: VenueCheckInStore;
   audioRoomStore: AudioRoomStore;
+  relationshipBlogStore: RelationshipBlogStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -415,6 +417,7 @@ export function createApp(deps?: {
   const forumStore = new ForumStore();
   const venueCheckInStore = new VenueCheckInStore();
   const audioRoomStore = new AudioRoomStore();
+  const relationshipBlogStore = new RelationshipBlogStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2338,6 +2341,35 @@ export function createApp(deps?: {
       return;
     }
     res.json({ success: true });
+  });
+
+  // eHarmony's real "Educational blog section with relationship
+  // psychology articles" (#226) — see relationshipBlog.ts for the honest
+  // scoping (a seeded catalog of real articles, extendable through a
+  // real admin-gated publish endpoint rather than a fixed, never-growing
+  // list).
+  app.get("/api/blog/articles", (req, res) => {
+    const category = typeof req.query.category === "string" ? req.query.category : undefined;
+    res.json({ articles: relationshipBlogStore.listArticles(category) });
+  });
+
+  app.get("/api/blog/articles/:articleId", (req, res) => {
+    const article = relationshipBlogStore.getArticle(req.params.articleId);
+    if (!article) {
+      res.status(404).json({ error: "Article not found" });
+      return;
+    }
+    res.json({ article });
+  });
+
+  app.post("/api/admin/blog/articles", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = relationshipBlogStore.publish(req.body?.author, req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ article: result.article });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
@@ -5368,6 +5400,7 @@ export function createApp(deps?: {
     forumStore,
     venueCheckInStore,
     audioRoomStore,
+    relationshipBlogStore,
   };
 }
 
