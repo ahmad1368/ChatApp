@@ -201,6 +201,9 @@ export default function SupportPage() {
         <li>
           <Link href="/conversation-summary">Summarize a long conversation</Link>
         </li>
+        <li>
+          <Link href="/date-location-suggestions">Get date location ideas</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>

@@ -85,6 +85,7 @@ import { analyzeConversationCompatibility } from "./conversationCompatibility";
 import { listTopics as listFirstDateTopics, getTopic as getFirstDateTopic, ask as askFirstDateGuide } from "./firstDateGuide";
 import { summarizeConversation } from "./conversationSummarizer";
 import { analyzeTypingPattern } from "./typingPatternDetector";
+import { suggestDateLocations } from "./dateLocationSuggestions";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2662,6 +2663,19 @@ export function createApp(deps?: {
       roomMessages.filter((m) => m.author === author).map((m) => ({ roomId, text: m.text, createdAt: m.createdAt }))
     );
     res.json(analyzeTypingPattern(messages));
+  });
+
+  // Match.com's real "Suggest a suitable date location based on shared
+  // interests" (#237) — see dateLocationSuggestions.ts for the honest
+  // scoping (a real, deterministic mapping from #79's interest catalog
+  // to date-location categories, not a fabricated recommendation model
+  // or a live places/geocoding API this app has no credentials for).
+  app.get("/api/date-location-suggestions", (req, res) => {
+    const authorA = typeof req.query.authorA === "string" ? req.query.authorA : "";
+    const authorB = typeof req.query.authorB === "string" ? req.query.authorB : "";
+    const interestsA = interestsInfoStore.get(authorA).interests;
+    const interestsB = interestsInfoStore.get(authorB).interests;
+    res.json(suggestDateLocations(interestsA, interestsB));
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
