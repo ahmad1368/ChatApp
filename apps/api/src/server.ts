@@ -83,6 +83,7 @@ import { analyzeBio } from "./bioOptimizer";
 import { suggestBestPhoto } from "./bestPhotoSuggestion";
 import { analyzeConversationCompatibility } from "./conversationCompatibility";
 import { listTopics as listFirstDateTopics, getTopic as getFirstDateTopic, ask as askFirstDateGuide } from "./firstDateGuide";
+import { summarizeConversation } from "./conversationSummarizer";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2637,6 +2638,15 @@ export function createApp(deps?: {
   app.post("/api/first-date-guide/ask", (req, res) => {
     const question = typeof req.body?.question === "string" ? req.body.question : "";
     res.json(askFirstDateGuide(question));
+  });
+
+  // Hinge's real "Smart summarizer for long conversations" (#235) — see
+  // conversationSummarizer.ts for the honest scoping (a real extractive
+  // summary — top keywords plus the conversation's own highest-signal
+  // messages, not a fabricated abstractive LLM summary).
+  app.get("/api/rooms/:roomId/conversation-summary", (req, res) => {
+    const messages = messagesByRoom.get(req.params.roomId) ?? [];
+    res.json(summarizeConversation(messages));
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven

@@ -198,6 +198,9 @@ export default function SupportPage() {
         <li>
           <Link href="/first-date-guide">Get first-date advice</Link>
         </li>
+        <li>
+          <Link href="/conversation-summary">Summarize a long conversation</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
