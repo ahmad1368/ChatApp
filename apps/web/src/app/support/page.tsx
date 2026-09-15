@@ -195,6 +195,9 @@ export default function SupportPage() {
         <li>
           <Link href="/conversation-compatibility">See your conversation compatibility</Link>
         </li>
+        <li>
+          <Link href="/first-date-guide">Get first-date advice</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
