@@ -16,6 +16,9 @@ function PhotoCard({ owner, viewer, photoId }: { owner: string; viewer: string; 
   const [notes, setNotes] = useState<PhotoNote[]>([]);
   const [noteText, setNoteText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [altText, setAltText] = useState("");
+  const [altTextDraft, setAltTextDraft] = useState("");
+  const [editingAltText, setEditingAltText] = useState(false);
 
   const loadLikes = () => {
     fetch(`${API_URL}/api/photo-likes/${encodeURIComponent(owner)}/${encodeURIComponent(photoId)}?viewer=${encodeURIComponent(viewer)}`)
@@ -34,11 +37,40 @@ function PhotoCard({ owner, viewer, photoId }: { owner: string; viewer: string; 
       .catch(() => {});
   };
 
+  const loadAltText = () => {
+    fetch(`${API_URL}/api/photos/${encodeURIComponent(owner)}/${encodeURIComponent(photoId)}/alt-text`)
+      .then((res) => res.json())
+      .then((body) => {
+        setAltText(body.altText ?? "");
+        setAltTextDraft(body.altText ?? "");
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     loadLikes();
     loadNotes();
+    loadAltText();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [owner, viewer, photoId]);
+
+  const saveAltText = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/photos/${encodeURIComponent(owner)}/${encodeURIComponent(photoId)}/alt-text`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ altText: altTextDraft }),
+      });
+      if (res.ok) {
+        const body = await res.json();
+        setAltText(body.altText ?? "");
+        setEditingAltText(false);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const toggleLike = async () => {
     setBusy(true);
@@ -80,7 +112,7 @@ function PhotoCard({ owner, viewer, photoId }: { owner: string; viewer: string; 
     <div style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 8, marginTop: 8 }}>
       <img
         src={`${API_URL}/api/photos/${encodeURIComponent(photoId)}?viewer=${encodeURIComponent(viewer)}`}
-        alt="Profile"
+        alt={altText || `${owner}'s profile photo`}
         style={{ width: "100%", borderRadius: 6, display: "block" }}
       />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
@@ -88,6 +120,29 @@ function PhotoCard({ owner, viewer, photoId }: { owner: string; viewer: string; 
           {liked ? "❤️" : "🤍"} {likeCount}
         </button>
       </div>
+      {owner === viewer &&
+        (editingAltText ? (
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            <input
+              type="text"
+              value={altTextDraft}
+              onChange={(e) => setAltTextDraft(e.target.value)}
+              placeholder="Describe this photo for screen readers"
+              style={{ flex: 1, fontSize: 12 }}
+              maxLength={250}
+            />
+            <button onClick={saveAltText} disabled={busy}>
+              Save
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditingAltText(true)}
+            style={{ fontSize: 11, color: "var(--color-muted)", marginTop: 6, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+          >
+            {altText ? `Alt text: "${altText}" (edit)` : "Add alt text for accessibility"}
+          </button>
+        ))}
       {notes.length > 0 && (
         <ul style={{ marginTop: 6, paddingLeft: 16, fontSize: 12 }}>
           {notes.map((note, i) => (
