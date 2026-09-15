@@ -177,6 +177,9 @@ export default function SupportPage() {
         <li>
           <Link href="/blog">Read relationship psychology articles</Link>
         </li>
+        <li>
+          <Link href="/local-events">Browse the local singles events calendar</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
