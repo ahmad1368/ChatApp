@@ -75,6 +75,23 @@ body {
   font-size: var(--chat-font-size);
 }
 
+/* Screen-reader/keyboard "skip to composer" link (#231): hidden until it
+   receives focus, then rendered in-flow like any other real control. */
+.skip-link {
+  position: absolute;
+  top: -1000px;
+  left: 0;
+  z-index: 1000;
+  padding: 8px 16px;
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  border-radius: 0 0 4px 0;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
 .chat-app__header {
   display: flex;
   justify-content: space-between;
@@ -279,6 +296,8 @@ body {
 
 .chat-app__image-button {
   padding: 8px 12px;
+  min-width: 44px;
+  min-height: 44px;
   font-size: inherit;
   background: var(--color-panel);
   color: var(--color-text);
@@ -304,6 +323,8 @@ body {
 
 .chat-app__voice-button {
   padding: 8px 12px;
+  min-width: 44px;
+  min-height: 44px;
   font-size: inherit;
   background: var(--color-panel);
   color: var(--color-text);
@@ -713,6 +734,8 @@ body {
 
 .chat-app__send {
   padding: 8px 16px;
+  min-width: 44px;
+  min-height: 44px;
   font-size: inherit;
   background: var(--color-accent);
   color: var(--color-accent-text);

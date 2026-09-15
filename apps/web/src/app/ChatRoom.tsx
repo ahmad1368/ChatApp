@@ -2005,6 +2005,9 @@ export default function ChatRoom({
   return (
     <BiometricLock author={author}>
     <main className="chat-app">
+      <a href="#chat-composer" className="skip-link">
+        Skip to message composer
+      </a>
       <div className="chat-app__header">
         <h1>{t("title")}</h1>
         <div className="chat-app__header-links">
@@ -2206,6 +2209,10 @@ export default function ChatRoom({
       )}
       <div
         className="chat-app__messages"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-label="Chat messages"
         style={{ position: "relative", filter: obscured ? "blur(12px)" : "none", transition: "filter 120ms ease" }}
       >
         {watermarkLabel && (
@@ -2304,10 +2311,11 @@ export default function ChatRoom({
       {!isGuest && callTarget && messages.length < 3 && (
         <IcebreakerSuggestions author={author} candidate={callTarget} onPick={setText} />
       )}
-      <div className="chat-app__composer">
+      <div className="chat-app__composer" id="chat-composer">
         <textarea
           ref={composerRef}
           className="chat-app__input chat-app__input--textarea"
+          aria-label={isGuest ? "Sign up to send a message" : t("placeholder")}
           value={text}
           onChange={handleComposerChange}
           onKeyDown={handleComposerKeyDown}
@@ -2327,6 +2335,7 @@ export default function ChatRoom({
           onClick={() => fileInputRef.current?.click()}
           disabled={isGuest || isSendingImage || !liveUpdatesEnabled}
           title="Send an image"
+          aria-label="Send an image"
         >
           📷
         </button>
@@ -2335,6 +2344,7 @@ export default function ChatRoom({
           onClick={isRecording ? stopRecording : startRecording}
           disabled={isGuest || isSendingVoiceNote || !liveUpdatesEnabled}
           title={isRecording ? "Stop recording" : "Record a voice note"}
+          aria-label={isRecording ? "Stop recording" : "Record a voice note"}
         >
           {isRecording ? "⏹" : "🎤"}
         </button>
@@ -2350,6 +2360,7 @@ export default function ChatRoom({
           onClick={() => selfDestructFileInputRef.current?.click()}
           disabled={isGuest || isSendingSelfDestructPhoto || !liveUpdatesEnabled}
           title="Send a disappearing photo"
+          aria-label="Send a disappearing photo"
         >
           🔥📷
         </button>
@@ -2358,6 +2369,7 @@ export default function ChatRoom({
           onClick={() => setShowGifPicker((v) => !v)}
           disabled={isGuest || !liveUpdatesEnabled}
           title="Send a GIF or sticker"
+          aria-label="Send a GIF or sticker"
         >
           GIF
         </button>
@@ -2366,6 +2378,7 @@ export default function ChatRoom({
           onClick={() => setShowLocationPicker((v) => !v)}
           disabled={isGuest || !liveUpdatesEnabled}
           title="Send your location"
+          aria-label="Send your location"
         >
           📍
         </button>
@@ -2375,6 +2388,7 @@ export default function ChatRoom({
             onClick={() => (e2eeEnabled ? disableE2EE() : enableE2EE())}
             disabled={isGuest || !liveUpdatesEnabled || e2eeBusy}
             title={e2eeEnabled ? "Turn off end-to-end encryption" : "Turn on end-to-end encryption"}
+            aria-label={e2eeEnabled ? "Turn off end-to-end encryption" : "Turn on end-to-end encryption"}
           >
             {e2eeEnabled ? "🔒" : "🔓"}
           </button>
@@ -2385,6 +2399,7 @@ export default function ChatRoom({
             onClick={startGame}
             disabled={isGuest || !liveUpdatesEnabled}
             title="Play Tic-Tac-Toe to break the ice"
+            aria-label="Play Tic-Tac-Toe to break the ice"
           >
             🎮
           </button>
@@ -2394,6 +2409,7 @@ export default function ChatRoom({
           onClick={() => setShowDateProposalPicker((v) => !v)}
           disabled={isGuest || !liveUpdatesEnabled}
           title="Suggest a type of date"
+          aria-label="Suggest a type of date"
         >
           💡
         </button>
@@ -2402,6 +2418,7 @@ export default function ChatRoom({
           onClick={() => setShowGiftPicker((v) => !v)}
           disabled={isGuest || !liveUpdatesEnabled}
           title={`Send a gift (${coinBalance} coins)`}
+          aria-label={`Send a gift (${coinBalance} coins)`}
         >
           🎁
         </button>
@@ -2410,6 +2427,7 @@ export default function ChatRoom({
           onClick={() => setShowDateInvitePicker((v) => !v)}
           disabled={isGuest || !liveUpdatesEnabled}
           title="Propose a real date"
+          aria-label="Propose a real date"
         >
           📅
         </button>
