@@ -71,6 +71,7 @@ import { KarmaScoreStore } from "./karmaScore";
 import { DailyChallengeStore } from "./dailyChallenges";
 import { WeeklyLeaderboardStore } from "./weeklyLeaderboard";
 import { GroupEventStore } from "./groupEvents";
+import { ForumStore } from "./forums";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -288,6 +289,7 @@ export function createApp(deps?: {
   dailyChallengeStore: DailyChallengeStore;
   weeklyLeaderboardStore: WeeklyLeaderboardStore;
   groupEventStore: GroupEventStore;
+  forumStore: ForumStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -406,6 +408,7 @@ export function createApp(deps?: {
   const dailyChallengeStore = new DailyChallengeStore();
   const weeklyLeaderboardStore = new WeeklyLeaderboardStore();
   const groupEventStore = new GroupEventStore();
+  const forumStore = new ForumStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2127,6 +2130,85 @@ export function createApp(deps?: {
       return;
     }
     res.json({ success: true });
+  });
+
+  // Match.com's real "Discussion forums or topic-based communities"
+  // (#223): topic-based Hubs anyone can browse, but that require joining
+  // before posting a thread or reply (see forums.ts for the honest
+  // scoping).
+  app.post("/api/forum-hubs", (req, res) => {
+    const result = forumStore.createHub(req.body?.creator, req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ hub: result.hub });
+  });
+
+  app.get("/api/forum-hubs", (_req, res) => {
+    res.json({ hubs: forumStore.listHubs() });
+  });
+
+  app.get("/api/forum-hubs/:hubId", (req, res) => {
+    const hub = forumStore.getHub(req.params.hubId);
+    if (!hub) {
+      res.status(404).json({ error: "Hub not found" });
+      return;
+    }
+    res.json({ hub, isMember: forumStore.isMember(req.params.hubId, req.query.member) });
+  });
+
+  app.post("/api/forum-hubs/:hubId/members", (req, res) => {
+    const result = forumStore.joinHub(req.body?.member, req.params.hubId);
+    if (!result.success) {
+      const status = result.error === "Hub not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ memberCount: result.memberCount });
+  });
+
+  app.delete("/api/forum-hubs/:hubId/members", (req, res) => {
+    const result = forumStore.leaveHub(req.body?.member, req.params.hubId);
+    if (!result.success) {
+      const status = result.error === "Hub not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ memberCount: result.memberCount });
+  });
+
+  app.post("/api/forum-hubs/:hubId/threads", (req, res) => {
+    const result = forumStore.createThread(req.body?.author, req.params.hubId, req.body ?? {});
+    if (!result.success) {
+      const status = result.error === "Hub not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ thread: result.thread });
+  });
+
+  app.get("/api/forum-hubs/:hubId/threads", (req, res) => {
+    res.json({ threads: forumStore.listThreads(req.params.hubId) });
+  });
+
+  app.get("/api/forum-threads/:threadId", (req, res) => {
+    const details = forumStore.getThread(req.params.threadId);
+    if (!details) {
+      res.status(404).json({ error: "Thread not found" });
+      return;
+    }
+    res.json(details);
+  });
+
+  app.post("/api/forum-threads/:threadId/replies", (req, res) => {
+    const result = forumStore.createReply(req.body?.author, req.params.threadId, req.body ?? {});
+    if (!result.success) {
+      const status = result.error === "Thread not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ reply: result.reply });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
@@ -5154,6 +5236,7 @@ export function createApp(deps?: {
     dailyChallengeStore,
     weeklyLeaderboardStore,
     groupEventStore,
+    forumStore,
   };
 }
 
