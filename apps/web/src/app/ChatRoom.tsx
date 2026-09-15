@@ -28,6 +28,7 @@ import IcebreakerSuggestions from "./IcebreakerSuggestions";
 import LocationMessage from "./LocationMessage";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
+import FontSizeToggle from "./FontSizeToggle";
 import ReportDialog from "./ReportDialog";
 import SOSButton from "./SOSButton";
 import BiometricLock from "./BiometricLock";
@@ -2018,6 +2019,7 @@ export default function ChatRoom({
           <Link href="/share-my-date">📍 Share My Date</Link>
           <NotificationInbox author={author} />
           <ThemeToggle />
+          <FontSizeToggle />
           <LocaleToggle />
           <button className="chat-app__theme-toggle" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)">
             ⌨ Shortcuts
