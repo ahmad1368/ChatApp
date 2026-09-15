@@ -29,6 +29,7 @@ import LocationMessage from "./LocationMessage";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
 import FontSizeToggle from "./FontSizeToggle";
+import HighContrastToggle from "./HighContrastToggle";
 import ReportDialog from "./ReportDialog";
 import SOSButton from "./SOSButton";
 import BiometricLock from "./BiometricLock";
@@ -2020,6 +2021,7 @@ export default function ChatRoom({
           <NotificationInbox author={author} />
           <ThemeToggle />
           <FontSizeToggle />
+          <HighContrastToggle />
           <LocaleToggle />
           <button className="chat-app__theme-toggle" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)">
             ⌨ Shortcuts

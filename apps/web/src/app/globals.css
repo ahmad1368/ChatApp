@@ -73,6 +73,50 @@
   --chart-series-5: #d55181;
 }
 
+/* High Contrast Mode (#243): real WCAG-AA/AAA-exceeding contrast ratios
+   (text-on-background well past 7:1, borders switched from a barely-
+   visible ~1.6:1 gray to full black/white) rather than a cosmetic
+   theme variant. Chart series colors are left alone — those are
+   already validated CVD-safe (#171) and this mode targets text/UI
+   contrast (WCAG 1.4.3/1.4.6), a different concern. The dark+high-
+   contrast combo selectors below are deliberately more specific than
+   the plain dark-theme rules above so they always win when both are
+   active, regardless of source order. */
+:root[data-contrast="high"] {
+  --color-bg: #ffffff;
+  --color-text: #000000;
+  --color-muted: #262626;
+  --color-border: #000000;
+  --color-panel: #f0f0f0;
+  --color-accent: #0000ee;
+  --color-accent-text: #ffffff;
+  --color-danger: #b30000;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-contrast="high"]:not([data-theme="light"]) {
+    --color-bg: #000000;
+    --color-text: #ffffff;
+    --color-muted: #d9d9d9;
+    --color-border: #ffffff;
+    --color-panel: #000000;
+    --color-accent: #66b2ff;
+    --color-accent-text: #000000;
+    --color-danger: #ff6666;
+  }
+}
+
+:root[data-contrast="high"][data-theme="dark"] {
+  --color-bg: #000000;
+  --color-text: #ffffff;
+  --color-muted: #d9d9d9;
+  --color-border: #ffffff;
+  --color-panel: #000000;
+  --color-accent: #66b2ff;
+  --color-accent-text: #000000;
+  --color-danger: #ff6666;
+}
+
 * {
   box-sizing: border-box;
 }
