@@ -192,6 +192,9 @@ export default function SupportPage() {
         <li>
           <Link href="/bio-optimizer">Get AI-style feedback on your bio</Link>
         </li>
+        <li>
+          <Link href="/conversation-compatibility">See your conversation compatibility</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
