@@ -207,6 +207,9 @@ export default function SupportPage() {
         <li>
           <Link href="/match-probability">See your Match Probability Score</Link>
         </li>
+        <li>
+          <Link href="/stickers">Make a chat sticker from your photo</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
