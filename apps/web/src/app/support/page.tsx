@@ -171,6 +171,9 @@ export default function SupportPage() {
         <li>
           <Link href="/check-in">Check in at a venue and see who's there</Link>
         </li>
+        <li>
+          <Link href="/audio-rooms">Join or host a live Audio Room</Link>
+        </li>
       </ul>
 
       <h2>Contact us</h2>
