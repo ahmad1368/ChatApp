@@ -84,6 +84,7 @@ import { suggestBestPhoto } from "./bestPhotoSuggestion";
 import { analyzeConversationCompatibility } from "./conversationCompatibility";
 import { listTopics as listFirstDateTopics, getTopic as getFirstDateTopic, ask as askFirstDateGuide } from "./firstDateGuide";
 import { summarizeConversation } from "./conversationSummarizer";
+import { analyzeTypingPattern } from "./typingPatternDetector";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2647,6 +2648,20 @@ export function createApp(deps?: {
   app.get("/api/rooms/:roomId/conversation-summary", (req, res) => {
     const messages = messagesByRoom.get(req.params.roomId) ?? [];
     res.json(summarizeConversation(messages));
+  });
+
+  // Hinge's real "High-accuracy bot account detection based on typing
+  // patterns" (#236) — see typingPatternDetector.ts for the honest
+  // scoping (real send-timing and duplicate-text signals from a
+  // person's own sent messages, not a fabricated keystroke-level ML
+  // model). Admin-gated like #171-186, since this is a moderation tool.
+  app.get("/api/admin/typing-pattern/:author", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const author = req.params.author;
+    const messages = [...messagesByRoom.entries()].flatMap(([roomId, roomMessages]) =>
+      roomMessages.filter((m) => m.author === author).map((m) => ({ roomId, text: m.text, createdAt: m.createdAt }))
+    );
+    res.json(analyzeTypingPattern(messages));
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
