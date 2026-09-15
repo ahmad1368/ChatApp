@@ -77,6 +77,7 @@ import { AudioRoomStore } from "./audioRooms";
 import { RelationshipBlogStore } from "./relationshipBlog";
 import { LocalSinglesEventStore } from "./localSinglesEvents";
 import { InterestGroupStore } from "./interestGroups";
+import { DateSpotReviewStore } from "./dateSpotReviews";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -300,6 +301,7 @@ export function createApp(deps?: {
   relationshipBlogStore: RelationshipBlogStore;
   localSinglesEventStore: LocalSinglesEventStore;
   interestGroupStore: InterestGroupStore;
+  dateSpotReviewStore: DateSpotReviewStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -424,6 +426,7 @@ export function createApp(deps?: {
   const relationshipBlogStore = new RelationshipBlogStore();
   const localSinglesEventStore = new LocalSinglesEventStore();
   const interestGroupStore = new InterestGroupStore();
+  const dateSpotReviewStore = new DateSpotReviewStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2510,6 +2513,29 @@ export function createApp(deps?: {
       return;
     }
     res.json({ success: true });
+  });
+
+  // Match.com's real "Ability to post reviews and experiences from good
+  // date spots" (#229) — see dateSpotReviews.ts for the honest scoping
+  // (a real named-venue review with a 1-5 rating and free text, distinct
+  // from #224's live "I'm here now" VenueCheckInStore and #147's fixed
+  // activity-category dateProposals.ts).
+  app.post("/api/date-spot-reviews", (req, res) => {
+    const result = dateSpotReviewStore.post(req.body?.author, req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ review: result.review });
+  });
+
+  app.get("/api/date-spot-reviews/venues", (_req, res) => {
+    res.json({ venues: dateSpotReviewStore.listVenues() });
+  });
+
+  app.get("/api/date-spot-reviews", (req, res) => {
+    const venue = typeof req.query.venue === "string" ? req.query.venue : "";
+    res.json({ reviews: dateSpotReviewStore.listReviews(venue), summary: dateSpotReviewStore.getVenueSummary(venue) ?? null });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
@@ -5543,6 +5569,7 @@ export function createApp(deps?: {
     relationshipBlogStore,
     localSinglesEventStore,
     interestGroupStore,
+    dateSpotReviewStore,
   };
 }
 
