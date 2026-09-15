@@ -75,6 +75,7 @@ import { ForumStore } from "./forums";
 import { VenueCheckInStore } from "./venueCheckIns";
 import { AudioRoomStore } from "./audioRooms";
 import { RelationshipBlogStore } from "./relationshipBlog";
+import { LocalSinglesEventStore } from "./localSinglesEvents";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -296,6 +297,7 @@ export function createApp(deps?: {
   venueCheckInStore: VenueCheckInStore;
   audioRoomStore: AudioRoomStore;
   relationshipBlogStore: RelationshipBlogStore;
+  localSinglesEventStore: LocalSinglesEventStore;
 } {
   const app = express();
   // Bumble's real "Manage domains and website access" (#184): a real,
@@ -418,6 +420,7 @@ export function createApp(deps?: {
   const venueCheckInStore = new VenueCheckInStore();
   const audioRoomStore = new AudioRoomStore();
   const relationshipBlogStore = new RelationshipBlogStore();
+  const localSinglesEventStore = new LocalSinglesEventStore();
   const messageDraftStore = new MessageDraftStore();
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
@@ -2370,6 +2373,59 @@ export function createApp(deps?: {
       return;
     }
     res.status(201).json({ article: result.article });
+  });
+
+  // Match.com's real "Local singles events calendar" (#227) — see
+  // localSinglesEvents.ts for the honest scoping (admin-curated events,
+  // distinct from #221/#222's member-hosted GroupEventStore, browsable
+  // by city and calendar month).
+  app.post("/api/admin/local-events", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = localSinglesEventStore.create(req.body ?? {});
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ event: result.event });
+  });
+
+  app.get("/api/local-events", (req, res) => {
+    const city = typeof req.query.city === "string" ? req.query.city : undefined;
+    const month = typeof req.query.month === "string" ? req.query.month : undefined;
+    res.json({ events: localSinglesEventStore.listEvents({ city, month }) });
+  });
+
+  app.get("/api/local-events/cities", (_req, res) => {
+    res.json({ cities: localSinglesEventStore.listCities() });
+  });
+
+  app.get("/api/local-events/:eventId", (req, res) => {
+    const event = localSinglesEventStore.getEvent(req.params.eventId);
+    if (!event) {
+      res.status(404).json({ error: "Event not found" });
+      return;
+    }
+    res.json({ event });
+  });
+
+  app.post("/api/local-events/:eventId/rsvp", (req, res) => {
+    const result = localSinglesEventStore.rsvp(req.body?.author, req.params.eventId);
+    if (!result.success) {
+      const status = result.error === "Event not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ status: result.status });
+  });
+
+  app.delete("/api/local-events/:eventId/rsvp", (req, res) => {
+    const result = localSinglesEventStore.cancelRsvp(req.body?.author, req.params.eventId);
+    if (!result.success) {
+      const status = result.error === "Event not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
@@ -5401,6 +5457,7 @@ export function createApp(deps?: {
     venueCheckInStore,
     audioRoomStore,
     relationshipBlogStore,
+    localSinglesEventStore,
   };
 }
 
