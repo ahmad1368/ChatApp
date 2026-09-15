@@ -82,6 +82,7 @@ import { EventCheckInStore } from "./eventCheckIns";
 import { analyzeBio } from "./bioOptimizer";
 import { suggestBestPhoto } from "./bestPhotoSuggestion";
 import { analyzeConversationCompatibility } from "./conversationCompatibility";
+import { listTopics as listFirstDateTopics, getTopic as getFirstDateTopic, ask as askFirstDateGuide } from "./firstDateGuide";
 import { BanStore } from "./bans";
 import { PricingPlanStore } from "./pricingPlans";
 import { DiscountCodeStore } from "./discountCodes";
@@ -2614,6 +2615,28 @@ export function createApp(deps?: {
     const authorB = typeof req.query.authorB === "string" ? req.query.authorB : "";
     const messages = messagesByRoom.get(req.params.roomId) ?? [];
     res.json(analyzeConversationCompatibility(messages, authorA, authorB));
+  });
+
+  // Hinge's real "Guide chatbot for advice before the first date" (#234)
+  // — see firstDateGuide.ts for the honest scoping (a keyword-matching
+  // decision-tree guide over a curated real topic catalog, not a
+  // fabricated open-ended LLM chatbot).
+  app.get("/api/first-date-guide/topics", (_req, res) => {
+    res.json({ topics: listFirstDateTopics() });
+  });
+
+  app.get("/api/first-date-guide/topics/:topicId", (req, res) => {
+    const topic = getFirstDateTopic(req.params.topicId);
+    if (!topic) {
+      res.status(404).json({ error: "Topic not found" });
+      return;
+    }
+    res.json({ topic });
+  });
+
+  app.post("/api/first-date-guide/ask", (req, res) => {
+    const question = typeof req.body?.question === "string" ? req.body.question : "";
+    res.json(askFirstDateGuide(question));
   });
 
   // Badoo's real online/last-active indicator (#110): "online" is driven
