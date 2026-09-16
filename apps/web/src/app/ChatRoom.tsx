@@ -1951,7 +1951,21 @@ export default function ChatRoom({
         return;
       }
       if (e.key === "Escape") {
+        // Bumble's real "Full keyboard navigation support in the browser"
+        // (#250): Escape is the ARIA Authoring Practices' expected way to
+        // dismiss any open dialog/picker — previously only the shortcuts
+        // help honored it, leaving a keyboard-only user with no way out of
+        // the GIF/location/date-proposal/date-invite/gift pickers, the
+        // report dialog, or the search panel short of tabbing all the way
+        // to a visible close button.
         setShowShortcuts(false);
+        setShowGifPicker(false);
+        setShowLocationPicker(false);
+        setShowDateProposalPicker(false);
+        setShowGiftPicker(false);
+        setShowDateInvitePicker(false);
+        setShowSearch(false);
+        setReportTarget(null);
         composerRef.current?.blur();
         return;
       }
