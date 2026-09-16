@@ -596,6 +596,11 @@ export default function ChatRoom({
   const [phoneNumber, setPhoneNumber] = useState("");
   const [contactNumbers, setContactNumbers] = useState("");
   const [contactBlockStatus, setContactBlockStatus] = useState<string | null>(null);
+  // Bumble's real "Ability to block a specific email domain" (#260) — same
+  // self-declared-identity shape as the phone-contact blocking above.
+  const [email, setEmail] = useState("");
+  const [blockedDomainsText, setBlockedDomainsText] = useState("");
+  const [emailDomainBlockStatus, setEmailDomainBlockStatus] = useState<string | null>(null);
   const [contactPickerSupported, setContactPickerSupported] = useState(false);
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -958,6 +963,38 @@ export default function ChatRoom({
     } catch {
       // user cancelled the picker or permission was denied
     }
+  };
+
+  const saveEmail = async () => {
+    if (!email.trim()) return;
+    await fetch(`${API_URL}/api/profile/email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author, email: email.trim() }),
+    });
+    setEmailDomainBlockStatus("Email saved.");
+  };
+
+  const blockEmailDomains = async () => {
+    const domains = blockedDomainsText
+      .split(/[\n,]+/)
+      .map((d) => d.trim())
+      .filter(Boolean);
+    if (domains.length === 0) return;
+    const res = await fetch(`${API_URL}/api/email-domains/block`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author, domains }),
+    });
+    const body = await res.json();
+    const newlyBlocked: string[] = body.blockedAuthors ?? [];
+    if (newlyBlocked.length > 0) {
+      setBlockedAuthors((prev) => Array.from(new Set([...prev, ...newlyBlocked])));
+      setEmailDomainBlockStatus(`Blocked ${newlyBlocked.length} user(s) registered under those domains.`);
+    } else {
+      setEmailDomainBlockStatus("No one currently on ChatApp is registered under those domains.");
+    }
+    setBlockedDomainsText("");
   };
 
   const uploadPhoto = async (file: File) => {
@@ -2547,6 +2584,35 @@ export default function ChatRoom({
           </div>
         )}
         {contactBlockStatus && <p style={{ color: "var(--color-muted)" }}>{contactBlockStatus}</p>}
+      </section>
+      <section style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, marginTop: 12, fontSize: 13 }}>
+        <h2 style={{ fontSize: 14 }}>Block email domains</h2>
+        <p style={{ color: "var(--color-muted)" }}>
+          Save your email, then block anyone currently registered under a specific email domain
+          (e.g. a workplace you&apos;d rather not match with).
+        </p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Your email"
+            style={{ flex: 1, padding: 6 }}
+          />
+          <button onClick={saveEmail}>Save</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <textarea
+            value={blockedDomainsText}
+            onChange={(e) => setBlockedDomainsText(e.target.value)}
+            placeholder="Paste email domains to block, one per line (e.g. acme.com)"
+            rows={3}
+            style={{ padding: 6 }}
+          />
+          <button onClick={blockEmailDomains} style={{ alignSelf: "flex-start" }}>
+            Block matching domains
+          </button>
+        </div>
+        {emailDomainBlockStatus && <p style={{ color: "var(--color-muted)" }}>{emailDomainBlockStatus}</p>}
       </section>
       <section style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, marginTop: 12, fontSize: 13 }}>
         <h2 style={{ fontSize: 14 }}>Photo album ({albumPhotoIds.length}/9)</h2>
