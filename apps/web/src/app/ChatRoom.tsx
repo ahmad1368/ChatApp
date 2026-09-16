@@ -12,6 +12,7 @@ import {
   DateProposalCategory,
   GIFT_CATALOG,
   REAL_GIFT_CATALOG,
+  CAFE_GIFT_CARD_CATALOG,
   SendMessagePayload,
   EncryptedPayload,
 } from "@chatapp/shared";
@@ -355,6 +356,39 @@ function ChatPollCard({
 }
 
 /**
+ * Coffee Meets Bagel's real "System to send electronic cafe gift cards"
+ * (#330): a real generated redemption code the recipient reveals by
+ * redeeming — see server.ts's cafe-gift-card:redeem for the authoritative
+ * one-redemption-by-the-recipient-only rule this only mirrors for the UI.
+ */
+function CafeGiftCardCard({
+  card,
+  viewer,
+  onRedeem,
+}: {
+  card: NonNullable<ChatMessage["cafeGiftCard"]>;
+  viewer: string;
+  onRedeem: () => void;
+}) {
+  const isRecipient = viewer === card.recipient;
+  return (
+    <div className="chat-app__date-invite">
+      <p className="chat-app__date-invite-title">☕ ${card.amountDollars} cafe gift card</p>
+      {card.redeemed ? (
+        <>
+          <p className="chat-app__date-invite-status">✅ Redeemed</p>
+          {isRecipient && <p style={{ fontFamily: "monospace" }}>{card.code}</p>}
+        </>
+      ) : isRecipient ? (
+        <button onClick={onRedeem}>Redeem</button>
+      ) : (
+        <p className="chat-app__date-invite-status">Waiting for {card.recipient} to redeem…</p>
+      )}
+    </div>
+  );
+}
+
+/**
  * Bumble's real "See translation" (#145): on-demand per message, into the
  * viewer's own current app language (see LocaleProvider.tsx's "en"/"fa"
  * toggle from #9) rather than a background bulk-translate of the whole
@@ -454,6 +488,7 @@ function MessageRow({
   onRespondDateInvite,
   onConfirmDateInvite,
   onPollVote,
+  onRedeemGiftCard,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -478,6 +513,7 @@ function MessageRow({
   onRespondDateInvite: (messageId: string, response: "accepted" | "declined") => void;
   onConfirmDateInvite: (messageId: string) => void;
   onPollVote: (messageId: string, optionId: string) => void;
+  onRedeemGiftCard: (messageId: string) => void;
 }) {
   // Mirrors messageEditing.ts/messageDeletion.ts's rules loosely for the
   // UI — the server is the actual source of truth and re-checks all of
@@ -493,7 +529,8 @@ function MessageRow({
     !message.dateProposalCategory &&
     !message.dateInvite &&
     !message.gift &&
-    !message.realGiftSuggestion;
+    !message.realGiftSuggestion &&
+    !message.cafeGiftCard;
   const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
   const canEdit = isOwnMessage && isPlainTextMessage && messageAgeMs < 15 * 60 * 1000;
   const canDelete = isOwnMessage && !message.deleted && messageAgeMs < 24 * 60 * 60 * 1000;
@@ -530,6 +567,8 @@ function MessageRow({
           <TicTacToeBoard game={message.game} viewer={viewer} onMove={(cellIndex) => onGameMove(message.id, cellIndex)} />
         ) : message.poll ? (
           <ChatPollCard poll={message.poll} viewer={viewer} onVote={(optionId) => onPollVote(message.id, optionId)} />
+        ) : message.cafeGiftCard ? (
+          <CafeGiftCardCard card={message.cafeGiftCard} viewer={viewer} onRedeem={() => onRedeemGiftCard(message.id)} />
         ) : message.dateInvite ? (
           <DateInviteCard
             dateInvite={message.dateInvite}
@@ -733,6 +772,7 @@ export default function ChatRoom({
   const [showDateProposalPicker, setShowDateProposalPicker] = useState(false);
   const [showPollComposer, setShowPollComposer] = useState(false);
   const [showGiftPicker, setShowGiftPicker] = useState(false);
+  const [showCafeGiftCardPicker, setShowCafeGiftCardPicker] = useState(false);
   const [showRealGiftPicker, setShowRealGiftPicker] = useState(false);
   const [coinBalance, setCoinBalance] = useState(0);
   const [showDateInvitePicker, setShowDateInvitePicker] = useState(false);
@@ -1380,6 +1420,18 @@ export default function ChatRoom({
       setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, poll } : m)));
     });
     socket.on("poll:rejected", ({ error }: { messageId: string; error: string }) => {
+      setEditError(error);
+    });
+    // Coffee Meets Bagel's real "System to send electronic cafe gift
+    // cards" (#330) — redemption lands here for both sides, same shape
+    // as poll:updated above.
+    socket.on(
+      "cafe-gift-card:updated",
+      ({ messageId, cafeGiftCard }: { messageId: string; cafeGiftCard: ChatMessage["cafeGiftCard"] }) => {
+        setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, cafeGiftCard } : m)));
+      }
+    );
+    socket.on("cafe-gift-card:rejected", ({ error }: { messageId: string; error: string }) => {
       setEditError(error);
     });
     // WhatsApp/Bumble's real "Delete for Everyone" (#134).
@@ -2043,6 +2095,32 @@ export default function ChatRoom({
       .catch(() => {});
   };
 
+  // Coffee Meets Bagel's real "System to send electronic cafe gift
+  // cards" (#330) — the server looks up the real coin cost from
+  // CAFE_GIFT_CARD_CATALOG and debits #196's CoinStore, same "refresh
+  // the balance after the socket response" shape as sendGift above.
+  // Only offered against a known `recipient`, same as #148's game.
+  const sendCafeGiftCard = (amountDollars: number) => {
+    if (isGuest || !recipient) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      cafeGiftCardAmount: amountDollars,
+      recipient,
+      asGuest: isGuest,
+    });
+    setShowCafeGiftCardPicker(false);
+    fetch(`${API_URL}/api/coins/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setCoinBalance(body.balance ?? 0))
+      .catch(() => {});
+  };
+
+  const redeemCafeGiftCard = (messageId: string) => {
+    socketRef.current?.emit("cafe-gift-card:redeem", { roomId, messageId, author });
+  };
+
   // Coffee Meets Bagel's real "System to suggest real gifts through
   // partner stores" (#272) — the server builds the real partner-store
   // link from REAL_GIFT_CATALOG; distinct from #197's coin-bought gift
@@ -2610,6 +2688,7 @@ export default function ChatRoom({
             onRespondDateInvite={respondToDateInvite}
             onConfirmDateInvite={confirmDateInvite}
             onPollVote={votePoll}
+            onRedeemGiftCard={redeemCafeGiftCard}
           />
         ))}
         {queue.map((q) => (
@@ -2775,6 +2854,17 @@ export default function ChatRoom({
         >
           🎁
         </button>
+        {recipient && (
+          <button
+            className="chat-app__image-button"
+            onClick={() => setShowCafeGiftCardPicker((v) => !v)}
+            disabled={isGuest || !liveUpdatesEnabled}
+            title={`Send a cafe gift card (${coinBalance} coins)`}
+            aria-label={`Send a cafe gift card (${coinBalance} coins)`}
+          >
+            ☕
+          </button>
+        )}
         <button
           className="chat-app__image-button"
           onClick={() => setShowDateInvitePicker((v) => !v)}
@@ -2831,6 +2921,26 @@ export default function ChatRoom({
             </button>
           ))}
           <button className="chat-app__icon-close-button" onClick={() => setShowGiftPicker(false)} aria-label="Close gift picker">
+            ✕
+          </button>
+        </div>
+      )}
+      {showCafeGiftCardPicker && (
+        <div className="chat-app__date-proposal-picker">
+          {CAFE_GIFT_CARD_CATALOG.map((denomination) => (
+            <button
+              key={denomination.amountDollars}
+              onClick={() => sendCafeGiftCard(denomination.amountDollars)}
+              disabled={coinBalance < denomination.coinCost}
+            >
+              ☕ ${denomination.amountDollars} · {denomination.coinCost} coins
+            </button>
+          ))}
+          <button
+            className="chat-app__icon-close-button"
+            onClick={() => setShowCafeGiftCardPicker(false)}
+            aria-label="Close cafe gift card picker"
+          >
             ✕
           </button>
         </div>
