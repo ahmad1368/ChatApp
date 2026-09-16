@@ -157,6 +157,16 @@ body {
   color: var(--color-text);
 }
 
+/* Bumble's real "Full keyboard navigation support in the browser" (#250):
+   a genuinely visible focus ring (WCAG 2.1 SC 2.4.7) on every focusable
+   element, using :focus-visible so it only shows for keyboard/switch
+   navigation and not on every mouse click — real, not just relying on
+   each browser's own inconsistent default outline. */
+:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .chat-app {
   max-width: var(--chat-max-width);
   margin: 0 auto;
