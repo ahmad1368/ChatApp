@@ -68,6 +68,7 @@ function listen() {
     profileNoteStore,
     superLikeOptOutStore,
     callQualityFeedbackStore,
+    muteMatchStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -117,6 +118,7 @@ function listen() {
     profileNoteStore,
     superLikeOptOutStore,
     callQualityFeedbackStore,
+    muteMatchStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -8259,6 +8261,72 @@ test("GET /api/super-like-opt-out/:author defaults to false (#308)", async () =>
   try {
     const res = await fetch(`${baseUrl}/api/super-like-opt-out/bob`);
     assert.deepEqual(await res.json(), { disabled: false });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/mute-match/durations returns the fixed duration catalog (#311)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/mute-match/durations`);
+    const body = await res.json();
+    assert.deepEqual(body.hours, [1, 4, 8, 24]);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/mute-match/:author/:match rejects an invalid duration (#311)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/mute-match/alice/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hours: 3 }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT then GET /api/mute-match/:author/:match reflects the mute (#311)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/mute-match/alice/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hours: 4 }),
+    });
+    assert.equal(putRes.status, 200);
+    const putBody = await putRes.json();
+    assert.ok(putBody.mutedUntil);
+
+    const getRes = await fetch(`${baseUrl}/api/mute-match/alice/bob`);
+    assert.deepEqual(await getRes.json(), { mutedUntil: putBody.mutedUntil });
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/mute-match/:author/:match clears the mute (#311)", async () => {
+  const { server, baseUrl, muteMatchStore } = listen();
+  try {
+    muteMatchStore.mute("alice", "bob", 4);
+    const res = await fetch(`${baseUrl}/api/mute-match/alice/bob`, { method: "DELETE" });
+    assert.equal(res.status, 204);
+    assert.equal(muteMatchStore.isMuted("alice", "bob"), false);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/mute-match/:author/:match defaults to null when not muted (#311)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/mute-match/alice/bob`);
+    assert.deepEqual(await res.json(), { mutedUntil: null });
   } finally {
     server.close();
   }
