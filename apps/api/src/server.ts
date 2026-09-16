@@ -172,6 +172,7 @@ import { StudentVerificationStore } from "./studentVerification";
 import { PartnerVenueDiscountStore, PARTNER_VENUES } from "./partnerVenueDiscounts";
 import { ProfileNoteStore } from "./profileNotes";
 import { SuperLikeOptOutStore } from "./superLikeOptOut";
+import { CallQualityFeedbackStore, CALL_QUALITY_ISSUES } from "./callQualityFeedback";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
@@ -325,6 +326,7 @@ export function createApp(deps?: {
   partnerVenueDiscountStore: PartnerVenueDiscountStore;
   profileNoteStore: ProfileNoteStore;
   superLikeOptOutStore: SuperLikeOptOutStore;
+  callQualityFeedbackStore: CallQualityFeedbackStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
@@ -588,6 +590,7 @@ export function createApp(deps?: {
   const partnerVenueDiscountStore = new PartnerVenueDiscountStore();
   const profileNoteStore = new ProfileNoteStore();
   const superLikeOptOutStore = new SuperLikeOptOutStore();
+  const callQualityFeedbackStore = new CallQualityFeedbackStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
@@ -6394,6 +6397,33 @@ export function createApp(deps?: {
     res.json({ feedback: feedbackStore.listAll() });
   });
 
+  // Badoo's real "System to record feedback on voice/video call quality"
+  // (#309) — see callQualityFeedback.ts for the real fixed issue-tag
+  // catalog and one-submission-per-author-per-call shape.
+  app.get("/api/call-quality-feedback/issues", (_req, res) => {
+    res.json({ issues: CALL_QUALITY_ISSUES });
+  });
+
+  app.post("/api/call-quality-feedback", (req, res) => {
+    const result = callQualityFeedbackStore.submit(
+      req.body?.callId,
+      req.body?.author,
+      req.body?.rating,
+      req.body?.issues,
+      req.body?.comment
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ feedback: result.feedback });
+  });
+
+  app.get("/api/admin/call-quality-feedback", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ feedback: callQualityFeedbackStore.listAll() });
+  });
+
   // Google Sign-In: fully real verification (validates the ID token's
   // signature against Google's public keys and checks audience), gated
   // behind GOOGLE_CLIENT_ID since there's no "just log it" stand-in for
@@ -6946,6 +6976,7 @@ export function createApp(deps?: {
     partnerVenueDiscountStore,
     profileNoteStore,
     superLikeOptOutStore,
+    callQualityFeedbackStore,
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,
