@@ -61,6 +61,7 @@ function listen() {
     swipeStore,
     photoChallengeStore,
     gpsVerificationStore,
+    membershipStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -103,6 +104,7 @@ function listen() {
     swipeStore,
     photoChallengeStore,
     gpsVerificationStore,
+    membershipStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -4433,6 +4435,42 @@ test("POST /api/gps-verification/:author flags a mismatch as unverified (possibl
     assert.equal(body.verified, false);
     assert.match(body.reason, /VPN/);
     assert.equal(gpsVerificationStore.hasVerifiedBadge("alice"), false);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/membership/:author defaults to null before any visit (#300)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/membership/alice`);
+    assert.deepEqual(await res.json(), { joinedAt: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/membership/:author/touch stamps the first-seen moment, then GET reflects it (#300)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/membership/alice/touch`, { method: "POST" });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.joinedAt);
+
+    const getRes = await fetch(`${baseUrl}/api/membership/alice`);
+    assert.deepEqual(await getRes.json(), { joinedAt: body.joinedAt });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/membership/:author/touch never overwrites an existing join date (#300)", async () => {
+  const { server, baseUrl, membershipStore } = listen();
+  try {
+    membershipStore.recordFirstSeen("alice", Date.parse("2026-01-01T00:00:00.000Z"));
+    const res = await fetch(`${baseUrl}/api/membership/alice/touch`, { method: "POST" });
+    assert.deepEqual(await res.json(), { joinedAt: "2026-01-01T00:00:00.000Z" });
   } finally {
     server.close();
   }

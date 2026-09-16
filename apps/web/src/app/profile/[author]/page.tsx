@@ -6,6 +6,7 @@ import { getOrCreateGuestIdentity } from "../../guestIdentity";
 import ProfilePhotoGallery from "../../ProfilePhotoGallery";
 import BackgroundMusicPlayer from "../../BackgroundMusicPlayer";
 import ResponseSpeedBadge from "../../ResponseSpeedBadge";
+import MembershipDuration from "../../MembershipDuration";
 import SimilarProfiles from "../../SimilarProfiles";
 import { formatHeightCm, MeasurementSystem } from "../../measurementUnits";
 
@@ -161,6 +162,7 @@ export default function ViewProfilePage({ params }: { params: { author: string }
         </p>
       )}
       <ResponseSpeedBadge author={params.author} />
+      <MembershipDuration author={params.author} />
       {preview && (
         <dl style={{ marginTop: 8 }}>
           {(Object.entries(preview) as [keyof ProfilePreviewData, unknown][]).map(([key, value]) => (

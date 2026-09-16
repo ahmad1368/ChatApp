@@ -932,6 +932,9 @@ export default function ChatRoom({
   useEffect(() => {
     refreshBlockedAuthors();
     refreshStrangerPictureBlock();
+    // #300's "Show the user's membership duration on the platform" —
+    // idempotent server-side first-seen stamp, safe to call every visit.
+    fetch(`${API_URL}/api/membership/${encodeURIComponent(author)}/touch`, { method: "POST" }).catch(() => {});
     fetch(`${API_URL}/api/notification-sound/${encodeURIComponent(author)}`)
       .then((res) => res.json())
       .then((body) => {
