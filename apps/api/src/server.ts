@@ -122,6 +122,7 @@ import { AiAvatarService, AiAvatarStore, isAiAvatarStyle, AI_AVATAR_STYLES } fro
 import { WasmFilterUsageStore } from "./wasmFilterUsage";
 import { predictNextWords } from "./wordPrediction";
 import { UsageLimitStore, UsageTimeStore, getUsageStatus, USAGE_LIMIT_OPTIONS_MINUTES } from "./usageTime";
+import { PerContactRingtoneStore } from "./perContactRingtone";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -268,6 +269,7 @@ export function createApp(deps?: {
   wasmFilterUsageStore: WasmFilterUsageStore;
   usageLimitStore: UsageLimitStore;
   usageTimeStore: UsageTimeStore;
+  perContactRingtoneStore: PerContactRingtoneStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -510,6 +512,7 @@ export function createApp(deps?: {
   const wasmFilterUsageStore = new WasmFilterUsageStore();
   const usageLimitStore = new UsageLimitStore();
   const usageTimeStore = new UsageTimeStore();
+  const perContactRingtoneStore = new PerContactRingtoneStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -5843,6 +5846,22 @@ export function createApp(deps?: {
     res.json({ preference: result.preference });
   });
 
+  // Tinder's real "Ability to customize the chat notification sound per
+  // person" (#292) — a per-contact override on top of #160's global
+  // default above — see perContactRingtone.ts.
+  app.get("/api/notification-sound/:author/contact/:contact", (req, res) => {
+    res.json({ ringtone: perContactRingtoneStore.getOverride(req.params.author, req.params.contact) });
+  });
+
+  app.put("/api/notification-sound/:author/contact/:contact", (req, res) => {
+    const result = perContactRingtoneStore.setOverride(req.params.author, req.params.contact, req.body?.ringtone ?? null);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ ringtone: result.ringtone });
+  });
+
   // Image sharing: the client compresses/downscales before uploading (see
   // imageCompression.ts), so this just validates mime type and size.
   app.post("/api/uploads", (req, res) => {
@@ -6465,6 +6484,7 @@ export function createApp(deps?: {
     wasmFilterUsageStore,
     usageLimitStore,
     usageTimeStore,
+    perContactRingtoneStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,

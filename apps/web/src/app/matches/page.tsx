@@ -7,6 +7,7 @@ import { getOrCreateGuestIdentity } from "../guestIdentity";
 import MatchCountdown from "../MatchCountdown";
 import MatchTimer from "../MatchTimer";
 import DateReviewPrompt from "../DateReviewPrompt";
+import PerContactRingtonePicker from "../PerContactRingtonePicker";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -215,6 +216,7 @@ export default function MatchesPage() {
                 >
                   {match.archived ? "Unarchive" : "Archive"}
                 </button>
+                <PerContactRingtonePicker viewer={author} contact={match.author} />
                 <Link href={`/room/${DEFAULT_ROOM_ID}`}>Chat</Link>
                 <button
                   type="button"
