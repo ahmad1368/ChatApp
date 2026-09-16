@@ -175,6 +175,9 @@ export default function SupportPage() {
           <Link href="/audio-rooms">Join or host a live Audio Room</Link>
         </li>
         <li>
+          <Link href="/live-streams">Go live or watch a live stream</Link>
+        </li>
+        <li>
           <Link href="/blog">Read relationship psychology articles</Link>
         </li>
         <li>
