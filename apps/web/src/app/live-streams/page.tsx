@@ -39,6 +39,8 @@ export default function LiveStreamsPage() {
   const [isFirstViewer, setIsFirstViewer] = useState(false);
   const [comments, setComments] = useState<LiveStreamComment[]>([]);
   const [title, setTitle] = useState("");
+  const [invitedViewer, setInvitedViewer] = useState("");
+  const [privateInvites, setPrivateInvites] = useState<LiveStreamSummary[]>([]);
   const [commentText, setCommentText] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -47,9 +49,16 @@ export default function LiveStreamsPage() {
       .then((res) => res.json())
       .then((body) => setStreams(body.streams ?? []))
       .catch(() => {});
+    // Badoo's real "Ability to share a private live stream with just one
+    // Match" (#316) — private streams don't show in the public list
+    // above, so this is how the invited Match finds one.
+    fetch(`${API_URL}/api/live-streams/invites/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setPrivateInvites(body.streams ?? []))
+      .catch(() => {});
   };
 
-  useEffect(loadStreams, []);
+  useEffect(loadStreams, [author]);
 
   const loadStream = (streamId: string) => {
     fetch(`${API_URL}/api/live-streams/${streamId}?viewer=${encodeURIComponent(author)}`)
@@ -78,7 +87,7 @@ export default function LiveStreamsPage() {
     const res = await fetch(`${API_URL}/api/live-streams`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ broadcaster: author, title }),
+      body: JSON.stringify({ broadcaster: author, title, invitedViewer: invitedViewer.trim() || undefined }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -86,6 +95,7 @@ export default function LiveStreamsPage() {
       return;
     }
     setTitle("");
+    setInvitedViewer("");
     loadStreams();
     loadStream(body.stream.id);
   };
@@ -157,7 +167,7 @@ export default function LiveStreamsPage() {
       </p>
       {!activeStream && (
         <>
-          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
             <input
               type="text"
               value={title}
@@ -169,6 +179,28 @@ export default function LiveStreamsPage() {
               Go live
             </button>
           </div>
+          <input
+            type="text"
+            value={invitedViewer}
+            onChange={(e) => setInvitedViewer(e.target.value)}
+            placeholder="Only for this Match (optional — leave blank for a public stream)"
+            style={{ width: "100%", marginBottom: 12 }}
+          />
+          {privateInvites.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, margin: "0 0 4px" }}>🔒 Private streams shared with you</p>
+              {privateInvites.map((stream) => (
+                <div
+                  key={stream.id}
+                  style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 10, marginBottom: 8 }}
+                >
+                  <strong>{stream.title}</strong>
+                  <p style={{ margin: "4px 0", fontSize: 13 }}>{stream.broadcaster}</p>
+                  <button onClick={() => join(stream.id)}>Watch</button>
+                </div>
+              ))}
+            </div>
+          )}
           {streams.length === 0 && <p style={{ color: "var(--color-muted)" }}>No one is live right now.</p>}
           {streams.map((stream) => (
             <div

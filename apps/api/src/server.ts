@@ -3257,7 +3257,10 @@ export function createApp(deps?: {
   // comments; no SFU to fan a broadcaster's video out to more than one
   // viewer, the same disclosed gap #225's AudioRoomStore already has).
   app.post("/api/live-streams", (req, res) => {
-    const result = liveStreamStore.start(req.body?.broadcaster, req.body?.title);
+    // Badoo's real "Ability to share a private live stream with just one
+    // Match" (#316) — an optional invitedViewer makes this stream
+    // private (see liveStreams.ts).
+    const result = liveStreamStore.start(req.body?.broadcaster, req.body?.title, req.body?.invitedViewer);
     if (!result.success) {
       res.status(400).json({ error: result.error });
       return;
@@ -3267,6 +3270,10 @@ export function createApp(deps?: {
 
   app.get("/api/live-streams", (_req, res) => {
     res.json({ streams: liveStreamStore.listActiveStreams() });
+  });
+
+  app.get("/api/live-streams/invites/:viewer", (req, res) => {
+    res.json({ streams: liveStreamStore.listMyPrivateStreamInvites(req.params.viewer) });
   });
 
   app.get("/api/live-streams/:streamId", (req, res) => {

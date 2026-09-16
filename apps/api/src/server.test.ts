@@ -13928,3 +13928,83 @@ test("Group dates at cafes or in nature (#222): a cafe/outdoor event requires a 
     server.close();
   }
 });
+
+test("POST /api/live-streams with an invitedViewer creates a private stream excluded from the public list (#316)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/live-streams`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ broadcaster: "alice", title: "Just for bob", invitedViewer: "bob" }),
+    });
+    assert.equal(res.status, 201);
+    const { stream } = await res.json();
+    assert.equal(stream.invitedViewer, "bob");
+
+    const listRes = await fetch(`${baseUrl}/api/live-streams`);
+    assert.deepEqual((await listRes.json()).streams, []);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/live-streams/invites/:viewer surfaces a private stream to the invited Match (#316)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/live-streams`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ broadcaster: "alice", title: "Just for bob", invitedViewer: "bob" }),
+    });
+
+    const bobRes = await fetch(`${baseUrl}/api/live-streams/invites/bob`);
+    assert.equal((await bobRes.json()).streams.length, 1);
+
+    const carolRes = await fetch(`${baseUrl}/api/live-streams/invites/carol`);
+    assert.deepEqual((await carolRes.json()).streams, []);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/live-streams/:streamId/join rejects a non-invited viewer on a private stream (#316)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/live-streams`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ broadcaster: "alice", title: "Just for bob", invitedViewer: "bob" }),
+    });
+    const { stream } = await createRes.json();
+
+    const joinRes = await fetch(`${baseUrl}/api/live-streams/${stream.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "carol" }),
+    });
+    assert.equal(joinRes.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/live-streams/:streamId/join allows the invited Match on a private stream (#316)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const createRes = await fetch(`${baseUrl}/api/live-streams`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ broadcaster: "alice", title: "Just for bob", invitedViewer: "bob" }),
+    });
+    const { stream } = await createRes.json();
+
+    const joinRes = await fetch(`${baseUrl}/api/live-streams/${stream.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "bob" }),
+    });
+    assert.equal(joinRes.status, 200);
+  } finally {
+    server.close();
+  }
+});

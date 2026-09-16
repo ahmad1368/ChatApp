@@ -3,6 +3,11 @@ export interface LiveStream {
   title: string;
   broadcaster: string;
   startedAt: string;
+  // Badoo's real "Ability to share a private live stream with just one
+  // Match" (#316) — when set, this stream is invite-only for that one
+  // viewer: it's excluded from listActiveStreams()'s public discovery
+  // list, and join() rejects anyone else.
+  invitedViewer?: string;
 }
 
 export interface LiveStreamDetails extends LiveStream {
@@ -46,13 +51,20 @@ function generateId(): string {
  * broadcaster and the single first viewer (peer-to-peer needs no SFU
  * for two parties) — a *group* stream's video fan-out to every
  * additional viewer is the disclosed gap, not fabricated.
+ *
+ * #316 extends this with real access control: an optional `invitedViewer`
+ * on `start()` makes the stream private — excluded from
+ * `listActiveStreams()`'s public list, and `join()` rejects anyone but
+ * that one invited match. Video transport is unchanged (still the same
+ * peer-to-peer WebRTC call with the first joiner); what's new here is who
+ * is even allowed to discover and join.
  */
 export class LiveStreamStore {
   private streamsById = new Map<string, LiveStream>();
   private viewersByStreamId = new Map<string, Set<string>>();
   private commentsByStreamId = new Map<string, LiveStreamComment[]>();
 
-  start(broadcaster: unknown, title: unknown): StartStreamResult {
+  start(broadcaster: unknown, title: unknown, invitedViewer?: unknown): StartStreamResult {
     const broadcasterName = typeof broadcaster === "string" ? broadcaster.trim() : "";
     if (!broadcasterName) return { success: false, error: "broadcaster is required" };
 
@@ -65,15 +77,38 @@ export class LiveStreamStore {
       }
     }
 
-    const stream: LiveStream = { id: generateId(), title: titleText, broadcaster: broadcasterName, startedAt: new Date().toISOString() };
+    let invitedViewerName: string | undefined;
+    if (invitedViewer !== undefined && invitedViewer !== null) {
+      invitedViewerName = typeof invitedViewer === "string" ? invitedViewer.trim() : "";
+      if (!invitedViewerName) return { success: false, error: "invitedViewer must be a non-empty string" };
+      if (invitedViewerName === broadcasterName) return { success: false, error: "Cannot invite yourself" };
+    }
+
+    const stream: LiveStream = {
+      id: generateId(),
+      title: titleText,
+      broadcaster: broadcasterName,
+      startedAt: new Date().toISOString(),
+      ...(invitedViewerName ? { invitedViewer: invitedViewerName } : {}),
+    };
     this.streamsById.set(stream.id, stream);
     this.viewersByStreamId.set(stream.id, new Set());
     this.commentsByStreamId.set(stream.id, []);
     return { success: true, stream };
   }
 
+  /** Public discovery list — #316's private streams (an invitedViewer set) never appear here. */
   listActiveStreams(): LiveStreamSummary[] {
     return [...this.streamsById.values()]
+      .filter((stream) => !stream.invitedViewer)
+      .map((stream) => ({ ...stream, viewerCount: this.viewersByStreamId.get(stream.id)?.size ?? 0 }))
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  }
+
+  /** #316: the private streams a specific match has been personally invited to — how they find one, since it's excluded from listActiveStreams(). */
+  listMyPrivateStreamInvites(viewer: string): LiveStreamSummary[] {
+    return [...this.streamsById.values()]
+      .filter((stream) => stream.invitedViewer === viewer)
       .map((stream) => ({ ...stream, viewerCount: this.viewersByStreamId.get(stream.id)?.size ?? 0 }))
       .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
   }
@@ -98,6 +133,9 @@ export class LiveStreamStore {
     const viewerName = typeof viewer === "string" ? viewer.trim() : "";
     if (!viewerName) return { success: false, error: "viewer is required" };
     if (viewerName === stream.broadcaster) return { success: false, error: "You can't watch your own stream" };
+    if (stream.invitedViewer && stream.invitedViewer !== viewerName) {
+      return { success: false, error: "This is a private stream — only the invited Match can join" };
+    }
 
     this.viewersByStreamId.get(streamId)!.add(viewerName);
     return { success: true, stream: this.getStream(streamId)! };
