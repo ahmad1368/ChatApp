@@ -11,6 +11,7 @@ import {
   DATE_PROPOSAL_LABELS,
   DateProposalCategory,
   GIFT_CATALOG,
+  REAL_GIFT_CATALOG,
   SendMessagePayload,
   EncryptedPayload,
 } from "@chatapp/shared";
@@ -416,7 +417,8 @@ function MessageRow({
     !message.game &&
     !message.dateProposalCategory &&
     !message.dateInvite &&
-    !message.gift;
+    !message.gift &&
+    !message.realGiftSuggestion;
   const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
   const canEdit = isOwnMessage && isPlainTextMessage && messageAgeMs < 15 * 60 * 1000;
   const canDelete = isOwnMessage && !message.deleted && messageAgeMs < 24 * 60 * 60 * 1000;
@@ -471,6 +473,13 @@ function MessageRow({
           )
         ) : message.dateProposalCategory ? (
           <span className="chat-app__date-proposal">{message.text}</span>
+        ) : message.realGiftSuggestion ? (
+          <span className="chat-app__date-proposal">
+            {message.realGiftSuggestion.emoji} Gift idea: {message.realGiftSuggestion.name}{" "}
+            <a href={message.realGiftSuggestion.storeUrl} target="_blank" rel="noopener noreferrer">
+              View on Amazon
+            </a>
+          </span>
         ) : isEditing ? (
           <span className="chat-app__edit-box">
             <input
@@ -642,6 +651,7 @@ export default function ChatRoom({
   const [sharedKey, setSharedKey] = useState<CryptoKey | null>(null);
   const [showDateProposalPicker, setShowDateProposalPicker] = useState(false);
   const [showGiftPicker, setShowGiftPicker] = useState(false);
+  const [showRealGiftPicker, setShowRealGiftPicker] = useState(false);
   const [coinBalance, setCoinBalance] = useState(0);
   const [showDateInvitePicker, setShowDateInvitePicker] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -1846,6 +1856,23 @@ export default function ChatRoom({
       .catch(() => {});
   };
 
+  // Coffee Meets Bagel's real "System to suggest real gifts through
+  // partner stores" (#272) — the server builds the real partner-store
+  // link from REAL_GIFT_CATALOG; distinct from #197's coin-bought gift
+  // above, no coins involved since fulfillment happens entirely on the
+  // partner's own site.
+  const sendRealGiftSuggestion = (realGiftId: string) => {
+    if (isGuest) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      realGiftId,
+      asGuest: isGuest,
+    });
+    setShowRealGiftPicker(false);
+  };
+
   const sendDateInvite = (payload: DateInviteSharePayload) => {
     if (isGuest) return;
     socketRef.current?.emit("message:send", {
@@ -2522,6 +2549,15 @@ export default function ChatRoom({
         >
           📅
         </button>
+        <button
+          className="chat-app__image-button"
+          onClick={() => setShowRealGiftPicker((v) => !v)}
+          disabled={isGuest || !liveUpdatesEnabled}
+          title="Suggest a real gift"
+          aria-label="Suggest a real gift"
+        >
+          🛍️
+        </button>
         <button className="chat-app__send" onClick={sendMessage} disabled={isGuest || !liveUpdatesEnabled}>
           {t("send")}
         </button>
@@ -2551,6 +2587,18 @@ export default function ChatRoom({
             </button>
           ))}
           <button className="chat-app__icon-close-button" onClick={() => setShowGiftPicker(false)} aria-label="Close gift picker">
+            ✕
+          </button>
+        </div>
+      )}
+      {showRealGiftPicker && (
+        <div className="chat-app__date-proposal-picker">
+          {REAL_GIFT_CATALOG.map((idea) => (
+            <button key={idea.id} onClick={() => sendRealGiftSuggestion(idea.id)}>
+              {idea.emoji} {idea.name}
+            </button>
+          ))}
+          <button className="chat-app__icon-close-button" onClick={() => setShowRealGiftPicker(false)} aria-label="Close real gift picker">
             ✕
           </button>
         </div>

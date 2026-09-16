@@ -25,6 +25,7 @@ import { PushService } from "./push";
 import { WeeklyDigestStore, buildWeeklyDigest } from "./weeklyDigest";
 import { buildWidgetSummary } from "./widgetSummary";
 import { buildMessagePushPreview } from "./messagePushPreview";
+import { findRealGiftIdea, buildRealGiftSuggestion } from "./realGiftSuggestions";
 import { NotificationPreferencesStore } from "./notificationPreferences";
 import { NotificationInboxStore } from "./notificationInbox";
 import { NotificationSoundStore, VIBRATION_PATTERNS } from "./notificationSound";
@@ -6423,6 +6424,23 @@ export async function createChatServer() {
         message.gift = gift;
         if (!message.text) {
           message.text = `${gift.emoji} ${gift.name}`;
+        }
+      }
+
+      // Coffee Meets Bagel's real "System to suggest real gifts through
+      // partner stores" (#272) — the client sends only a catalog id; the
+      // server builds the authoritative, real partner-store link (see
+      // realGiftSuggestions.ts), distinct from #197's fictional
+      // coin-bought gift above.
+      if (payload.realGiftId !== undefined) {
+        const idea = findRealGiftIdea(payload.realGiftId);
+        if (!idea) {
+          socket.emit("message:rejected", { reason: "invalid_real_gift" });
+          return;
+        }
+        message.realGiftSuggestion = buildRealGiftSuggestion(idea);
+        if (!message.text) {
+          message.text = `${idea.emoji} Gift idea: ${idea.name}`;
         }
       }
 
