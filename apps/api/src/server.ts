@@ -18,7 +18,8 @@ import { ErrorReportStore } from "./errorReports";
 import { buildChatMessage } from "./messages";
 import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
-import { isValidCoordinates, LocationStore } from "./locationPrivacy";
+import { isValidCoordinates, LocationStore, haversineDistanceKm } from "./locationPrivacy";
+import { WeatherService, isFarAway } from "./weather";
 import { PushService } from "./push";
 import { WeeklyDigestStore, buildWeeklyDigest } from "./weeklyDigest";
 import { buildWidgetSummary } from "./widgetSummary";
@@ -214,6 +215,7 @@ export function createApp(deps?: {
   facebookAuthService?: FacebookAuthService;
   recaptchaService?: RecaptchaService;
   spotifyService?: SpotifyService;
+  weatherService?: WeatherService;
   giphyService?: GiphyService;
   instagramService?: InstagramService;
   translationService?: TranslationService;
@@ -590,6 +592,7 @@ export function createApp(deps?: {
   const facebookAuthService = deps?.facebookAuthService ?? new FacebookAuthService();
   const recaptchaService = deps?.recaptchaService ?? new RecaptchaService();
   const spotifyService = deps?.spotifyService ?? new SpotifyService();
+  const weatherService = deps?.weatherService ?? new WeatherService();
   const giphyService = deps?.giphyService ?? new GiphyService();
   const instagramService = deps?.instagramService ?? new InstagramService();
   const translationService = deps?.translationService ?? new TranslationService();
@@ -5285,6 +5288,28 @@ export function createApp(deps?: {
       return;
     }
     res.json({ approximate });
+  });
+
+  // Tinder's real "Show the weather in the other person's city if
+  // they're far away" (#268) — see weather.ts's doc comment for the
+  // honest "real integration, no API key configured in this
+  // environment" scoping, same as #22-25/#77's other external services.
+  app.get("/api/weather-for-match", async (req, res) => {
+    const author = typeof req.query.author === "string" ? req.query.author : "";
+    const candidate = typeof req.query.candidate === "string" ? req.query.candidate : "";
+    const authorLocation = locations.getEffectiveLocation(author);
+    const candidateLocation = locations.getEffectiveLocation(candidate);
+    if (!authorLocation || !candidateLocation) {
+      res.json({ farAway: false });
+      return;
+    }
+    const distanceKm = haversineDistanceKm(authorLocation, candidateLocation);
+    if (!isFarAway(distanceKm)) {
+      res.json({ farAway: false });
+      return;
+    }
+    const weather = await weatherService.getWeather(candidateLocation.lat, candidateLocation.lng);
+    res.json({ farAway: true, distanceKm: Math.round(distanceKm), weather: weather ?? null });
   });
 
   // Tinder's real Passport (#102): manually set discovery location to a
