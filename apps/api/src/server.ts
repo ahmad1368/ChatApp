@@ -139,6 +139,7 @@ import { EducationInfoStore } from "./educationInfo";
 import { HeightInfoStore } from "./heightInfo";
 import { LifestyleInfoStore } from "./lifestyleInfo";
 import { FamilyPlansInfoStore } from "./familyPlansInfo";
+import { MaritalStatusInfoStore } from "./maritalStatusInfo";
 import { ZodiacInfoStore } from "./zodiacInfo";
 import { LanguagesInfoStore, LANGUAGE_CATALOG } from "./languagesInfo";
 import { BeliefsInfoStore } from "./beliefsInfo";
@@ -268,6 +269,7 @@ export function createApp(deps?: {
   heightInfoStore: HeightInfoStore;
   lifestyleInfoStore: LifestyleInfoStore;
   familyPlansInfoStore: FamilyPlansInfoStore;
+  maritalStatusInfoStore: MaritalStatusInfoStore;
   zodiacInfoStore: ZodiacInfoStore;
   languagesInfoStore: LanguagesInfoStore;
   beliefsInfoStore: BeliefsInfoStore;
@@ -504,6 +506,7 @@ export function createApp(deps?: {
   const heightInfoStore = new HeightInfoStore();
   const lifestyleInfoStore = new LifestyleInfoStore();
   const familyPlansInfoStore = new FamilyPlansInfoStore();
+  const maritalStatusInfoStore = new MaritalStatusInfoStore();
   const zodiacInfoStore = new ZodiacInfoStore();
   const languagesInfoStore = new LanguagesInfoStore();
   const beliefsInfoStore = new BeliefsInfoStore();
@@ -1246,6 +1249,22 @@ export function createApp(deps?: {
     res.json({ familyPlansInfo: familyPlansInfoStore.get(req.params.author) });
   });
 
+  // eHarmony's real "Ability to record previous marital status (single,
+  // divorced, widowed)" (#271), same one-value-per-author, replace-on-
+  // update shape as this app's other standalone profile fields.
+  app.put("/api/marital-status-info/:author", (req, res) => {
+    const result = maritalStatusInfoStore.update(req.params.author, req.body?.maritalStatus, req.body?.hideMaritalStatus);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ maritalStatusInfo: result.maritalStatusInfo });
+  });
+
+  app.get("/api/marital-status-info/:author", (req, res) => {
+    res.json({ maritalStatusInfo: maritalStatusInfoStore.get(req.params.author) });
+  });
+
   // Editable-anytime zodiac sign (#72), derived server-side from a
   // birth month/day pair — same one-value-per-author, replace-on-update
   // shape as this app's other standalone profile fields.
@@ -1600,6 +1619,7 @@ export function createApp(deps?: {
       heightInfo: heightInfoStore.get(author),
       lifestyleInfo: lifestyleInfoStore.get(author),
       familyPlansInfo: familyPlansInfoStore.get(author),
+      maritalStatusInfo: maritalStatusInfoStore.get(author),
       zodiacInfo: zodiacInfoStore.get(author),
       languagesInfo: languagesInfoStore.get(author),
       beliefsInfo: beliefsInfoStore.get(author),
@@ -1690,6 +1710,7 @@ export function createApp(deps?: {
       heightInfo: heightInfoStore.get(author),
       lifestyleInfo: lifestyleInfoStore.get(author),
       familyPlansInfo: familyPlansInfoStore.get(author),
+      maritalStatusInfo: maritalStatusInfoStore.get(author),
       zodiacInfo: zodiacInfoStore.get(author),
       languagesInfo: languagesInfoStore.get(author),
       beliefsInfo: beliefsInfoStore.get(author),
@@ -6119,6 +6140,7 @@ export function createApp(deps?: {
     heightInfoStore,
     lifestyleInfoStore,
     familyPlansInfoStore,
+    maritalStatusInfoStore,
     zodiacInfoStore,
     languagesInfoStore,
     beliefsInfoStore,

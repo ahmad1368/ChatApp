@@ -3,6 +3,7 @@ import { EducationInfo } from "./educationInfo";
 import { HeightInfo } from "./heightInfo";
 import { LifestyleInfo } from "./lifestyleInfo";
 import { FamilyPlansInfo } from "./familyPlansInfo";
+import { MaritalStatusInfo } from "./maritalStatusInfo";
 import { ZodiacInfo } from "./zodiacInfo";
 import { LanguagesInfo } from "./languagesInfo";
 import { BeliefsInfo } from "./beliefsInfo";
@@ -18,6 +19,7 @@ export const PROFILE_COMPLETION_SECTIONS = [
   "height",
   "lifestyle",
   "familyPlans",
+  "maritalStatus",
   "zodiac",
   "languages",
   "beliefs",
@@ -36,6 +38,7 @@ export interface ProfileCompletionInput {
   heightInfo: HeightInfo;
   lifestyleInfo: LifestyleInfo;
   familyPlansInfo: FamilyPlansInfo;
+  maritalStatusInfo: MaritalStatusInfo;
   zodiacInfo: ZodiacInfo;
   languagesInfo: LanguagesInfo;
   beliefsInfo: BeliefsInfo;
@@ -69,6 +72,7 @@ export function computeProfileCompletion(input: ProfileCompletionInput): Profile
   if (input.heightInfo.heightCm !== null) completed.add("height");
   if (input.lifestyleInfo.smoking || input.lifestyleInfo.drinking) completed.add("lifestyle");
   if (input.familyPlansInfo.familyPlans) completed.add("familyPlans");
+  if (input.maritalStatusInfo.maritalStatus) completed.add("maritalStatus");
   if (input.zodiacInfo.zodiacSign) completed.add("zodiac");
   if (input.languagesInfo.languages.length > 0) completed.add("languages");
   if (input.beliefsInfo.religion || input.beliefsInfo.politicalView) completed.add("beliefs");

@@ -14,6 +14,7 @@ interface ProfilePreviewData {
   smoking?: string;
   drinking?: string;
   familyPlans?: string;
+  maritalStatus?: string;
   zodiacSign?: string;
   languages?: string[];
   religion?: string;
@@ -36,6 +37,7 @@ const FIELD_LABELS: Record<keyof ProfilePreviewData, string> = {
   smoking: "Smoking",
   drinking: "Drinking",
   familyPlans: "Family plans",
+  maritalStatus: "Previous marital status",
   zodiacSign: "Zodiac sign",
   languages: "Languages",
   religion: "Religion",
