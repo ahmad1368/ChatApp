@@ -771,6 +771,10 @@ export default function ChatRoom({
   const [beautyFilterEnabled, setBeautyFilterEnabled] = useState(false);
   const [backgroundBlurEnabled, setBackgroundBlurEnabled] = useState(false);
   const [backgroundBlurUnsupported, setBackgroundBlurUnsupported] = useState(false);
+  // Tinder's real "Support for ambient noise processing technology in
+  // video calls" (#317) — the browser's real getUserMedia audio
+  // constraints, applied when acquiring the local stream below.
+  const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(true);
   const beautyFilterCleanupRef = useRef<(() => void) | null>(null);
   // Tracks the newest message timestamp we've seen locally so that on
   // reconnect (dropped wifi, backgrounded tab, another device catching up)
@@ -1378,7 +1382,10 @@ export default function ChatRoom({
       setCallState("active");
       const remoteAuthor = call.caller === authorRef.current ? call.callee : call.caller;
       try {
-        const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: call.video });
+        const audioConstraints: MediaTrackConstraints = noiseSuppressionEnabled
+          ? { noiseSuppression: true, echoCancellation: true, autoGainControl: true }
+          : { noiseSuppression: false, echoCancellation: false, autoGainControl: false };
+        const rawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: call.video });
         localStreamRef.current = rawStream;
 
         let outgoingStream = rawStream;
@@ -2196,19 +2203,22 @@ export default function ChatRoom({
       .then((body) => {
         setBeautyFilterEnabled(body.effects?.beautyFilter ?? false);
         setBackgroundBlurEnabled(body.effects?.backgroundBlur ?? false);
+        setNoiseSuppressionEnabled(body.effects?.noiseSuppression ?? true);
       })
       .catch(() => {});
   }, [author]);
 
-  const toggleVideoCallEffect = (effect: "beautyFilter" | "backgroundBlur", value: boolean) => {
+  const toggleVideoCallEffect = (effect: "beautyFilter" | "backgroundBlur" | "noiseSuppression", value: boolean) => {
     const nextBeautyFilter = effect === "beautyFilter" ? value : beautyFilterEnabled;
     const nextBackgroundBlur = effect === "backgroundBlur" ? value : backgroundBlurEnabled;
+    const nextNoiseSuppression = effect === "noiseSuppression" ? value : noiseSuppressionEnabled;
     setBeautyFilterEnabled(nextBeautyFilter);
     setBackgroundBlurEnabled(nextBackgroundBlur);
+    setNoiseSuppressionEnabled(nextNoiseSuppression);
     fetch(`${API_URL}/api/video-call-effects/${encodeURIComponent(author)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ beautyFilter: nextBeautyFilter, backgroundBlur: nextBackgroundBlur }),
+      body: JSON.stringify({ beautyFilter: nextBeautyFilter, backgroundBlur: nextBackgroundBlur, noiseSuppression: nextNoiseSuppression }),
     }).catch(() => {});
   };
 
@@ -2323,6 +2333,14 @@ export default function ChatRoom({
               onChange={(e) => toggleVideoCallEffect("backgroundBlur", e.target.checked)}
             />
             🌫️ Background blur
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={noiseSuppressionEnabled}
+              onChange={(e) => toggleVideoCallEffect("noiseSuppression", e.target.checked)}
+            />
+            🔇 Ambient noise suppression
           </label>
           {backgroundBlurUnsupported && (
             <span className="chat-app__video-call-locked">Background blur isn&apos;t supported by your browser/camera.</span>
