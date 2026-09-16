@@ -3508,6 +3508,27 @@ test("GET /api/rooms/:roomId/messages still shows a new message sent after the c
   }
 });
 
+test("GET /api/word-predictions returns frequency-ranked completions for a prefix (#288)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/word-predictions?prefix=th`);
+    const body = await res.json();
+    assert.deepEqual(body.predictions.slice(0, 2), ["the", "that"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/word-predictions returns an empty list for a missing or empty prefix (#288)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/word-predictions`);
+    assert.deepEqual(await res.json(), { predictions: [] });
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/rooms/:roomId/messages/search finds a case-insensitive substring match (#140)", async () => {
   const { server, baseUrl, messagesByRoom } = listen();
   try {
