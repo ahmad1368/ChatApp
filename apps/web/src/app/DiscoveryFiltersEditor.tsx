@@ -12,17 +12,18 @@ const DRINKING_LABELS: Record<string, string> = {
 };
 
 /**
- * OkCupid's advanced discovery filters (#96, extended by #97, #98, and
- * #257): height range, education requirement, required languages,
- * non-smoking, allowed drinking, verified-only, and favorite pets.
- * Narrows /api/swipe-candidates for this author — see discoveryFilters.ts
- * for the matching logic and for the documented gap between this app's
- * guest identities and real, selfie-verified accounts that "verified
- * only" relies on.
+ * OkCupid's advanced discovery filters (#96, extended by #97, #98, #257,
+ * and #301): height range, education requirement, required languages,
+ * non-smoking, allowed drinking, verified-only, favorite pets, and
+ * required diet type. Narrows /api/swipe-candidates for this author —
+ * see discoveryFilters.ts for the matching logic and for the documented
+ * gap between this app's guest identities and real, selfie-verified
+ * accounts that "verified only" relies on.
  */
 export default function DiscoveryFiltersEditor({ author }: { author: string }) {
   const [catalog, setCatalog] = useState<string[]>([]);
   const [petCatalog, setPetCatalog] = useState<string[]>([]);
+  const [dietCatalog, setDietCatalog] = useState<string[]>([]);
   const [minHeightCm, setMinHeightCm] = useState("");
   const [maxHeightCm, setMaxHeightCm] = useState("");
   const [requireEducation, setRequireEducation] = useState(false);
@@ -31,6 +32,7 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
   const [allowedDrinking, setAllowedDrinking] = useState<string[]>([]);
   const [requireVerifiedOnly, setRequireVerifiedOnly] = useState(false);
   const [requiredPets, setRequiredPets] = useState<string[]>([]);
+  const [requiredDiets, setRequiredDiets] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -38,11 +40,13 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
     Promise.all([
       fetch(`${API_URL}/api/languages-info/catalog`).then((res) => res.json()),
       fetch(`${API_URL}/api/pets-info/catalog`).then((res) => res.json()),
+      fetch(`${API_URL}/api/diet-info/catalog`).then((res) => res.json()),
       fetch(`${API_URL}/api/discovery-filters/${encodeURIComponent(author)}`).then((res) => res.json()),
     ])
-      .then(([catalogBody, petCatalogBody, filtersBody]) => {
+      .then(([catalogBody, petCatalogBody, dietCatalogBody, filtersBody]) => {
         setCatalog(catalogBody.languages ?? []);
         setPetCatalog(petCatalogBody.pets ?? []);
+        setDietCatalog(dietCatalogBody.diets ?? []);
         const filters = filtersBody.filters;
         setMinHeightCm(filters?.minHeightCm != null ? String(filters.minHeightCm) : "");
         setMaxHeightCm(filters?.maxHeightCm != null ? String(filters.maxHeightCm) : "");
@@ -52,6 +56,7 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
         setAllowedDrinking(filters?.allowedDrinking ?? []);
         setRequireVerifiedOnly(filters?.requireVerifiedOnly ?? false);
         setRequiredPets(filters?.requiredPets ?? []);
+        setRequiredDiets(filters?.requiredDiets ?? []);
       })
       .catch(() => {});
   }, [author]);
@@ -70,6 +75,10 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
     setRequiredPets((prev) => (prev.includes(pet) ? prev.filter((p) => p !== pet) : [...prev, pet]));
   };
 
+  const toggleDiet = (diet: string) => {
+    setRequiredDiets((prev) => (prev.includes(diet) ? prev.filter((d) => d !== diet) : [...prev, diet]));
+  };
+
   const save = async () => {
     setError(null);
     setBusy(true);
@@ -86,6 +95,7 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
           allowedDrinking,
           requireVerifiedOnly,
           requiredPets,
+          requiredDiets,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -193,6 +203,22 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
               style={{ textTransform: "capitalize", fontWeight: isSelected ? "bold" : "normal" }}
             >
               {pet}
+            </button>
+          );
+        })}
+      </div>
+
+      <p style={{ marginTop: 8, marginBottom: 4 }}>Must have one of these diets:</p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {dietCatalog.map((diet) => {
+          const isSelected = requiredDiets.includes(diet);
+          return (
+            <button
+              key={diet}
+              onClick={() => toggleDiet(diet)}
+              style={{ textTransform: "capitalize", fontWeight: isSelected ? "bold" : "normal" }}
+            >
+              {diet}
             </button>
           );
         })}
