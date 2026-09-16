@@ -2300,6 +2300,27 @@ export function createApp(deps?: {
     res.json({ likedBy: unlocked ? likedBy : [], count: likedBy.length, unlocked });
   });
 
+  // Tinder's real "Ability to return to yesterday's rejected likes"
+  // (#297) — every profile passed on the previous UTC calendar day, not
+  // just the single most recent one #92's Rewind covers — see swipes.ts.
+  app.get("/api/yesterdays-rejected-likes/:author", (req, res) => {
+    const author = req.params.author;
+    const candidates = swipeStore
+      .getYesterdaysRejectedLikes(author)
+      .filter((candidate) => !isBlockedEitherWay(author, candidate))
+      .map((candidate) => ({ author: candidate, compatibility: getCandidateCompatibility(author, candidate) }));
+    res.json({ candidates });
+  });
+
+  app.post("/api/yesterdays-rejected-likes/:author/:candidate/reconsider", (req, res) => {
+    const result = swipeStore.reconsiderPass(req.params.author, req.params.candidate);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
+  });
+
   // Tinder's real "Top Picks" (#101): a small, once-per-day curated list
   // drawn from the same eligible pool as /api/swipe-candidates, ranked by
   // #95's real Elo/Smart Score desirability rating — Tinder's own Top

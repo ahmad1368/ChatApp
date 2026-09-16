@@ -164,6 +164,10 @@ export class SwipeStore {
   private creditFundedSwipeKeys = new Set<string>();
   private rewindsUsedToday = new Map<string, { date: string; count: number }>();
   private unlimitedRewindsUntilByAuthor = new Map<string, number>();
+  // #297's "Ability to return to yesterday's rejected likes" needs to know
+  // WHEN a pass happened, which no other feature here has needed before —
+  // recorded alongside the direction in swipesBySwiper, not instead of it.
+  private swipeTimestamps = new Map<string, Map<string, number>>();
 
   joinDiscovery(author: unknown): JoinDiscoveryResult {
     const authorName = typeof author === "string" ? author.trim() : "";
@@ -224,7 +228,7 @@ export class SwipeStore {
     return eligible.slice(0, limit).map((candidate) => ({ author: candidate, compatibility: getCompatibility(author, candidate) }));
   }
 
-  recordSwipe(swiper: unknown, swiped: unknown, direction: unknown): RecordSwipeResult {
+  recordSwipe(swiper: unknown, swiped: unknown, direction: unknown, now: number = Date.now()): RecordSwipeResult {
     const swiperName = typeof swiper === "string" ? swiper.trim() : "";
     const swipedName = typeof swiped === "string" ? swiped.trim() : "";
     if (!swiperName || !swipedName) {
@@ -271,6 +275,10 @@ export class SwipeStore {
     swiperMap.set(swipedName, direction);
     this.swipesBySwiper.set(swiperName, swiperMap);
     this.lastSwipeBySwiper.set(swiperName, swipedName);
+
+    const timestampsForSwiper = this.swipeTimestamps.get(swiperName) ?? new Map<string, number>();
+    timestampsForSwiper.set(swipedName, now);
+    this.swipeTimestamps.set(swiperName, timestampsForSwiper);
 
     let matched = false;
     if (isLikeOrSuperLike(direction) && isLikeOrSuperLike(this.swipesBySwiper.get(swipedName)?.get(swiperName))) {
@@ -469,5 +477,49 @@ export class SwipeStore {
   getRewindsRemainingToday(author: string): number | null {
     if (this.hasUnlimitedRewinds(author)) return null;
     return Math.max(0, DAILY_REWIND_LIMIT - usedToday(this.rewindsUsedToday, author));
+  }
+
+  /**
+   * Tinder's real "Ability to return to yesterday's rejected likes"
+   * (#297) — distinct from #92's Rewind (undoes only the single most
+   * recent swipe): this surfaces every profile passed on the previous
+   * UTC calendar day, however many there were, so a whole day's rejects
+   * get a second look rather than just the last one. Only "pass"
+   * decisions ever show up here — a like/superlike wasn't rejected, so
+   * there's nothing to "return to." Uses the real per-swipe timestamp
+   * `recordSwipe` now tracks, not a fabricated recency guess.
+   */
+  getYesterdaysRejectedLikes(author: string, now: number = Date.now()): string[] {
+    const yesterdayKey = new Date(now - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const swiped = this.swipesBySwiper.get(author);
+    const timestamps = this.swipeTimestamps.get(author);
+    if (!swiped || !timestamps) return [];
+
+    const rejected: string[] = [];
+    for (const [candidate, direction] of swiped) {
+      if (direction !== "pass") continue;
+      const passedAt = timestamps.get(candidate);
+      if (passedAt === undefined) continue;
+      if (new Date(passedAt).toISOString().slice(0, 10) === yesterdayKey) {
+        rejected.push(candidate);
+      }
+    }
+    return rejected;
+  }
+
+  /** Clears a prior "pass" so the pair can be freshly re-swiped via recordSwipe() — same "delete the entry to make them swipeable again" shape as undoLastSwipe(). */
+  reconsiderPass(author: unknown, candidate: unknown): UndoLastSwipeResult {
+    const authorName = typeof author === "string" ? author.trim() : "";
+    const candidateName = typeof candidate === "string" ? candidate.trim() : "";
+    if (!authorName || !candidateName) {
+      return { success: false, error: "author and candidate are required" };
+    }
+    const direction = this.swipesBySwiper.get(authorName)?.get(candidateName);
+    if (direction !== "pass") {
+      return { success: false, error: "This candidate isn't in your rejected likes" };
+    }
+    this.swipesBySwiper.get(authorName)?.delete(candidateName);
+    this.swipeTimestamps.get(authorName)?.delete(candidateName);
+    return { success: true, swiped: candidateName };
   }
 }
