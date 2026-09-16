@@ -18,6 +18,7 @@ import VoiceSwipeControl from "../VoiceSwipeControl";
 import ProfileShareButton from "../ProfileShareButton";
 import TotalMatchesBadge from "../TotalMatchesBadge";
 import WeatherBadge from "../WeatherBadge";
+import LottieAnimation from "../LottieAnimation";
 import { vibrateForeground, vibrationPatternForCategory } from "../notificationSound";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -343,6 +344,7 @@ export default function DiscoverPage() {
       </div>
       {matchNotice && (
         <div style={{ background: "#fef3c7", padding: 12, borderRadius: 8, marginBottom: 12 }}>
+          <LottieAnimation src="/lottie/match-celebration.json" width={100} height={100} />
           🎉 It&apos;s a match with {matchNotice}!
         </div>
       )}

@@ -3253,6 +3253,19 @@ test("DELETE /api/favorites unfavorites a profile (#279)", async () => {
   }
 });
 
+test("GET /api/lottie-animations returns the catalog of available animations (#280)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/lottie-animations`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.animations));
+    assert.ok(body.animations.some((entry: { id: string }) => entry.id === "match-celebration"));
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/matches/:author excludes an archived match by default, includes it with includeArchived=true (#139)", async () => {
   const { server, baseUrl, archivedChatsStore } = listen();
   try {

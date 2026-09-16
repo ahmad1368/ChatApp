@@ -114,6 +114,7 @@ import { EmailDomainBlockStore } from "./emailDomainBlock";
 import { PinnedChatsStore } from "./pinnedChats";
 import { ArchivedChatsStore } from "./archivedChats";
 import { FavoritesStore } from "./favorites";
+import { getLottieAnimationCatalog } from "./lottieAnimations";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -852,6 +853,13 @@ export function createApp(deps?: {
 
   app.get("/api/favorites/:viewerAuthor", (req, res) => {
     res.json({ favorites: favoritesStore.getFavorites(req.params.viewerAuthor) });
+  });
+
+  // Tinder's real "Support for high-quality Lottie animations in the UI"
+  // (#280): the catalog of real Lottie JSON assets the client renders via
+  // lottie-web — see lottieAnimations.ts and LottieAnimation.tsx.
+  app.get("/api/lottie-animations", (_req, res) => {
+    res.json({ animations: getLottieAnimationCatalog() });
   });
 
   // Self-declared phone number (same client-supplied-identity limitation as
