@@ -79,7 +79,9 @@ export default function LocationPicker({
         <button onClick={() => send(true)} disabled={busy}>
           🔴 Share live location
         </button>
-        <button onClick={onClose}>✕</button>
+        <button className="chat-app__icon-close-button" onClick={onClose} aria-label="Close location picker">
+          ✕
+        </button>
       </div>
       {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
     </div>

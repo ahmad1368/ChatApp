@@ -64,7 +64,9 @@ export default function DateInvitePicker({
       />
       <div className="chat-app__date-invite-picker-actions">
         <button onClick={send}>📅 Send date invitation</button>
-        <button onClick={onClose}>✕</button>
+        <button className="chat-app__icon-close-button" onClick={onClose} aria-label="Close date invite picker">
+          ✕
+        </button>
       </div>
       {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
     </div>
