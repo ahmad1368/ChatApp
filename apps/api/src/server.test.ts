@@ -10635,6 +10635,100 @@ test("POST /api/admin/reports/:reportId/review (#173) dismisses a report and rem
   }
 });
 
+test("POST /api/admin/reports/:reportId/review sends a thank-you notification the first time a reporter's report is resolved (#290)", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const submitRes = await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "bob", reason: "spam" }),
+    });
+    const { id } = await submitRes.json();
+
+    await fetch(`${baseUrl}/api/admin/reports/${id}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "resolved" }),
+    });
+
+    const inboxRes = await fetch(`${baseUrl}/api/notification-inbox/alice`);
+    const body = await inboxRes.json();
+    const thankYouEntries = body.entries.filter((e: { category: string }) => e.category === "reportThankYou");
+    assert.equal(thankYouEntries.length, 1);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("POST /api/admin/reports/:reportId/review only sends the thank-you once, not on every subsequent resolved report (#290)", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const submitOne = await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "bob", reason: "spam" }),
+    });
+    const { id: idOne } = await submitOne.json();
+    const submitTwo = await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "carol", reason: "harassment" }),
+    });
+    const { id: idTwo } = await submitTwo.json();
+
+    for (const id of [idOne, idTwo]) {
+      await fetch(`${baseUrl}/api/admin/reports/${id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+        body: JSON.stringify({ reviewer: "admin-1", status: "resolved" }),
+      });
+    }
+
+    const inboxRes = await fetch(`${baseUrl}/api/notification-inbox/alice`);
+    const body = await inboxRes.json();
+    const thankYouEntries = body.entries.filter((e: { category: string }) => e.category === "reportThankYou");
+    assert.equal(thankYouEntries.length, 1);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("POST /api/admin/reports/:reportId/review sends no thank-you for a dismissed report (#290)", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const submitRes = await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reporterAuthor: "alice", reportedAuthor: "bob", reason: "spam" }),
+    });
+    const { id } = await submitRes.json();
+
+    await fetch(`${baseUrl}/api/admin/reports/${id}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "dismissed" }),
+    });
+
+    const inboxRes = await fetch(`${baseUrl}/api/notification-inbox/alice`);
+    const body = await inboxRes.json();
+    assert.deepEqual(body.entries, []);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
 test("POST /api/admin/reports/:reportId/review 404s for an unknown report", async () => {
   const previous = process.env.ADMIN_API_KEY;
   process.env.ADMIN_API_KEY = "test-admin-secret";

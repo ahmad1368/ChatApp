@@ -3578,6 +3578,22 @@ export function createApp(deps?: {
       res.status(status).json({ error: result.error });
       return;
     }
+    // Bumble's real "Show a thank-you message after an effective first
+    // violation report" (#290) — fires exactly once, the moment this
+    // reporter's resolved-report count first becomes 1, not on every
+    // later effective report.
+    if (
+      result.report.status === "resolved" &&
+      reportStore.countResolvedByReporter(result.report.reporterAuthor) === 1 &&
+      notificationPreferencesStore.isEnabled(result.report.reporterAuthor, "reportThankYou")
+    ) {
+      notificationInboxStore.record(
+        result.report.reporterAuthor,
+        "reportThankYou",
+        "Thanks for keeping the community safe",
+        "Your report helped us take action. We appreciate you speaking up."
+      );
+    }
     res.json({ report: result.report });
   });
 

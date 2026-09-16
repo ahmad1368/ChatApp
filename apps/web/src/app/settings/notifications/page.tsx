@@ -15,6 +15,7 @@ const CATEGORIES: { key: string; label: string; description: string }[] = [
   { key: "adminBroadcast", label: "Announcements", description: "An admin sends an app-wide announcement" },
   { key: "securityAlert", label: "Security alerts", description: "Your account shows an unusual, potentially unsafe change (e.g. a sudden location jump)" },
   { key: "dateCancelled", label: "Date cancellations", description: "A planned date got auto-cancelled because it wasn't reconfirmed by both sides" },
+  { key: "reportThankYou", label: "Report thank-you", description: "The first time one of your reports leads to real action being taken" },
 ];
 
 /**
