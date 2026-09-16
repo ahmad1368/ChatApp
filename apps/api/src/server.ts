@@ -123,6 +123,7 @@ import { WasmFilterUsageStore } from "./wasmFilterUsage";
 import { predictNextWords } from "./wordPrediction";
 import { UsageLimitStore, UsageTimeStore, getUsageStatus, USAGE_LIMIT_OPTIONS_MINUTES } from "./usageTime";
 import { PerContactRingtoneStore } from "./perContactRingtone";
+import { computeMoodCompatibility } from "./musicMood";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -1624,7 +1625,7 @@ export function createApp(deps?: {
       return;
     }
 
-    res.json({ spotifyInfo: spotifyInfoStore.connect(author, profile.topTracks) });
+    res.json({ spotifyInfo: spotifyInfoStore.connect(author, profile.topTracks, profile.moodValence, profile.moodEnergy) });
   });
 
   app.delete("/api/spotify/:author", (req, res) => {
@@ -2379,6 +2380,34 @@ export function createApp(deps?: {
       .filter((entry): entry is { author: string; sharedTracks: string[]; compatibility: number } => entry !== null)
       .sort((a, b) => b.sharedTracks.length - a.sharedTracks.length);
     res.json({ candidates: musicMatches });
+  });
+
+  // Hinge's real "System to analyze mood compatibility based on music"
+  // (#293) — VIBE compatibility (valence/energy), distinct from #118's
+  // literal shared-track overlap above — see musicMood.ts.
+  app.get("/api/mood-compatibility/:author", (req, res) => {
+    const author = req.params.author;
+    const authorSpotify = spotifyInfoStore.get(author);
+    if (!authorSpotify.connected || authorSpotify.hideSpotify) {
+      res.json({ candidates: [] });
+      return;
+    }
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .map((c) => c.author);
+    const moodMatches = pool
+      .map((candidate) => {
+        const candidateSpotify = spotifyInfoStore.get(candidate);
+        if (!candidateSpotify.connected || candidateSpotify.hideSpotify) return null;
+        const result = computeMoodCompatibility(
+          { valence: authorSpotify.moodValence, energy: authorSpotify.moodEnergy },
+          { valence: candidateSpotify.moodValence, energy: candidateSpotify.moodEnergy }
+        );
+        return result.moodLabel === "unknown" ? null : { author: candidate, ...result };
+      })
+      .filter((entry): entry is { author: string; compatibility: number; moodLabel: string } => entry !== null)
+      .sort((a, b) => b.compatibility - a.compatibility);
+    res.json({ candidates: moodMatches });
   });
 
   // Tinder/Hinge's "what are you up to this weekend" suggestion (#119) —

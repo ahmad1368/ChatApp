@@ -1,5 +1,6 @@
 const TOKEN_URL = "https://accounts.spotify.com/api/token";
 const TOP_TRACKS_URL = "https://api.spotify.com/v1/me/top/tracks?limit=5";
+const AUDIO_FEATURES_URL = "https://api.spotify.com/v1/audio-features";
 
 export interface SpotifyCredentials {
   clientId: string;
@@ -8,6 +9,13 @@ export interface SpotifyCredentials {
 
 export interface SpotifyProfile {
   topTracks: string[];
+  // #293's "System to analyze mood compatibility based on music" — the
+  // average valence (musical positiveness)/energy across the same top
+  // tracks above, from Spotify's real Audio Features API. null when that
+  // second call fails/returns nothing, so mood compatibility is honestly
+  // "unknown" rather than defaulted to a fabricated midpoint.
+  moodValence: number | null;
+  moodEnergy: number | null;
 }
 
 export type SpotifyTrackFetcher = (
@@ -52,11 +60,39 @@ export const fetchSpotifyTopTracks: SpotifyTrackFetcher = async (code, redirectU
       })
       .filter((entry: string | undefined): entry is string => Boolean(entry));
 
-    return { topTracks };
+    const trackIds = items
+      .map((item: { id?: unknown }) => (typeof item?.id === "string" ? item.id : undefined))
+      .filter((id: string | undefined): id is string => Boolean(id));
+
+    const { moodValence, moodEnergy } = await fetchMoodAverages(trackIds, accessToken);
+
+    return { topTracks, moodValence, moodEnergy };
   } catch {
     return undefined;
   }
 };
+
+/** Real call to Spotify's Audio Features API — returns null averages (never throws) if it fails, so a mood-averages failure doesn't fail the whole top-tracks fetch. */
+async function fetchMoodAverages(trackIds: string[], accessToken: string): Promise<{ moodValence: number | null; moodEnergy: number | null }> {
+  if (trackIds.length === 0) return { moodValence: null, moodEnergy: null };
+  try {
+    const featuresRes = await fetch(`${AUDIO_FEATURES_URL}?ids=${trackIds.join(",")}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!featuresRes.ok) return { moodValence: null, moodEnergy: null };
+    const featuresBody = await featuresRes.json();
+    const features = Array.isArray(featuresBody?.audio_features) ? featuresBody.audio_features : [];
+    const valid = features.filter(
+      (f: { valence?: unknown; energy?: unknown } | null) => typeof f?.valence === "number" && typeof f?.energy === "number"
+    );
+    if (valid.length === 0) return { moodValence: null, moodEnergy: null };
+    const moodValence = valid.reduce((sum: number, f: { valence: number }) => sum + f.valence, 0) / valid.length;
+    const moodEnergy = valid.reduce((sum: number, f: { energy: number }) => sum + f.energy, 0) / valid.length;
+    return { moodValence, moodEnergy };
+  } catch {
+    return { moodValence: null, moodEnergy: null };
+  }
+}
 
 export class SpotifyService {
   constructor(
