@@ -45,6 +45,7 @@ import OneHandedModeToggle from "./OneHandedModeToggle";
 import ReportDialog from "./ReportDialog";
 import CallCaptions from "./CallCaptions";
 import CallQualityFeedbackPrompt from "./CallQualityFeedbackPrompt";
+import LowBatteryWarning from "./LowBatteryWarning";
 import SOSButton from "./SOSButton";
 import BiometricLock from "./BiometricLock";
 import { getOrCreateGuestIdentity } from "./guestIdentity";
@@ -2447,6 +2448,7 @@ export default function ChatRoom({
               {activeCall.caller === author ? activeCall.callee : activeCall.caller}
             </p>
           )}
+          <LowBatteryWarning active={callState === "active"} />
           <div className="chat-app__call-panel-actions">
             {callState === "ringing" && (
               <button className="chat-app__call-accept" onClick={acceptCall}>
