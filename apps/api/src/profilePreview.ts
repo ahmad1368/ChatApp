@@ -11,9 +11,11 @@ import { PersonalityInfo, MbtiType } from "./personalityInfo";
 import { SpotifyInfo } from "./spotifyInfo";
 import { InstagramInfo } from "./instagramInfo";
 import { InterestsInfo, Interest } from "./interestsInfo";
+import { WeeklyGoal } from "./weeklyGoal";
 
 export interface ProfilePreviewInput {
   bio: string;
+  weeklyGoal: WeeklyGoal;
   jobInfo: JobInfo;
   educationInfo: EducationInfo;
   heightInfo: HeightInfo;
@@ -31,6 +33,7 @@ export interface ProfilePreviewInput {
 
 export interface ProfilePreview {
   bio?: string;
+  weeklyGoal?: string;
   jobTitle?: string;
   company?: string;
   school?: string;
@@ -52,7 +55,8 @@ export interface ProfilePreview {
 
 /**
  * "Preview profile as seen by other users" (#81) — composes every
- * standalone profile field this app tracks (#61-#79) into the single view
+ * standalone profile field this app tracks (#61-#79, plus #258's weekly
+ * goal) into the single view
  * another user would actually see, respecting each field's own hide flag
  * (#67-#79) and #80's core hideAge/hideDistance toggles (not represented
  * here since this app has neither an age nor a distance value to show or
@@ -64,6 +68,7 @@ export function buildProfilePreview(input: ProfilePreviewInput): ProfilePreview 
   const preview: ProfilePreview = {};
 
   if (input.bio) preview.bio = input.bio;
+  if (input.weeklyGoal.goal) preview.weeklyGoal = input.weeklyGoal.goal;
 
   if (input.jobInfo.jobTitle) preview.jobTitle = input.jobInfo.jobTitle;
   if (input.jobInfo.company && !input.jobInfo.hideCompany) preview.company = input.jobInfo.company;

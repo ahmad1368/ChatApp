@@ -123,6 +123,7 @@ import { IntroVideoStore } from "./introVideo";
 import { VoiceIntroStore } from "./voiceIntro";
 import { BackgroundMusicStore } from "./backgroundMusic";
 import { BioStore } from "./bio";
+import { WeeklyGoalStore } from "./weeklyGoal";
 import { ProfilePromptsStore, PROFILE_PROMPT_CATALOG } from "./profilePrompts";
 import { JobInfoStore } from "./jobInfo";
 import { EducationInfoStore } from "./educationInfo";
@@ -247,6 +248,7 @@ export function createApp(deps?: {
   voiceIntroStore: VoiceIntroStore;
   backgroundMusicStore: BackgroundMusicStore;
   bioStore: BioStore;
+  weeklyGoalStore: WeeklyGoalStore;
   profilePromptsStore: ProfilePromptsStore;
   jobInfoStore: JobInfoStore;
   educationInfoStore: EducationInfoStore;
@@ -476,6 +478,7 @@ export function createApp(deps?: {
   const voiceIntroStore = new VoiceIntroStore();
   const backgroundMusicStore = new BackgroundMusicStore();
   const bioStore = new BioStore();
+  const weeklyGoalStore = new WeeklyGoalStore();
   const profilePromptsStore = new ProfilePromptsStore();
   const jobInfoStore = new JobInfoStore();
   const educationInfoStore = new EducationInfoStore();
@@ -1072,6 +1075,22 @@ export function createApp(deps?: {
     res.json({ bio: bioStore.get(req.params.author) });
   });
 
+  // Tinder's real "Ability to define 'my goal this week' in the profile"
+  // (#258) — see weeklyGoal.ts's doc comment for how this differs from
+  // #29's one-time onboarding relationship-intent choice.
+  app.put("/api/weekly-goal/:author", (req, res) => {
+    const result = weeklyGoalStore.update(req.params.author, req.body?.goal);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ weeklyGoal: result.weeklyGoal });
+  });
+
+  app.get("/api/weekly-goal/:author", (req, res) => {
+    res.json({ weeklyGoal: weeklyGoalStore.get(req.params.author) });
+  });
+
   // Hinge-style ready-made profile prompts (#66): pick up to 3 from a fixed
   // catalog and answer each — same one-set-per-author, replace-on-update
   // shape as other standalone profile fields in this app.
@@ -1524,6 +1543,7 @@ export function createApp(deps?: {
     }
     const preview = buildProfilePreview({
       bio: bioStore.get(author),
+      weeklyGoal: weeklyGoalStore.get(author),
       jobInfo: jobInfoStore.get(author),
       educationInfo: educationInfoStore.get(author),
       heightInfo: heightInfoStore.get(author),
@@ -5912,6 +5932,7 @@ export function createApp(deps?: {
     voiceIntroStore,
     backgroundMusicStore,
     bioStore,
+    weeklyGoalStore,
     profilePromptsStore,
     jobInfoStore,
     educationInfoStore,

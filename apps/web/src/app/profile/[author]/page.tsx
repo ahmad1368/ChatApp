@@ -12,6 +12,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 interface ProfilePreviewData {
   bio?: string;
+  weeklyGoal?: string;
   jobTitle?: string;
   company?: string;
   school?: string;
@@ -47,6 +48,7 @@ function formatLastActive(lastActiveAt: string): string {
 
 const FIELD_LABELS: Record<keyof ProfilePreviewData, string> = {
   bio: "Bio",
+  weeklyGoal: "Goal this week",
   jobTitle: "Job title",
   company: "Company",
   school: "School",

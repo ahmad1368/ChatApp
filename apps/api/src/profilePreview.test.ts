@@ -5,6 +5,7 @@ import { buildProfilePreview, ProfilePreviewInput } from "./profilePreview";
 function emptyInput(): ProfilePreviewInput {
   return {
     bio: "",
+    weeklyGoal: { goal: "", weekStartIso: null },
     jobInfo: { jobTitle: "", company: "", hideCompany: false },
     educationInfo: { school: "", hideSchool: false },
     heightInfo: { heightCm: null, hideHeight: false },
@@ -29,6 +30,18 @@ test("buildProfilePreview() includes bio when set", () => {
   const input = emptyInput();
   input.bio = "Loves hiking";
   assert.deepEqual(buildProfilePreview(input), { bio: "Loves hiking" });
+});
+
+test("buildProfilePreview() includes weeklyGoal when set", () => {
+  const input = emptyInput();
+  input.weeklyGoal = { goal: "Go on 2 dates", weekStartIso: "2024-01-01T00:00:00.000Z" };
+  assert.deepEqual(buildProfilePreview(input), { weeklyGoal: "Go on 2 dates" });
+});
+
+test("buildProfilePreview() omits weeklyGoal when it's expired/unset", () => {
+  const input = emptyInput();
+  input.weeklyGoal = { goal: "", weekStartIso: null };
+  assert.deepEqual(buildProfilePreview(input), {});
 });
 
 test("buildProfilePreview() shows job title but hides company when hideCompany is set", () => {
@@ -108,6 +121,7 @@ test("buildProfilePreview() includes non-empty language/pet/interest lists when 
 test("buildProfilePreview() combines every visible field into one object", () => {
   const input: ProfilePreviewInput = {
     bio: "Loves hiking",
+    weeklyGoal: { goal: "Go on 2 dates", weekStartIso: "2024-01-01T00:00:00.000Z" },
     jobInfo: { jobTitle: "Engineer", company: "Acme", hideCompany: false },
     educationInfo: { school: "State University", hideSchool: false },
     heightInfo: { heightCm: 170, hideHeight: false },
@@ -124,6 +138,7 @@ test("buildProfilePreview() combines every visible field into one object", () =>
   };
   assert.deepEqual(buildProfilePreview(input), {
     bio: "Loves hiking",
+    weeklyGoal: "Go on 2 dates",
     jobTitle: "Engineer",
     company: "Acme",
     school: "State University",
