@@ -6976,6 +6976,56 @@ test("GET /api/swipe-candidates/:author includes a real interest-compatibility s
   }
 });
 
+test("GET /api/similar-profiles/:author/:selectedAuthor ranks candidates by similarity to the SELECTED profile, not the viewer (#284)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    // pat is the selected profile — not a discovery candidate for alice,
+    // just the "pattern" being matched against.
+    await fetch(`${baseUrl}/api/interests-info/pat`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking", "yoga"], hideInterests: false }),
+    });
+    // alice's own interests are deliberately different from pat's, to
+    // prove ranking follows pat, not alice.
+    await fetch(`${baseUrl}/api/interests-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["gaming"], hideInterests: false }),
+    });
+    await fetch(`${baseUrl}/api/interests-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["hiking", "yoga"], hideInterests: false }),
+    });
+    await fetch(`${baseUrl}/api/interests-info/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interests: ["gaming"], hideInterests: false }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/similar-profiles/alice/pat`);
+    const body = await res.json();
+    assert.deepEqual(body.profiles, [
+      { author: "bob", similarity: 100 },
+      { author: "carol", similarity: 0 },
+    ]);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/swipe-candidates/:author includes distanceKm when both sides have a location, and hides it when the candidate opts out (#270)", async () => {
   const { server, baseUrl } = listen();
   try {

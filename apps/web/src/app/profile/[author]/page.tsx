@@ -6,6 +6,7 @@ import { getOrCreateGuestIdentity } from "../../guestIdentity";
 import ProfilePhotoGallery from "../../ProfilePhotoGallery";
 import BackgroundMusicPlayer from "../../BackgroundMusicPlayer";
 import ResponseSpeedBadge from "../../ResponseSpeedBadge";
+import SimilarProfiles from "../../SimilarProfiles";
 import { formatHeightCm, MeasurementSystem } from "../../measurementUnits";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -197,6 +198,7 @@ export default function ViewProfilePage({ params }: { params: { author: string }
         </button>
         {directMessageResult && <p style={{ fontSize: 13, marginTop: 8 }}>{directMessageResult}</p>}
       </form>
+      <SimilarProfiles viewer={viewer} selectedAuthor={params.author} />
     </main>
   );
 }
