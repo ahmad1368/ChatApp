@@ -13,6 +13,7 @@ import { RecaptchaService } from "./recaptcha";
 import { SpotifyService } from "./spotifyAuth";
 import { InstagramService } from "./instagramAuth";
 import { GiphyService } from "./giphy";
+import { AiAvatarService } from "./aiAvatar";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -48,6 +49,7 @@ function listen() {
     favoritesStore,
     strangerPictureBlockStore,
     clearedHistoryStore,
+    aiAvatarStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -80,6 +82,7 @@ function listen() {
     favoritesStore,
     strangerPictureBlockStore,
     clearedHistoryStore,
+    aiAvatarStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -114,6 +117,13 @@ function listenWithSpotify(spotifyService: SpotifyService) {
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+function listenWithAiAvatar(aiAvatarService: AiAvatarService) {
+  const { app, photoStore } = createApp({ aiAvatarService });
+  const server = app.listen(0);
+  const { port } = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${port}`, photoStore };
 }
 
 function listenWithGiphy(giphyService: GiphyService) {
@@ -3702,6 +3712,130 @@ test("GET /api/photos/:id returns a watermarked image, not the original bytes", 
     const served = Buffer.from(await res.arrayBuffer());
     const original = Buffer.from(TINY_PNG_BASE64, "base64");
     assert.notDeepEqual(served, original);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/ai-avatar/styles returns the fixed style catalog (#286)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/ai-avatar/styles`);
+    const body = await res.json();
+    assert.ok(body.styles.includes("anime"));
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/ai-avatar/:author returns 503 when the service isn't configured (#286)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const photoId = uploaded.success ? uploaded.photo.id : "";
+    const res = await fetch(`${baseUrl}/api/ai-avatar/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId, style: "anime" }),
+    });
+    assert.equal(res.status, 503);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/ai-avatar/:author defaults to no avatar generated (#286)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/ai-avatar/alice`);
+    assert.deepEqual(await res.json(), { style: null, createdAt: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/ai-avatar/:author rejects an unknown style (#286)", async () => {
+  const aiAvatarService = new AiAvatarService("test-key", async () => Buffer.from("generated"));
+  const { server, baseUrl, photoStore } = listenWithAiAvatar(aiAvatarService);
+  try {
+    const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const photoId = uploaded.success ? uploaded.photo.id : "";
+    const res = await fetch(`${baseUrl}/api/ai-avatar/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId, style: "realistic" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/ai-avatar/:author rejects a photo belonging to a different author (#286)", async () => {
+  const aiAvatarService = new AiAvatarService("test-key", async () => Buffer.from("generated"));
+  const { server, baseUrl, photoStore } = listenWithAiAvatar(aiAvatarService);
+  try {
+    const uploaded = photoStore.upload("bob", "image/png", TINY_PNG_BASE64);
+    const photoId = uploaded.success ? uploaded.photo.id : "";
+    const res = await fetch(`${baseUrl}/api/ai-avatar/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId, style: "anime" }),
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/ai-avatar/:author generates and stores an avatar when configured, servable at /image (#286)", async () => {
+  const aiAvatarService = new AiAvatarService("test-key", async () => Buffer.from("generated-avatar-bytes"));
+  const { server, baseUrl, photoStore } = listenWithAiAvatar(aiAvatarService);
+  try {
+    const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const photoId = uploaded.success ? uploaded.photo.id : "";
+    const res = await fetch(`${baseUrl}/api/ai-avatar/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId, style: "anime" }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.style, "anime");
+
+    const statusRes = await fetch(`${baseUrl}/api/ai-avatar/alice`);
+    assert.deepEqual(await statusRes.json(), { style: "anime", createdAt: body.createdAt });
+
+    const imageRes = await fetch(`${baseUrl}/api/ai-avatar/alice/image`);
+    assert.equal(imageRes.status, 200);
+    assert.equal(Buffer.from(await imageRes.arrayBuffer()).toString(), "generated-avatar-bytes");
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/ai-avatar/:author/image is 404 before any avatar is generated (#286)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/ai-avatar/alice/image`);
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/ai-avatar/:author returns 502 when generation fails even though configured (#286)", async () => {
+  const aiAvatarService = new AiAvatarService("test-key", async () => undefined);
+  const { server, baseUrl, photoStore } = listenWithAiAvatar(aiAvatarService);
+  try {
+    const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const photoId = uploaded.success ? uploaded.photo.id : "";
+    const res = await fetch(`${baseUrl}/api/ai-avatar/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId, style: "anime" }),
+    });
+    assert.equal(res.status, 502);
   } finally {
     server.close();
   }
