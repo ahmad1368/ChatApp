@@ -166,6 +166,7 @@ import { LanguagesInfoStore, LANGUAGE_CATALOG } from "./languagesInfo";
 import { BeliefsInfoStore } from "./beliefsInfo";
 import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
 import { DietInfoStore, DIET_OPTIONS } from "./dietInfo";
+import { BloodTypeInfoStore, BLOOD_TYPE_OPTIONS } from "./bloodTypeInfo";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
@@ -313,6 +314,7 @@ export function createApp(deps?: {
   beliefsInfoStore: BeliefsInfoStore;
   petsInfoStore: PetsInfoStore;
   dietInfoStore: DietInfoStore;
+  bloodTypeInfoStore: BloodTypeInfoStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
@@ -570,6 +572,7 @@ export function createApp(deps?: {
   const beliefsInfoStore = new BeliefsInfoStore();
   const petsInfoStore = new PetsInfoStore();
   const dietInfoStore = new DietInfoStore();
+  const bloodTypeInfoStore = new BloodTypeInfoStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
@@ -1744,6 +1747,26 @@ export function createApp(deps?: {
     res.json({ dietInfo: dietInfoStore.get(req.params.author) });
   });
 
+  // Match.com's real "Ability to search by blood type (in some cultures)"
+  // (#302) — the profile-field half; discoveryFilters.ts's
+  // requiredBloodTypes is the actual filtering half.
+  app.get("/api/blood-type-info/catalog", (_req, res) => {
+    res.json({ bloodTypes: BLOOD_TYPE_OPTIONS });
+  });
+
+  app.put("/api/blood-type-info/:author", (req, res) => {
+    const result = bloodTypeInfoStore.update(req.params.author, req.body?.bloodType, req.body?.hideBloodType);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ bloodTypeInfo: result.bloodTypeInfo });
+  });
+
+  app.get("/api/blood-type-info/:author", (req, res) => {
+    res.json({ bloodTypeInfo: bloodTypeInfoStore.get(req.params.author) });
+  });
+
   // Editable-anytime personality type (#76): MBTI and Enneagram, same
   // one-value-per-author, replace-on-update shape as this app's other
   // standalone profile fields.
@@ -2249,6 +2272,7 @@ export function createApp(deps?: {
       isVerified: verificationStore.isVerified(b),
       pets: petsInfoStore.get(b).pets,
       diet: dietInfoStore.get(b).diet,
+      bloodType: bloodTypeInfoStore.get(b).bloodType,
     };
     if (!candidateMatchesFilters(filters, candidateData)) {
       return true;
@@ -4931,10 +4955,11 @@ export function createApp(deps?: {
     res.json({ mode: viewModeStore.get(req.params.author) });
   });
 
-  // OkCupid's advanced discovery filters (#96, extended by #97, #98,
-  // #257, and #301): height range, education requirement, required
-  // languages, non-smoking, allowed drinking, verified-only, favorite
-  // pets, and required diet type — narrows /api/swipe-candidates.
+  // OkCupid/Match.com's advanced discovery filters (#96, extended by
+  // #97, #98, #257, #301, and #302): height range, education
+  // requirement, required languages, non-smoking, allowed drinking,
+  // verified-only, favorite pets, required diet type, and required
+  // blood type — narrows /api/swipe-candidates.
   app.put("/api/discovery-filters/:author", (req, res) => {
     const result = discoveryFiltersStore.update(
       req.params.author,
@@ -4946,7 +4971,8 @@ export function createApp(deps?: {
       req.body?.allowedDrinking,
       req.body?.requireVerifiedOnly,
       req.body?.requiredPets,
-      req.body?.requiredDiets
+      req.body?.requiredDiets,
+      req.body?.requiredBloodTypes
     );
     if (!result.success) {
       res.status(400).json({ error: result.error });
@@ -6756,6 +6782,7 @@ export function createApp(deps?: {
     beliefsInfoStore,
     petsInfoStore,
     dietInfoStore,
+    bloodTypeInfoStore,
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,
