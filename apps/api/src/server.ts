@@ -121,6 +121,7 @@ import { scanForInappropriateContent, CONTENT_WARNING_REPORTER_AUTHOR } from "./
 import { PhotoAlbumStore } from "./photoAlbums";
 import { IntroVideoStore } from "./introVideo";
 import { VoiceIntroStore } from "./voiceIntro";
+import { BackgroundMusicStore } from "./backgroundMusic";
 import { BioStore } from "./bio";
 import { ProfilePromptsStore, PROFILE_PROMPT_CATALOG } from "./profilePrompts";
 import { JobInfoStore } from "./jobInfo";
@@ -240,6 +241,7 @@ export function createApp(deps?: {
   photoAlbumStore: PhotoAlbumStore;
   introVideoStore: IntroVideoStore;
   voiceIntroStore: VoiceIntroStore;
+  backgroundMusicStore: BackgroundMusicStore;
   bioStore: BioStore;
   profilePromptsStore: ProfilePromptsStore;
   jobInfoStore: JobInfoStore;
@@ -467,6 +469,7 @@ export function createApp(deps?: {
   const photoReviewStore = new PhotoReviewStore();
   const introVideoStore = new IntroVideoStore();
   const voiceIntroStore = new VoiceIntroStore();
+  const backgroundMusicStore = new BackgroundMusicStore();
   const bioStore = new BioStore();
   const profilePromptsStore = new ProfilePromptsStore();
   const jobInfoStore = new JobInfoStore();
@@ -1015,6 +1018,36 @@ export function createApp(deps?: {
 
   app.delete("/api/voice-intro/:author", (req, res) => {
     voiceIntroStore.remove(req.params.author);
+    res.status(204).send();
+  });
+
+  // Hinge's real "Ability to add background music to the profile" (#251):
+  // same one-per-profile, replace-on-reupload shape as #64's voice intro,
+  // but for an uploaded music clip (with an optional title) rather than a
+  // mic recording — see backgroundMusic.ts's doc comment for the honest
+  // scoping around not having a licensed streaming catalog to pull from.
+  app.post("/api/background-music", (req, res) => {
+    const result = backgroundMusicStore.upload(req.body?.author, req.body?.mimeType, req.body?.data, req.body?.title);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ success: true });
+  });
+
+  app.get("/api/background-music/:author", (req, res) => {
+    const track = backgroundMusicStore.get(req.params.author);
+    if (!track) {
+      res.status(404).json({ error: "No background music for this author" });
+      return;
+    }
+    res.setHeader("Content-Type", track.mimeType);
+    res.setHeader("X-Track-Title", encodeURIComponent(track.title));
+    res.status(200).send(track.data);
+  });
+
+  app.delete("/api/background-music/:author", (req, res) => {
+    backgroundMusicStore.remove(req.params.author);
     res.status(204).send();
   });
 
@@ -5765,6 +5798,7 @@ export function createApp(deps?: {
     photoAlbumStore,
     introVideoStore,
     voiceIntroStore,
+    backgroundMusicStore,
     bioStore,
     profilePromptsStore,
     jobInfoStore,

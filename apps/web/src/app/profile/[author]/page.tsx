@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getOrCreateGuestIdentity } from "../../guestIdentity";
 import ProfilePhotoGallery from "../../ProfilePhotoGallery";
+import BackgroundMusicPlayer from "../../BackgroundMusicPlayer";
 import { formatHeightCm, MeasurementSystem } from "../../measurementUnits";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -171,6 +172,7 @@ export default function ViewProfilePage({ params }: { params: { author: string }
         </dl>
       )}
       <ProfilePhotoGallery owner={params.author} viewer={viewer} />
+      <BackgroundMusicPlayer author={params.author} />
 
       <form onSubmit={sendDirectMessageRequest} style={{ marginTop: 16, border: "1px solid var(--color-border)", borderRadius: 8, padding: 12 }}>
         <h2 style={{ fontSize: 15, marginTop: 0 }}>Send a direct message (100 coins)</h2>

@@ -6,6 +6,7 @@ import { getOrCreateGuestIdentity } from "../../guestIdentity";
 import BioEditor from "../../BioEditor";
 import IntroVideoUpload from "../../IntroVideoUpload";
 import VoiceIntroRecorder from "../../VoiceIntroRecorder";
+import BackgroundMusicUploader from "../../BackgroundMusicUploader";
 import ProfilePromptsEditor from "../../ProfilePromptsEditor";
 import JobInfoEditor from "../../JobInfoEditor";
 import EducationInfoEditor from "../../EducationInfoEditor";
@@ -59,6 +60,7 @@ export default function ProfileSettingsPage() {
       <BioEditor author={author} />
       <IntroVideoUpload author={author} />
       <VoiceIntroRecorder author={author} />
+      <BackgroundMusicUploader author={author} />
       <ProfilePromptsEditor author={author} />
       <JobInfoEditor author={author} />
       <EducationInfoEditor author={author} />
