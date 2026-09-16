@@ -19,6 +19,9 @@ export const NOTIFICATION_CATEGORIES = [
   // cased always-on alert, consistent with this store's "opt-out, not
   // opt-in" default.
   "securityAlert",
+  // #277's "Alert for date cancellation if not confirmed by both
+  // parties on the day" — see dateInvites.ts's isOverdueForConfirmation.
+  "dateCancelled",
 ] as const;
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 
@@ -32,6 +35,7 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
   liveEventStart: true,
   adminBroadcast: true,
   securityAlert: true,
+  dateCancelled: true,
 };
 
 export type UpdatePreferencesResult = { success: true; preferences: NotificationPreferences } | { success: false; error: string };

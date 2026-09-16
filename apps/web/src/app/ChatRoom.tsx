@@ -239,12 +239,17 @@ function TicTacToeBoard({
 function DateInviteCard({
   dateInvite,
   isOwnMessage,
+  viewer,
   onRespond,
+  onConfirm,
 }: {
   dateInvite: NonNullable<ChatMessage["dateInvite"]>;
   isOwnMessage: boolean;
+  viewer: string;
   onRespond: (response: "accepted" | "declined") => void;
+  onConfirm: () => void;
 }) {
+  const hasConfirmed = (dateInvite.confirmedBy ?? []).includes(viewer);
   const proposedAt = new Date(dateInvite.proposedAt);
   return (
     <div className="chat-app__date-invite">
@@ -277,9 +282,21 @@ function DateInviteCard({
           >
             📅 Add to Google Calendar
           </a>
+          {/* Raya's real "Alert for date cancellation if not confirmed by
+              both parties on the day" (#277) — either side reconfirms
+              they're still on; an unconfirmed accepted invite gets
+              auto-cancelled once its proposed time arrives. */}
+          {hasConfirmed ? (
+            <p className="chat-app__date-invite-status">👍 You confirmed you're still on</p>
+          ) : (
+            <button onClick={onConfirm}>Confirm you're still on</button>
+          )}
         </>
       )}
       {dateInvite.status === "declined" && <p className="chat-app__date-invite-status">❌ Declined</p>}
+      {dateInvite.status === "cancelled" && (
+        <p className="chat-app__date-invite-status">🚫 Cancelled — not confirmed by both sides in time</p>
+      )}
     </div>
   );
 }
@@ -382,6 +399,7 @@ function MessageRow({
   sharedKey,
   onGameMove,
   onRespondDateInvite,
+  onConfirmDateInvite,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -404,6 +422,7 @@ function MessageRow({
   sharedKey: CryptoKey | null;
   onGameMove: (messageId: string, cellIndex: number) => void;
   onRespondDateInvite: (messageId: string, response: "accepted" | "declined") => void;
+  onConfirmDateInvite: (messageId: string) => void;
 }) {
   // Mirrors messageEditing.ts/messageDeletion.ts's rules loosely for the
   // UI — the server is the actual source of truth and re-checks all of
@@ -457,7 +476,9 @@ function MessageRow({
           <DateInviteCard
             dateInvite={message.dateInvite}
             isOwnMessage={isOwnMessage}
+            viewer={viewer}
             onRespond={(response) => onRespondDateInvite(message.id, response)}
+            onConfirm={() => onConfirmDateInvite(message.id)}
           />
         ) : message.location ? (
           <LocationMessage location={message.location} liveUpdate={liveLocationUpdate} />
@@ -1880,6 +1901,7 @@ export default function ChatRoom({
       author,
       text: "",
       dateInvite: payload,
+      recipient,
       asGuest: isGuest,
     });
     setShowDateInvitePicker(false);
@@ -1887,6 +1909,13 @@ export default function ChatRoom({
 
   const respondToDateInvite = (messageId: string, response: "accepted" | "declined") => {
     socketRef.current?.emit("date-invite:respond", { roomId, messageId, author, response });
+  };
+
+  // Raya's real "Alert for date cancellation if not confirmed by both
+  // parties on the day" (#277) — either side reconfirming; see
+  // dateInvites.ts's confirmDate.
+  const confirmDateInvite = (messageId: string) => {
+    socketRef.current?.emit("date-invite:confirm", { roomId, messageId, author });
   };
 
   const STUN_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
@@ -2387,6 +2416,7 @@ export default function ChatRoom({
             sharedKey={sharedKey}
             onGameMove={makeGameMove}
             onRespondDateInvite={respondToDateInvite}
+            onConfirmDateInvite={confirmDateInvite}
           />
         ))}
         {queue.map((q) => (
