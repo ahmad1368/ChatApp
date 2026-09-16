@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { getOrCreateGuestIdentity } from "../../guestIdentity";
 import BioEditor from "../../BioEditor";
+import WeeklyGoalEditor from "../../WeeklyGoalEditor";
 import IntroVideoUpload from "../../IntroVideoUpload";
 import VoiceIntroRecorder from "../../VoiceIntroRecorder";
 import BackgroundMusicUploader from "../../BackgroundMusicUploader";
@@ -60,6 +61,7 @@ export default function ProfileSettingsPage() {
       </p>
       <ProfileCompletion author={author} />
       <BioEditor author={author} />
+      <WeeklyGoalEditor author={author} />
       <IntroVideoUpload author={author} />
       <VoiceIntroRecorder author={author} />
       <BackgroundMusicUploader author={author} />
