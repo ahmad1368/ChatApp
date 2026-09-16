@@ -121,6 +121,35 @@
   box-sizing: border-box;
 }
 
+/* Bumble's real "One-Handed Mode for easy use" (#249): a persisted
+   display preference, same client-only pattern as #8/#242/#243 above,
+   that shrinks and bottom-anchors the whole chat surface into a real
+   one-thumb-reachable corner — the same idea a phone OS's own
+   one-handed mode uses — rather than an exhaustive per-control
+   reachability redesign of every one of this repo's ~150 pages, the
+   same "core chat experience" scoping precedent as #241. The panel
+   keeps its own scroll, so nothing becomes unreachable, just farther
+   from the thumb by choice. */
+:root[data-one-handed="true"] body {
+  overflow: hidden;
+}
+
+:root[data-one-handed="true"] .chat-app {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: auto;
+  top: auto;
+  width: min(92vw, var(--chat-max-width));
+  max-height: 78vh;
+  margin: 0;
+  overflow-y: auto;
+  border-top-left-radius: 16px;
+  box-shadow: -4px -4px 24px rgba(0, 0, 0, 0.25);
+  background: var(--color-bg);
+  z-index: 10;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
