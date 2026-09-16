@@ -80,6 +80,7 @@ import { RelationshipBlogStore } from "./relationshipBlog";
 import { LocalSinglesEventStore } from "./localSinglesEvents";
 import { InterestGroupStore } from "./interestGroups";
 import { DateSpotReviewStore } from "./dateSpotReviews";
+import { DateReviewStore } from "./dateReviews";
 import { EventCheckInStore } from "./eventCheckIns";
 import { analyzeBio } from "./bioOptimizer";
 import { suggestBestPhoto } from "./bestPhotoSuggestion";
@@ -330,6 +331,7 @@ export function createApp(deps?: {
   localSinglesEventStore: LocalSinglesEventStore;
   interestGroupStore: InterestGroupStore;
   dateSpotReviewStore: DateSpotReviewStore;
+  dateReviewStore: DateReviewStore;
   stickerStore: StickerStore;
   eventCheckInStore: EventCheckInStore;
 } {
@@ -457,6 +459,7 @@ export function createApp(deps?: {
   const localSinglesEventStore = new LocalSinglesEventStore();
   const interestGroupStore = new InterestGroupStore();
   const dateSpotReviewStore = new DateSpotReviewStore();
+  const dateReviewStore = new DateReviewStore();
   const stickerStore = new StickerStore();
   const eventCheckInStore = new EventCheckInStore();
   const messageDraftStore = new MessageDraftStore();
@@ -2728,6 +2731,31 @@ export function createApp(deps?: {
   app.get("/api/date-spot-reviews", (req, res) => {
     const venue = typeof req.query.venue === "string" ? req.query.venue : "";
     res.json({ reviews: dateSpotReviewStore.listReviews(venue), summary: dateSpotReviewStore.getVenueSummary(venue) ?? null });
+  });
+
+  // Hinge's real "We Met" confidential post-date feedback (#263) — see
+  // dateReviews.ts's doc comment for why this is genuinely private,
+  // unlike #229's public venue reviews above.
+  app.post("/api/date-reviews", (req, res) => {
+    const result = dateReviewStore.submit(
+      req.body?.reviewer,
+      req.body?.reviewedAuthor,
+      req.body?.didMeet,
+      req.body?.rating,
+      req.body?.feedback
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ review: result.review });
+  });
+
+  // Only ever returns the requesting reviewer's own submission — there is
+  // no route that lets an author read what someone else wrote about them.
+  app.get("/api/date-reviews/:reviewer/:reviewedAuthor", (req, res) => {
+    const review = dateReviewStore.getMyReview(req.params.reviewer, req.params.reviewedAuthor);
+    res.json({ review: review ?? null });
   });
 
   // Match.com's real "Ability to confirm event attendance with a QR
@@ -6074,6 +6102,7 @@ export function createApp(deps?: {
     localSinglesEventStore,
     interestGroupStore,
     dateSpotReviewStore,
+    dateReviewStore,
     eventCheckInStore,
     stickerStore,
     photoAltTextStore,

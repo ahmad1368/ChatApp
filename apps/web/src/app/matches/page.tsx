@@ -6,6 +6,7 @@ import { DEFAULT_ROOM_ID } from "@chatapp/shared";
 import { getOrCreateGuestIdentity } from "../guestIdentity";
 import MatchCountdown from "../MatchCountdown";
 import MatchTimer from "../MatchTimer";
+import DateReviewPrompt from "../DateReviewPrompt";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -171,6 +172,7 @@ export default function MatchesPage() {
                 <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{match.compatibility}% compatible</p>
                 <MatchTimer author={author} candidate={match.author} />
                 <MatchCountdown author={author} candidate={match.author} />
+                <DateReviewPrompt author={author} candidate={match.author} />
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <button
