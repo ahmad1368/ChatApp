@@ -2895,6 +2895,8 @@ export default function ChatRoom({
         <Link href="/feedback">Send feedback &rarr;</Link>
         {" · "}
         <Link href="/settings/background-check">Criminal record check &rarr;</Link>
+        {" · "}
+        <Link href="/settings/gps-verification">GPS verification &rarr;</Link>
       </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (

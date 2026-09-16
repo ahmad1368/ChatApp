@@ -128,6 +128,8 @@ import { FeedbackStore } from "./feedback";
 import { BackgroundCheckService } from "./backgroundCheck";
 import { BackgroundCheckStore } from "./backgroundCheckRecord";
 import { PhotoChallengeStore } from "./photoChallenge";
+import { GpsVerificationService } from "./gpsVerification";
+import { GpsVerificationStore } from "./gpsVerificationRecord";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -241,6 +243,7 @@ export function createApp(deps?: {
   translationService?: TranslationService;
   aiAvatarService?: AiAvatarService;
   backgroundCheckService?: BackgroundCheckService;
+  gpsVerificationService?: GpsVerificationService;
 }): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
@@ -279,6 +282,7 @@ export function createApp(deps?: {
   feedbackStore: FeedbackStore;
   backgroundCheckStore: BackgroundCheckStore;
   photoChallengeStore: PhotoChallengeStore;
+  gpsVerificationStore: GpsVerificationStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -526,6 +530,8 @@ export function createApp(deps?: {
   const backgroundCheckService = deps?.backgroundCheckService ?? new BackgroundCheckService();
   const backgroundCheckStore = new BackgroundCheckStore();
   const photoChallengeStore = new PhotoChallengeStore();
+  const gpsVerificationService = deps?.gpsVerificationService ?? new GpsVerificationService();
+  const gpsVerificationStore = new GpsVerificationStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -1193,6 +1199,28 @@ export function createApp(deps?: {
       return;
     }
     res.json({ votes: result.votes });
+  });
+
+  // Raya's real "Real GPS location verification system that doesn't work
+  // with VPN (optional)" (#299) — see gpsVerification.ts for the honest
+  // GPS-vs-IP-geolocation heuristic (never a claim of perfect VPN
+  // detection) and gpsVerificationRecord.ts for the per-author badge.
+  app.post("/api/gps-verification/:author", async (req, res) => {
+    const author = req.params.author;
+    const coordinates = { lat: req.body?.lat, lng: req.body?.lng };
+    if (!isValidCoordinates(coordinates)) {
+      res.status(400).json({ error: "lat and lng must be valid coordinates" });
+      return;
+    }
+
+    const ip = req.ip ?? "";
+    const result = await gpsVerificationService.verify(coordinates, ip);
+    const record = gpsVerificationStore.record(author, result.verified, result.distanceKm);
+    res.status(201).json({ ...record, reason: result.reason });
+  });
+
+  app.get("/api/gps-verification/:author", (req, res) => {
+    res.json(gpsVerificationStore.get(req.params.author));
   });
 
   // Tinder's real "WebAssembly technology support for the browser
@@ -6654,6 +6682,7 @@ export function createApp(deps?: {
     feedbackStore,
     backgroundCheckStore,
     photoChallengeStore,
+    gpsVerificationStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,
