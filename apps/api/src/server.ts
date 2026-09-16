@@ -111,6 +111,7 @@ import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
 import { SharedDateStore } from "./sharedDates";
+import { ProfileShareStore } from "./profileShare";
 import { SOSStore } from "./sos";
 import { applyWatermark } from "./watermarkImage";
 import { DuplicateAccountStore } from "./duplicateAccounts";
@@ -244,6 +245,7 @@ export function createApp(deps?: {
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   sharedDateStore: SharedDateStore;
+  profileShareStore: ProfileShareStore;
   sosStore: SOSStore;
   webAuthnStore: WebAuthnStore;
   duplicateAccountStore: DuplicateAccountStore;
@@ -472,6 +474,7 @@ export function createApp(deps?: {
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const sharedDateStore = new SharedDateStore();
+  const profileShareStore = new ProfileShareStore();
   const sosStore = new SOSStore();
   // Distinct from webAuthnService above: that one re-authenticates a real
   // account (userId, from #21-#25 sign-in) for login; this one re-
@@ -4702,6 +4705,41 @@ export function createApp(deps?: {
     res.json(view);
   });
 
+  // Tinder's real "Ability to share a profile with a friend for their
+  // opinion" (#264) — same no-auth share-code shape as #46/#47's
+  // SharedDateStore. Re-sharing the same candidate reuses the existing
+  // share so opinions accumulate on one link.
+  app.post("/api/profile-shares", (req, res) => {
+    const result = profileShareStore.create(req.body?.sharer, req.body?.candidateAuthor);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ share: result.share });
+  });
+
+  app.get("/api/profile-shares/:sharer", (req, res) => {
+    res.json({ shares: profileShareStore.getSharesBySharer(req.params.sharer) });
+  });
+
+  app.get("/api/profile-shares/shared/:shareCode", (req, res) => {
+    const share = profileShareStore.getByShareCode(req.params.shareCode);
+    if (!share) {
+      res.status(404).json({ error: "Shared profile not found" });
+      return;
+    }
+    res.json({ share });
+  });
+
+  app.post("/api/profile-shares/shared/:shareCode/opinions", (req, res) => {
+    const result = profileShareStore.addOpinion(req.params.shareCode, req.body?.commenterName, req.body?.reaction, req.body?.comment);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ share: result.share });
+  });
+
   // Emergency SOS: its own high-priority, dependency-free safety path,
   // same as Report/Block/Share My Date.
   app.post("/api/sos/contacts", (req, res) => {
@@ -6016,6 +6054,7 @@ export function createApp(deps?: {
     watermarkStore,
     photoStore,
     sharedDateStore,
+    profileShareStore,
     sosStore,
     webAuthnStore,
     duplicateAccountStore,
