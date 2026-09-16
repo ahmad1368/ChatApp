@@ -44,6 +44,7 @@ import DisplayNameModeEditor from "../../DisplayNameModeEditor";
 import StylizedAvatarEditor from "../../StylizedAvatarEditor";
 import AiAvatarEditor from "../../AiAvatarEditor";
 import DiscoveryFiltersEditor from "../../DiscoveryFiltersEditor";
+import KeywordBlacklistEditor from "../../KeywordBlacklistEditor";
 import ProfileCompletion from "../../ProfileCompletion";
 import ProfilePreview from "../../ProfilePreview";
 import SmartScoreDisplay from "../../SmartScoreDisplay";
@@ -109,6 +110,7 @@ export default function ProfileSettingsPage() {
       <SuperLikeOptOutEditor author={author} />
       <SnoozeAccountEditor author={author} />
       <DiscoveryFiltersEditor author={author} />
+      <KeywordBlacklistEditor author={author} />
       <ProfilePreview author={author} />
       <SmartScoreDisplay author={author} />
       <ActivityLevelDisplay author={author} />
