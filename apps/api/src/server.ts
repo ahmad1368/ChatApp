@@ -22,6 +22,7 @@ import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
 import { WeeklyDigestStore, buildWeeklyDigest } from "./weeklyDigest";
 import { buildWidgetSummary } from "./widgetSummary";
+import { buildMessagePushPreview } from "./messagePushPreview";
 import { NotificationPreferencesStore } from "./notificationPreferences";
 import { NotificationInboxStore } from "./notificationInbox";
 import { NotificationSoundStore, VIBRATION_PATTERNS } from "./notificationSound";
@@ -6442,6 +6443,10 @@ export async function createChatServer() {
       }
 
       const existing = messagesByRoom.get(roomId) ?? [];
+      // #265's "short preview of the first received message on the lock
+      // screen" — captured before this message joins the room's history,
+      // so it reflects whether this sender has ever posted here before.
+      const isFirstMessageFromSender = !existing.some((m) => m.author === message.author);
       existing.push(message);
       messagesByRoom.set(roomId, existing);
       // Sending a message counts as activity even for the rare case where
@@ -6456,7 +6461,7 @@ export async function createChatServer() {
       pushService
         .notifyOthers(
           message.author,
-          { title: message.author, body: message.text },
+          { title: message.author, body: buildMessagePushPreview(message.text, isFirstMessageFromSender) },
           (recipient) => notificationPreferencesStore.isEnabled(recipient, "newMessage")
         )
         .catch((err) => {
