@@ -381,6 +381,27 @@ test("getCandidates() ranks a boosted candidate ahead of a non-boosted one", () 
   assert.deepEqual(names(store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, boostLevel)), ["carol", "bob"]);
 });
 
+test("getCandidates() ranks a more-complete profile ahead of a less-complete one (#323)", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.joinDiscovery("carol");
+  const completeness = (candidate: string) => (candidate === "carol" ? 100 : 20);
+  const candidates = store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, NEVER_BOOSTED, 10, completeness);
+  assert.deepEqual(names(candidates), ["carol", "bob"]);
+});
+
+test("getCandidates() still ranks a boosted candidate ahead of a more-complete one (#323)", () => {
+  const store = new SwipeStore();
+  store.joinDiscovery("alice");
+  store.joinDiscovery("bob");
+  store.joinDiscovery("carol");
+  const boostLevel = (candidate: string) => (candidate === "bob" ? 1 : 0);
+  const completeness = (candidate: string) => (candidate === "carol" ? 100 : 0);
+  const candidates = store.getCandidates("alice", NEVER_BLOCKED, NO_COMPATIBILITY, boostLevel, 10, completeness);
+  assert.deepEqual(names(candidates), ["bob", "carol"]);
+});
+
 test("getCandidates() still ranks a superliker ahead of a boosted candidate", () => {
   const store = new SwipeStore();
   store.joinDiscovery("alice");

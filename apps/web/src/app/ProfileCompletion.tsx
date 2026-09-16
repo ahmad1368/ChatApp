@@ -53,6 +53,9 @@ export default function ProfileCompletion({ author }: { author: string }) {
         />
       </div>
       <p style={{ color: "var(--color-muted)", marginTop: 4 }}>{completion.percentage}% complete</p>
+      <p style={{ color: "var(--color-muted)", fontSize: 12 }}>
+        A more complete profile ranks higher in other people&apos;s discovery decks.
+      </p>
       {completion.missingSections.length > 0 && (
         <ul>
           {completion.missingSections.map((section) => (

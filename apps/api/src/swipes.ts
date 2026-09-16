@@ -187,7 +187,8 @@ export class SwipeStore {
     isBlockedEitherWay: (a: string, b: string) => boolean,
     getCompatibility: CompatibilityScorer = () => 0,
     getBoostLevel: (candidate: string) => number = () => 0,
-    limit = 10
+    limit = 10,
+    getProfileCompleteness: (candidate: string) => number = () => 0
   ): SwipeCandidate[] {
     const swiped = this.swipesBySwiper.get(author);
     const eligible: string[] = [];
@@ -213,7 +214,11 @@ export class SwipeStore {
     // Surface anyone who's already superliked this author first — the
     // "special attention" a Super Like (#93) is actually for. Within
     // that, a higher boost level (#105, #106's Super Boost outranking a
-    // plain Boost) ranks next. Within that, rank by #94's interest-vector
+    // plain Boost) ranks next. Within that, #323's real profile-
+    // completeness ranking (computeProfileCompletion's percentage) gives
+    // a fuller profile a real, organic edge over a sparse one — Tinder's
+    // actual incentive for filling a profile out, distinct from #105's
+    // paid Boost. Within that, rank by #94's interest-vector
     // compatibility score, highest first — OkCupid's real percentage-
     // match ordering.
     const superlikedBy = (candidate: string) => this.swipesBySwiper.get(candidate)?.get(author) === "superlike";
@@ -222,6 +227,8 @@ export class SwipeStore {
       if (superlikeDiff !== 0) return superlikeDiff;
       const boostDiff = getBoostLevel(b) - getBoostLevel(a);
       if (boostDiff !== 0) return boostDiff;
+      const completenessDiff = getProfileCompleteness(b) - getProfileCompleteness(a);
+      if (completenessDiff !== 0) return completenessDiff;
       return getCompatibility(author, b) - getCompatibility(author, a);
     });
 

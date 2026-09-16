@@ -1859,7 +1859,7 @@ export function createApp(deps?: {
       return;
     }
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
       .map((c) => c.author);
     const authorSign = authorZodiac.zodiacSign;
     const zodiacMatches = pool
@@ -2555,6 +2555,28 @@ export function createApp(deps?: {
   // someone who's superliked this viewer — see swipes.ts's getCandidates
   // doc comment for the exact priority order.
   const getCandidateBoostLevel = (candidate: string) => profileBoostStore.getBoostLevel(candidate);
+  // Tinder's real "Profile ranking system based on data completeness"
+  // (#323) — reuses #86's exact computeProfileCompletion() percentage as
+  // an organic (unpaid) ranking signal; see swipes.ts's getCandidates for
+  // the full priority order this slots into.
+  const getCandidateCompleteness = (candidate: string) =>
+    computeProfileCompletion({
+      hasPhoto: photoAlbumStore.listPhotos(candidate).length > 0,
+      bio: bioStore.get(candidate),
+      jobInfo: jobInfoStore.get(candidate),
+      educationInfo: educationInfoStore.get(candidate),
+      heightInfo: heightInfoStore.get(candidate),
+      lifestyleInfo: lifestyleInfoStore.get(candidate),
+      familyPlansInfo: familyPlansInfoStore.get(candidate),
+      maritalStatusInfo: maritalStatusInfoStore.get(candidate),
+      zodiacInfo: zodiacInfoStore.get(candidate),
+      languagesInfo: languagesInfoStore.get(candidate),
+      beliefsInfo: beliefsInfoStore.get(candidate),
+      petsInfo: petsInfoStore.get(candidate),
+      personalityInfo: personalityInfoStore.get(candidate),
+      interestsInfo: interestsInfoStore.get(candidate),
+      promptAnswerCount: profilePromptsStore.getAnswers(candidate).length,
+    }).percentage;
 
   // OkCupid/Tinder's real bio keyword search (#113): an optional ?bioKeyword=
   // query narrows the same eligible pool everything else above filters,
@@ -2571,7 +2593,7 @@ export function createApp(deps?: {
     // missing display half of #80's ProfileVisibilityStore.hideDistance.
     const viewerLocation = locations.getEffectiveLocation(author);
     const candidates = swipeStore
-      .getCandidates(author, excludeCandidate, getCandidateCompatibility, getCandidateBoostLevel)
+      .getCandidates(author, excludeCandidate, getCandidateCompatibility, getCandidateBoostLevel, 10, getCandidateCompleteness)
       .map((candidate) => ({
         ...candidate,
         distanceKm: computeDisplayDistanceKm(
@@ -2702,7 +2724,7 @@ export function createApp(deps?: {
   app.get("/api/top-picks/:author", (req, res) => {
     const author = req.params.author;
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
       .map((c) => c.author);
     const picks = topPicksStore.getTopPicks(author, pool, (candidate) => smartScoreStore.getRating(candidate));
     res.json({ picks });
@@ -2716,7 +2738,7 @@ export function createApp(deps?: {
   app.get("/api/crossed-paths/:author", (req, res) => {
     const author = req.params.author;
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
       .map((c) => c.author);
     const crossedAuthors = crossedPathsStore.getCrossedAuthors(author, pool);
     res.json({
@@ -2748,7 +2770,7 @@ export function createApp(deps?: {
   app.get("/api/shared-contacts/:author", (req, res) => {
     const author = req.params.author;
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
       .map((c) => c.author);
     const withSharedContacts = pool
       .map((candidate) => ({ author: candidate, sharedContacts: contactsGraphStore.getSharedContactCount(author, candidate) }))
@@ -2799,7 +2821,7 @@ export function createApp(deps?: {
   app.get("/api/facebook-mutual-connections/:author", (req, res) => {
     const author = req.params.author;
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
       .map((c) => c.author);
     const withMutualFriends = pool
       .map((candidate) => ({ author: candidate, mutualFriends: facebookConnectStore.getMutualFriendCount(author, candidate) }))
@@ -2821,7 +2843,7 @@ export function createApp(deps?: {
       return;
     }
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
       .map((c) => c.author);
     const musicMatches = pool
       .map((candidate) => {
@@ -2846,7 +2868,7 @@ export function createApp(deps?: {
       return;
     }
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
       .map((c) => c.author);
     const moodMatches = pool
       .map((candidate) => {
@@ -2875,7 +2897,7 @@ export function createApp(deps?: {
       return;
     }
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
       .map((c) => c.author);
     const planMatches = pool
       .map((candidate) => {
@@ -2903,7 +2925,7 @@ export function createApp(deps?: {
       return;
     }
     const pool = swipeStore
-      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
       .map((c) => c.author);
     const bioMatches = pool
       .map((candidate) => {
