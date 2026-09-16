@@ -173,6 +173,7 @@ import { PartnerVenueDiscountStore, PARTNER_VENUES } from "./partnerVenueDiscoun
 import { ProfileNoteStore } from "./profileNotes";
 import { SuperLikeOptOutStore } from "./superLikeOptOut";
 import { CallQualityFeedbackStore, CALL_QUALITY_ISSUES } from "./callQualityFeedback";
+import { MuteMatchStore, MUTE_DURATION_HOURS } from "./muteMatch";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
@@ -327,6 +328,7 @@ export function createApp(deps?: {
   profileNoteStore: ProfileNoteStore;
   superLikeOptOutStore: SuperLikeOptOutStore;
   callQualityFeedbackStore: CallQualityFeedbackStore;
+  muteMatchStore: MuteMatchStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
@@ -591,6 +593,7 @@ export function createApp(deps?: {
   const profileNoteStore = new ProfileNoteStore();
   const superLikeOptOutStore = new SuperLikeOptOutStore();
   const callQualityFeedbackStore = new CallQualityFeedbackStore();
+  const muteMatchStore = new MuteMatchStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
@@ -5138,6 +5141,31 @@ export function createApp(deps?: {
     res.json({ disabled: superLikeOptOutStore.isDisabled(req.params.author) });
   });
 
+  // Tinder's real "Ability to mute messages from a specific Match for a
+  // few hours" (#311) — see muteMatch.ts; enforced in message:new's push
+  // predicate below, not on chat delivery itself.
+  app.get("/api/mute-match/durations", (_req, res) => {
+    res.json({ hours: MUTE_DURATION_HOURS });
+  });
+
+  app.put("/api/mute-match/:author/:match", (req, res) => {
+    const result = muteMatchStore.mute(req.params.author, req.params.match, req.body?.hours);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ mutedUntil: result.mutedUntil });
+  });
+
+  app.delete("/api/mute-match/:author/:match", (req, res) => {
+    muteMatchStore.unmute(req.params.author, req.params.match);
+    res.status(204).send();
+  });
+
+  app.get("/api/mute-match/:author/:match", (req, res) => {
+    res.json({ mutedUntil: muteMatchStore.getMutedUntil(req.params.author, req.params.match) });
+  });
+
   app.post("/api/swipes", (req, res) => {
     // Bumble's real Snooze Mode (#164): a snoozed account can't swipe on
     // new candidates either — the whole account pauses, not just other
@@ -6977,6 +7005,7 @@ export function createApp(deps?: {
     profileNoteStore,
     superLikeOptOutStore,
     callQualityFeedbackStore,
+    muteMatchStore,
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,
@@ -7068,6 +7097,7 @@ export async function createChatServer() {
     matchExpiryStore,
     notificationPreferencesStore,
     notificationInboxStore,
+    muteMatchStore,
     banStore,
     requireAdmin,
     coinStore,
@@ -7403,12 +7433,15 @@ export async function createChatServer() {
       if (message.audioUrl) dailyChallengeStore.incrementProgress(message.author, "voice-notes");
       io.to(roomId).emit("message:new", message);
       // #156's "newMessage" category preference — recipients who turned
-      // this off in /settings/notifications are skipped.
+      // this off in /settings/notifications are skipped. #311's per-match
+      // mute also skips a recipient who's currently muted this sender —
+      // the message still lands in the chat itself, just no push.
       pushService
         .notifyOthers(
           message.author,
           { title: message.author, body: buildMessagePushPreview(message.text, isFirstMessageFromSender) },
-          (recipient) => notificationPreferencesStore.isEnabled(recipient, "newMessage")
+          (recipient) =>
+            notificationPreferencesStore.isEnabled(recipient, "newMessage") && !muteMatchStore.isMuted(recipient, message.author)
         )
         .catch((err) => {
           console.error("Failed to deliver push notifications:", err);
