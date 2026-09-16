@@ -22,6 +22,7 @@ import { compressImage, blobToBase64 } from "./imageCompression";
 import { computeWaveform } from "./voiceNoteWaveform";
 import VoiceNotePlayer from "./VoiceNotePlayer";
 import { buildGoogleCalendarLink } from "./googleCalendarLink";
+import PhotoEditor from "./PhotoEditor";
 import GifPicker from "./GifPicker";
 import LocationPicker, { LocationSharePayload } from "./LocationPicker";
 import DateInvitePicker, { DateInviteSharePayload } from "./DateInvitePicker";
@@ -609,6 +610,9 @@ export default function ChatRoom({
   const [obscured, setObscured] = useState(false);
   const [albumPhotoIds, setAlbumPhotoIds] = useState<string[]>([]);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  // OkCupid's real "Ability to edit photos before uploading" (#266) — the
+  // file picker opens PhotoEditor.tsx instead of uploading immediately.
+  const [editingPhotoFile, setEditingPhotoFile] = useState<File | null>(null);
   const [albumAccessLevel, setAlbumAccessLevel] = useState<"public" | "private" | "requestAccess">("public");
   const [pendingAlbumRequests, setPendingAlbumRequests] = useState<string[]>([]);
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -1015,7 +1019,7 @@ export default function ChatRoom({
     setBlockedDomainsText("");
   };
 
-  const uploadPhoto = async (file: File) => {
+  const uploadPhoto = async (file: Blob) => {
     setPhotoError(null);
     const dataUrl: string = await new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -2642,10 +2646,23 @@ export default function ChatRoom({
           type="file"
           accept="image/png,image/jpeg,image/webp"
           disabled={albumPhotoIds.length >= 9}
-          onChange={(e) => e.target.files?.[0] && uploadPhoto(e.target.files[0])}
+          onChange={(e) => {
+            if (e.target.files?.[0]) setEditingPhotoFile(e.target.files[0]);
+            e.target.value = "";
+          }}
         />
         {albumPhotoIds.length >= 9 && (
           <p style={{ color: "var(--color-muted)" }}>Your album is full — remove a photo to add another.</p>
+        )}
+        {editingPhotoFile && (
+          <PhotoEditor
+            file={editingPhotoFile}
+            onCancel={() => setEditingPhotoFile(null)}
+            onSave={(blob) => {
+              setEditingPhotoFile(null);
+              uploadPhoto(blob);
+            }}
+          />
         )}
         {photoError && <p style={{ color: "var(--color-danger)" }}>{photoError}</p>}
         {albumPhotoIds.length > 0 && (
