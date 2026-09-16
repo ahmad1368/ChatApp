@@ -4506,7 +4506,7 @@ test("GET /api/profile-prompts/:author returns an empty list before any update",
   try {
     const res = await fetch(`${baseUrl}/api/profile-prompts/alice`);
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { answers: [] });
+    assert.deepEqual(await res.json(), { answers: [], pinnedPromptId: null });
   } finally {
     server.close();
   }
@@ -4532,6 +4532,65 @@ test("PUT /api/profile-prompts/:author sets answers, then GET returns them resol
     assert.equal(body.answers[0].promptId, promptId);
     assert.equal(body.answers[0].answer, "Loves hiking");
     assert.equal(body.answers[0].prompt, prompts[0].text);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/profile-prompts/:author/pin sorts the pinned answer first (#275)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const catalogRes = await fetch(`${baseUrl}/api/profile-prompts/catalog`);
+    const { prompts } = await catalogRes.json();
+
+    await fetch(`${baseUrl}/api/profile-prompts/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        answers: [
+          { promptId: prompts[0].id, answer: "First" },
+          { promptId: prompts[1].id, answer: "Second" },
+        ],
+      }),
+    });
+
+    const pinRes = await fetch(`${baseUrl}/api/profile-prompts/alice/pin`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ promptId: prompts[1].id }),
+    });
+    assert.equal(pinRes.status, 200);
+    const pinBody = await pinRes.json();
+    assert.equal(pinBody.pinnedPromptId, prompts[1].id);
+    assert.equal(pinBody.answers[0].promptId, prompts[1].id);
+
+    const getRes = await fetch(`${baseUrl}/api/profile-prompts/alice`);
+    const getBody = await getRes.json();
+    assert.equal(getBody.pinnedPromptId, prompts[1].id);
+    assert.equal(getBody.answers[0].promptId, prompts[1].id);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/profile-prompts/:author/pin rejects a prompt the author hasn't answered", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const catalogRes = await fetch(`${baseUrl}/api/profile-prompts/catalog`);
+    const { prompts } = await catalogRes.json();
+
+    await fetch(`${baseUrl}/api/profile-prompts/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers: [{ promptId: prompts[0].id, answer: "First" }] }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/profile-prompts/alice/pin`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ promptId: prompts[1].id }),
+    });
+    assert.equal(res.status, 400);
   } finally {
     server.close();
   }
