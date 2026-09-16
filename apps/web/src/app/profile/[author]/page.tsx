@@ -34,6 +34,7 @@ interface ProfilePreviewData {
   mbtiType?: string;
   enneagramType?: number;
   spotifyTopTracks?: string[];
+  spotifyTopArtists?: string[];
   instagramPosts?: string[];
   interests?: string[];
 }
@@ -71,6 +72,7 @@ const FIELD_LABELS: Record<keyof ProfilePreviewData, string> = {
   mbtiType: "MBTI",
   enneagramType: "Enneagram",
   spotifyTopTracks: "Spotify top tracks",
+  spotifyTopArtists: "Spotify top artists",
   instagramPosts: "Instagram posts",
   interests: "Interests",
 };
