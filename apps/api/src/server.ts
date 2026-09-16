@@ -171,6 +171,7 @@ import { PhotoReactionStore, PHOTO_REACTION_EMOJIS } from "./photoReactions";
 import { StudentVerificationStore } from "./studentVerification";
 import { PartnerVenueDiscountStore, PARTNER_VENUES } from "./partnerVenueDiscounts";
 import { ProfileNoteStore } from "./profileNotes";
+import { SuperLikeOptOutStore } from "./superLikeOptOut";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
@@ -323,6 +324,7 @@ export function createApp(deps?: {
   studentVerificationStore: StudentVerificationStore;
   partnerVenueDiscountStore: PartnerVenueDiscountStore;
   profileNoteStore: ProfileNoteStore;
+  superLikeOptOutStore: SuperLikeOptOutStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
@@ -585,6 +587,7 @@ export function createApp(deps?: {
   const studentVerificationStore = new StudentVerificationStore();
   const partnerVenueDiscountStore = new PartnerVenueDiscountStore();
   const profileNoteStore = new ProfileNoteStore();
+  const superLikeOptOutStore = new SuperLikeOptOutStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
@@ -5121,6 +5124,17 @@ export function createApp(deps?: {
     res.json({ filters: discoveryFiltersStore.get(req.params.author) });
   });
 
+  // Tinder's real "Ability to disable receiving Super Likes" (#308) — see
+  // superLikeOptOut.ts and the POST /api/swipes downgrade logic below.
+  app.put("/api/super-like-opt-out/:author", (req, res) => {
+    superLikeOptOutStore.setDisabled(req.params.author, req.body?.disabled === true);
+    res.json({ disabled: superLikeOptOutStore.isDisabled(req.params.author) });
+  });
+
+  app.get("/api/super-like-opt-out/:author", (req, res) => {
+    res.json({ disabled: superLikeOptOutStore.isDisabled(req.params.author) });
+  });
+
   app.post("/api/swipes", (req, res) => {
     // Bumble's real Snooze Mode (#164): a snoozed account can't swipe on
     // new candidates either — the whole account pauses, not just other
@@ -5137,7 +5151,15 @@ export function createApp(deps?: {
       res.status(403).json({ error: "Your account has been banned" });
       return;
     }
-    const result = swipeStore.recordSwipe(req.body?.swiper, req.body?.swiped, req.body?.direction);
+    // Tinder's real "Ability to disable receiving Super Likes" (#308): a
+    // Super Like aimed at an author who's opted out is silently downgraded
+    // to a regular Like rather than rejected — see superLikeOptOut.ts.
+    const swipedAuthorForOptOut = typeof req.body?.swiped === "string" ? req.body.swiped.trim() : "";
+    let direction = req.body?.direction;
+    if (direction === "superlike" && swipedAuthorForOptOut && superLikeOptOutStore.isDisabled(swipedAuthorForOptOut)) {
+      direction = "like";
+    }
+    const result = swipeStore.recordSwipe(req.body?.swiper, req.body?.swiped, direction);
     if (!result.success) {
       res.status(400).json({ error: result.error });
       return;
@@ -5145,7 +5167,7 @@ export function createApp(deps?: {
     // Tinder's real "Elo Score"/"Smart Score" (#95): every swipe outcome
     // feeds the swiped author's desirability rating and the swiper's own
     // activity count — see smartScore.ts.
-    const liked = req.body?.direction === "like" || req.body?.direction === "superlike";
+    const liked = direction === "like" || direction === "superlike";
     const swiperName = typeof req.body?.swiper === "string" ? req.body.swiper.trim() : "";
     const swipedName = typeof req.body?.swiped === "string" ? req.body.swiped.trim() : "";
     smartScoreStore.recordSwipeOutcome(swiperName, swipedName, liked);
@@ -5201,7 +5223,7 @@ export function createApp(deps?: {
       // one-sided like that didn't already become a mutual match; a
       // match gets its own, differently-worded notification instead
       // (see #151), not both for the same swipe.
-      const likeNotification = buildNewLikeNotification(req.body?.direction === "superlike");
+      const likeNotification = buildNewLikeNotification(direction === "superlike");
       pushService
         .notifyAuthor(swipedName, {
           ...likeNotification,
@@ -6923,6 +6945,7 @@ export function createApp(deps?: {
     studentVerificationStore,
     partnerVenueDiscountStore,
     profileNoteStore,
+    superLikeOptOutStore,
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,
