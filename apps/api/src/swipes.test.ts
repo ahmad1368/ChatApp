@@ -644,3 +644,64 @@ test("grantUnlimitedRewinds() lets a user Rewind more than once in the same day"
   store.recordSwipe("alice", "dave", "like");
   assert.equal(store.undoLastSwipe("alice").success, true);
 });
+
+test("getYesterdaysRejectedLikes() returns a pass recorded yesterday (#297)", () => {
+  const store = new SwipeStore();
+  const now = Date.parse("2026-03-10T12:00:00.000Z");
+  const yesterday = Date.parse("2026-03-09T08:00:00.000Z");
+  store.recordSwipe("alice", "bob", "pass", yesterday);
+  assert.deepEqual(store.getYesterdaysRejectedLikes("alice", now), ["bob"]);
+});
+
+test("getYesterdaysRejectedLikes() excludes a pass from today or older than yesterday", () => {
+  const store = new SwipeStore();
+  const now = Date.parse("2026-03-10T12:00:00.000Z");
+  const today = Date.parse("2026-03-10T01:00:00.000Z");
+  const twoDaysAgo = Date.parse("2026-03-08T12:00:00.000Z");
+  store.recordSwipe("alice", "bob", "pass", today);
+  store.recordSwipe("alice", "carol", "pass", twoDaysAgo);
+  assert.deepEqual(store.getYesterdaysRejectedLikes("alice", now), []);
+});
+
+test("getYesterdaysRejectedLikes() excludes a like/superlike even from yesterday", () => {
+  const store = new SwipeStore();
+  const now = Date.parse("2026-03-10T12:00:00.000Z");
+  const yesterday = Date.parse("2026-03-09T08:00:00.000Z");
+  store.recordSwipe("alice", "bob", "like", yesterday);
+  assert.deepEqual(store.getYesterdaysRejectedLikes("alice", now), []);
+});
+
+test("getYesterdaysRejectedLikes() returns an empty list for an author with no swipe history", () => {
+  const store = new SwipeStore();
+  assert.deepEqual(store.getYesterdaysRejectedLikes("alice"), []);
+});
+
+test("reconsiderPass() clears a prior pass so the pair can be freshly re-swiped (#297)", () => {
+  const store = new SwipeStore();
+  const yesterday = Date.parse("2026-03-09T08:00:00.000Z");
+  store.recordSwipe("alice", "bob", "pass", yesterday);
+  const result = store.reconsiderPass("alice", "bob");
+  assert.equal(result.success, true);
+
+  const likeResult = store.recordSwipe("alice", "bob", "like");
+  assert.equal(likeResult.success, true);
+});
+
+test("reconsiderPass() rejects a candidate that was never passed on", () => {
+  const store = new SwipeStore();
+  const result = store.reconsiderPass("alice", "bob");
+  assert.equal(result.success, false);
+});
+
+test("reconsiderPass() rejects a candidate the author already liked", () => {
+  const store = new SwipeStore();
+  store.recordSwipe("alice", "bob", "like");
+  const result = store.reconsiderPass("alice", "bob");
+  assert.equal(result.success, false);
+});
+
+test("reconsiderPass() rejects missing author or candidate", () => {
+  const store = new SwipeStore();
+  assert.equal(store.reconsiderPass("", "bob").success, false);
+  assert.equal(store.reconsiderPass("alice", "").success, false);
+});

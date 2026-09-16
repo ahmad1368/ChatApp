@@ -57,6 +57,7 @@ function listen() {
     perContactRingtoneStore,
     feedbackStore,
     backgroundCheckStore,
+    swipeStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -96,6 +97,7 @@ function listen() {
     perContactRingtoneStore,
     feedbackStore,
     backgroundCheckStore,
+    swipeStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -9990,6 +9992,81 @@ test("GET /api/liked-you/:author excludes someone once the author swipes back on
 
     const res = await fetch(`${baseUrl}/api/liked-you/alice`);
     assert.deepEqual(await res.json(), { likedBy: [], count: 0, unlocked: false });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/yesterdays-rejected-likes/:author returns a pass from yesterday (#297)", async () => {
+  const { server, baseUrl, swipeStore } = listen();
+  try {
+    const yesterday = Date.now() - 24 * 60 * 60 * 1000;
+    swipeStore.recordSwipe("alice", "bob", "pass", yesterday);
+
+    const res = await fetch(`${baseUrl}/api/yesterdays-rejected-likes/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["bob"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/yesterdays-rejected-likes/:author excludes a mutually-blocked author", async () => {
+  const { server, baseUrl, swipeStore, blockStore } = listen();
+  try {
+    const yesterday = Date.now() - 24 * 60 * 60 * 1000;
+    swipeStore.recordSwipe("alice", "bob", "pass", yesterday);
+    blockStore.block("alice", "bob");
+
+    const res = await fetch(`${baseUrl}/api/yesterdays-rejected-likes/alice`);
+    assert.deepEqual(await res.json(), { candidates: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/yesterdays-rejected-likes/:author excludes today's pass and a like from yesterday", async () => {
+  const { server, baseUrl, swipeStore } = listen();
+  try {
+    const yesterday = Date.now() - 24 * 60 * 60 * 1000;
+    swipeStore.recordSwipe("alice", "bob", "pass"); // today
+    swipeStore.recordSwipe("alice", "carol", "like", yesterday);
+
+    const res = await fetch(`${baseUrl}/api/yesterdays-rejected-likes/alice`);
+    assert.deepEqual(await res.json(), { candidates: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/yesterdays-rejected-likes/:author/:candidate/reconsider clears the pass so a fresh swipe succeeds (#297)", async () => {
+  const { server, baseUrl, swipeStore } = listen();
+  try {
+    const yesterday = Date.now() - 24 * 60 * 60 * 1000;
+    swipeStore.recordSwipe("alice", "bob", "pass", yesterday);
+
+    const reconsiderRes = await fetch(`${baseUrl}/api/yesterdays-rejected-likes/alice/bob/reconsider`, { method: "POST" });
+    assert.equal(reconsiderRes.status, 200);
+
+    const swipeRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    assert.equal(swipeRes.status, 201);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/yesterdays-rejected-likes/:author/:candidate/reconsider 400s for a candidate never passed on", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/yesterdays-rejected-likes/alice/bob/reconsider`, { method: "POST" });
+    assert.equal(res.status, 400);
   } finally {
     server.close();
   }

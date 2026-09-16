@@ -296,7 +296,8 @@ export default function DiscoverPage() {
         <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/matches">Your matches</Link> &middot;{" "}
         <Link href="/liked-you">Who liked you</Link> &middot; <Link href="/visitors">Profile visitors</Link> &middot;{" "}
         <Link href="/double-date">Double Date</Link> &middot; <Link href="/live-events">Live Events</Link> &middot;{" "}
-        <Link href="/message-requests">Message requests</Link> &middot; <Link href="/favorites">Favorites</Link>
+        <Link href="/message-requests">Message requests</Link> &middot; <Link href="/favorites">Favorites</Link> &middot;{" "}
+        <Link href="/yesterdays-rejected-likes">Yesterday&apos;s rejected likes</Link>
       </p>
       <TotalMatchesBadge />
       <ProfileBoost author={author} />
