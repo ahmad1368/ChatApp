@@ -74,6 +74,7 @@ function listen() {
     dateNoResponseAlertStore,
     attachmentStyleStore,
     keywordBlacklistStore,
+    languageCertificateStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -129,6 +130,7 @@ function listen() {
     dateNoResponseAlertStore,
     attachmentStyleStore,
     keywordBlacklistStore,
+    languageCertificateStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -2740,6 +2742,127 @@ test("POST /api/admin/verification-queue/:userId/review 404s when no selfie was 
   const { server, baseUrl } = listen();
   try {
     const res = await fetch(`${baseUrl}/api/admin/verification-queue/nope/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "approved" }),
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("GET /api/language-certificate/exam-types returns the fixed exam catalog (#324)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/language-certificate/exam-types`);
+    assert.deepEqual(await res.json(), { examTypes: ["IELTS", "TOEFL"] });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/language-certificate/:author submits a pending certificate, then GET reflects it (#324)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const data = Buffer.from("fake certificate bytes").toString("base64");
+    const postRes = await fetch(`${baseUrl}/api/language-certificate/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ examType: "IELTS", score: "7.5", mimeType: "image/jpeg", data }),
+    });
+    assert.equal(postRes.status, 201);
+    assert.deepEqual(await postRes.json(), { status: "pending" });
+
+    const getRes = await fetch(`${baseUrl}/api/language-certificate/alice`);
+    assert.deepEqual(await getRes.json(), { certificate: { status: "pending", examType: "IELTS", score: "7.5" } });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/language-certificate/:author rejects an invalid examType (#324)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const data = Buffer.from("fake certificate bytes").toString("base64");
+    const res = await fetch(`${baseUrl}/api/language-certificate/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ examType: "DUOLINGO", score: "160", mimeType: "image/jpeg", data }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/language-certificate/:author returns null before any submission (#324)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/language-certificate/alice`);
+    assert.deepEqual(await res.json(), { certificate: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("Admin language-certificate review queue: GET queue, GET file, POST review approves and clears the queue (#324)", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const data = Buffer.from("fake certificate bytes").toString("base64");
+    await fetch(`${baseUrl}/api/language-certificate/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ examType: "TOEFL", score: "100", mimeType: "image/png", data }),
+    });
+
+    const noKeyRes = await fetch(`${baseUrl}/api/admin/language-certificate-queue`);
+    assert.equal(noKeyRes.status, 401);
+
+    const queueRes = await fetch(`${baseUrl}/api/admin/language-certificate-queue`, { headers: { "x-admin-key": "test-admin-secret" } });
+    const queueBody = await queueRes.json();
+    assert.equal(queueBody.queue.length, 1);
+    assert.equal(queueBody.queue[0].author, "alice");
+
+    const fileRes = await fetch(`${baseUrl}/api/admin/language-certificate-queue/alice/file`, {
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.equal(fileRes.status, 200);
+    assert.equal(fileRes.headers.get("content-type"), "image/png");
+    const served = Buffer.from(await fileRes.arrayBuffer());
+    assert.deepEqual(served, Buffer.from(data, "base64"));
+
+    const reviewRes = await fetch(`${baseUrl}/api/admin/language-certificate-queue/alice/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
+      body: JSON.stringify({ reviewer: "admin-1", status: "approved" }),
+    });
+    assert.deepEqual(await reviewRes.json(), { status: "approved" });
+
+    const queueAfterRes = await fetch(`${baseUrl}/api/admin/language-certificate-queue`, {
+      headers: { "x-admin-key": "test-admin-secret" },
+    });
+    assert.deepEqual((await queueAfterRes.json()).queue, []);
+
+    const statusRes = await fetch(`${baseUrl}/api/language-certificate/alice`);
+    assert.deepEqual(await statusRes.json(), { certificate: { status: "approved", examType: "TOEFL", score: "100" } });
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("POST /api/admin/language-certificate-queue/:author/review 404s when no certificate was ever submitted (#324)", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/language-certificate-queue/nope/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-admin-key": "test-admin-secret" },
       body: JSON.stringify({ reviewer: "admin-1", status: "approved" }),

@@ -2946,6 +2946,8 @@ export default function ChatRoom({
         <Link href="/settings/gps-verification">GPS verification &rarr;</Link>
         {" · "}
         <Link href="/settings/student-verification">Student verification &rarr;</Link>
+        {" · "}
+        <Link href="/settings/language-certificate">Language certificate &rarr;</Link>
       </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (

@@ -147,6 +147,7 @@ import { scanForScamContent } from "./scamDetector";
 import { scanForBankCardNumber } from "./bankCardDetector";
 import { VoiceResumeStore } from "./voiceResume";
 import { KeywordBlacklistStore, bioContainsBlacklistedKeyword } from "./keywordBlacklist";
+import { LanguageCertificateStore, CERTIFICATE_EXAM_TYPES } from "./languageCertificate";
 import { createGame, applyMove } from "./ticTacToe";
 import { DATE_PROPOSAL_LABELS, isDateProposalCategory } from "./dateProposals";
 import { createDateInvite, respondToDateInvite, confirmDate, isOverdueForConfirmation } from "./dateInvites";
@@ -318,6 +319,7 @@ export function createApp(deps?: {
   voiceIntroStore: VoiceIntroStore;
   voiceResumeStore: VoiceResumeStore;
   keywordBlacklistStore: KeywordBlacklistStore;
+  languageCertificateStore: LanguageCertificateStore;
   backgroundMusicStore: BackgroundMusicStore;
   bioStore: BioStore;
   weeklyGoalStore: WeeklyGoalStore;
@@ -589,6 +591,7 @@ export function createApp(deps?: {
   const voiceIntroStore = new VoiceIntroStore();
   const voiceResumeStore = new VoiceResumeStore();
   const keywordBlacklistStore = new KeywordBlacklistStore();
+  const languageCertificateStore = new LanguageCertificateStore();
   const backgroundMusicStore = new BackgroundMusicStore();
   const bioStore = new BioStore();
   const weeklyGoalStore = new WeeklyGoalStore();
@@ -1892,6 +1895,32 @@ export function createApp(deps?: {
 
   app.get("/api/languages-info/:author", (req, res) => {
     res.json({ languagesInfo: languagesInfoStore.get(req.params.author) });
+  });
+
+  // Raya's real "Ability to upload official language certificates
+  // (IELTS/TOEFL)" (#324) — a submission starts pending, not verified;
+  // see languageCertificate.ts and the admin review endpoints above.
+  app.get("/api/language-certificate/exam-types", (_req, res) => {
+    res.json({ examTypes: CERTIFICATE_EXAM_TYPES });
+  });
+
+  app.post("/api/language-certificate/:author", (req, res) => {
+    const result = languageCertificateStore.submit(
+      req.params.author,
+      req.body?.examType,
+      req.body?.score,
+      req.body?.mimeType,
+      req.body?.data
+    );
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ status: "pending" });
+  });
+
+  app.get("/api/language-certificate/:author", (req, res) => {
+    res.json({ certificate: languageCertificateStore.getStatus(req.params.author) });
   });
 
   // Editable-anytime religion/political-views (#74), same
@@ -4154,6 +4183,37 @@ export function createApp(deps?: {
     const result = verificationStore.review(req.params.userId, req.body?.reviewer, req.body?.status);
     if (!result.success) {
       const status = result.error === "No selfie submission found for this user" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ status: result.status });
+  });
+
+  // Raya's real "Ability to upload official language certificates
+  // (IELTS/TOEFL)" (#324) — same admin-review-queue pattern as #174's
+  // photo verification directly above; see languageCertificate.ts for
+  // why this app has no real IELTS/ETS verification-service integration.
+  app.get("/api/admin/language-certificate-queue", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ queue: languageCertificateStore.getPendingQueue() });
+  });
+
+  app.get("/api/admin/language-certificate-queue/:author/file", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const cert = languageCertificateStore.getCertificateForReview(req.params.author);
+    if (!cert) {
+      res.status(404).json({ error: "No certificate submission found for this author" });
+      return;
+    }
+    res.setHeader("Content-Type", cert.mimeType);
+    res.status(200).send(cert.data);
+  });
+
+  app.post("/api/admin/language-certificate-queue/:author/review", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const result = languageCertificateStore.review(req.params.author, req.body?.reviewer, req.body?.status);
+    if (!result.success) {
+      const status = result.error === "No certificate submission found for this author" ? 404 : 400;
       res.status(status).json({ error: result.error });
       return;
     }
@@ -7166,6 +7226,7 @@ export function createApp(deps?: {
     voiceIntroStore,
     voiceResumeStore,
     keywordBlacklistStore,
+    languageCertificateStore,
     backgroundMusicStore,
     bioStore,
     weeklyGoalStore,
