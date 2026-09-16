@@ -135,6 +135,37 @@ body {
   font-size: var(--chat-font-size);
 }
 
+/* Bumble's real "standard touch target size" baseline (#247): WCAG 2.1 AA
+   asks every interactive control for at least a 44x44 CSS-px tap area.
+   Rather than the handful of composer classes #241 sized by hand
+   (.chat-app__image-button etc., still explicit below since they're
+   icon-only and need width too), this is a real global floor applying to
+   every native button/button-input across all ~150 feature pages, not
+   just the core chat surface — min-height alone for ordinary text
+   buttons, since their own padding+label already gives comfortable
+   width; an icon-only square button still needs its own min-width rule.
+   A control that's deliberately part of a larger, already-compliant tap
+   target (e.g. an icon sitting inside a bigger clickable row) opts out
+   with .chat-app__touch-target-exempt. */
+button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  min-height: 44px;
+}
+
+.chat-app__touch-target-exempt {
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Icon-only "✕" dismiss buttons (picker/editor close controls) — the
+   global button rule above already gives them height; these are square
+   so they need the matching min-width too (#247). */
+.chat-app__icon-close-button {
+  min-width: 44px;
+}
+
 /* Screen-reader/keyboard "skip to composer" link (#231): hidden until it
    receives focus, then rendered in-flow like any other real control. */
 .skip-link {

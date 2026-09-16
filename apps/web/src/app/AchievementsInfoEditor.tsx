@@ -92,7 +92,9 @@ export default function AchievementsInfoEditor({ author }: { author: string }) {
             placeholder="Year"
             style={{ flex: 1 }}
           />
-          <button onClick={() => removeEntry(i)}>✕</button>
+          <button className="chat-app__icon-close-button" onClick={() => removeEntry(i)} aria-label={`Remove ${entry.title || "achievement"}`}>
+            ✕
+          </button>
         </div>
       ))}
       {achievements.length < MAX_ACHIEVEMENTS && (

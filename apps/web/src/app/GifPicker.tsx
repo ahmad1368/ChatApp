@@ -62,7 +62,9 @@ export default function GifPicker({ onPick, onClose }: { onPick: (url: string) =
         <button onClick={search} disabled={busy || !query.trim()}>
           Search
         </button>
-        <button onClick={onClose}>✕</button>
+        <button className="chat-app__icon-close-button" onClick={onClose} aria-label="Close GIF picker">
+          ✕
+        </button>
       </div>
       {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
       <div className="chat-app__gif-results">

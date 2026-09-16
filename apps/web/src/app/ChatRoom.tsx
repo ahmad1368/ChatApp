@@ -2468,7 +2468,9 @@ export default function ChatRoom({
               {DATE_PROPOSAL_LABELS[category]}
             </button>
           ))}
-          <button onClick={() => setShowDateProposalPicker(false)}>✕</button>
+          <button className="chat-app__icon-close-button" onClick={() => setShowDateProposalPicker(false)} aria-label="Close date proposal picker">
+            ✕
+          </button>
         </div>
       )}
       {showDateInvitePicker && (
@@ -2481,7 +2483,9 @@ export default function ChatRoom({
               {gift.emoji} {gift.name} · {gift.cost} coins
             </button>
           ))}
-          <button onClick={() => setShowGiftPicker(false)}>✕</button>
+          <button className="chat-app__icon-close-button" onClick={() => setShowGiftPicker(false)} aria-label="Close gift picker">
+            ✕
+          </button>
         </div>
       )}
       {locationError && <p style={{ color: "var(--color-danger)" }}>{locationError}</p>}
