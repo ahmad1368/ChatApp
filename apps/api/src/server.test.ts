@@ -72,6 +72,7 @@ function listen() {
     ageInfoStore,
     messageAgeLimitStore,
     dateNoResponseAlertStore,
+    attachmentStyleStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -125,6 +126,7 @@ function listen() {
     ageInfoStore,
     messageAgeLimitStore,
     dateNoResponseAlertStore,
+    attachmentStyleStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -6737,6 +6739,69 @@ test("PUT /api/personality-info/:author rejects an out-of-range enneagram type",
       body: JSON.stringify({ mbtiType: "INFP", enneagramType: 10, hideMbti: false, hideEnneagram: false }),
     });
     assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/attachment-style-quiz/questions returns the fixed question catalog (#315)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/attachment-style-quiz/questions`);
+    const body = await res.json();
+    assert.equal(body.questions.length, 8);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/attachment-style-quiz/:author accepts a valid submission and classifies a style (#315)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/attachment-style-quiz/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers: [1, 1, 1, 1, 1, 1, 1, 1], hideResult: false }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.result.style, "secure");
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/attachment-style-quiz/:author rejects the wrong number of answers (#315)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/attachment-style-quiz/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers: [1, 2, 3], hideResult: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/attachment-style-quiz/:author returns null before any submission (#315)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/attachment-style-quiz/alice`);
+    assert.deepEqual(await res.json(), { result: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/attachment-style-quiz/:author reflects the submitted result (#315)", async () => {
+  const { server, baseUrl, attachmentStyleStore } = listen();
+  try {
+    attachmentStyleStore.submitQuiz("alice", [5, 5, 5, 5, 5, 5, 5, 5], false);
+    const res = await fetch(`${baseUrl}/api/attachment-style-quiz/alice`);
+    const body = await res.json();
+    assert.equal(body.result.style, "fearful");
   } finally {
     server.close();
   }

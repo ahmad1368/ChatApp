@@ -137,6 +137,7 @@ import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
 import { DuplicatePhotoDetector } from "./duplicatePhotoDetection";
 import { SharedDateStore } from "./sharedDates";
 import { DateNoResponseAlertStore } from "./dateNoResponseAlerts";
+import { AttachmentStyleStore, ATTACHMENT_QUIZ_QUESTIONS } from "./attachmentStyleQuiz";
 import { ProfileShareStore } from "./profileShare";
 import { SOSStore } from "./sos";
 import { applyWatermark } from "./watermarkImage";
@@ -303,6 +304,7 @@ export function createApp(deps?: {
   duplicatePhotoDetector: DuplicatePhotoDetector;
   sharedDateStore: SharedDateStore;
   dateNoResponseAlertStore: DateNoResponseAlertStore;
+  attachmentStyleStore: AttachmentStyleStore;
   profileShareStore: ProfileShareStore;
   sosStore: SOSStore;
   webAuthnStore: WebAuthnStore;
@@ -565,6 +567,7 @@ export function createApp(deps?: {
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
   const sharedDateStore = new SharedDateStore();
   const dateNoResponseAlertStore = new DateNoResponseAlertStore();
+  const attachmentStyleStore = new AttachmentStyleStore();
   const profileShareStore = new ProfileShareStore();
   const sosStore = new SOSStore();
   // Distinct from webAuthnService above: that one re-authenticates a real
@@ -1959,6 +1962,27 @@ export function createApp(deps?: {
 
   app.get("/api/personality-info/:author", (req, res) => {
     res.json({ personalityInfo: personalityInfoStore.get(req.params.author) });
+  });
+
+  // eHarmony's real "psychological tendencies based on tests" (#315) —
+  // see attachmentStyleQuiz.ts for why this is deliberately scoped to a
+  // legitimate, non-clinical attachment-style quiz rather than a
+  // "mental health status" display.
+  app.get("/api/attachment-style-quiz/questions", (_req, res) => {
+    res.json({ questions: ATTACHMENT_QUIZ_QUESTIONS });
+  });
+
+  app.post("/api/attachment-style-quiz/:author", (req, res) => {
+    const result = attachmentStyleStore.submitQuiz(req.params.author, req.body?.answers, req.body?.hideResult);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ result: result.result });
+  });
+
+  app.get("/api/attachment-style-quiz/:author", (req, res) => {
+    res.json({ result: attachmentStyleStore.get(req.params.author) });
   });
 
   // Connect Spotify to show top tracks (#77) — same "client does the OAuth
@@ -7074,6 +7098,7 @@ export function createApp(deps?: {
     ageInfoStore,
     messageAgeLimitStore,
     personalityInfoStore,
+    attachmentStyleStore,
     spotifyInfoStore,
     instagramInfoStore,
     interestsInfoStore,
