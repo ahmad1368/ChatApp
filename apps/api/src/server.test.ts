@@ -65,6 +65,7 @@ function listen() {
     photoReactionStore,
     studentVerificationStore,
     partnerVenueDiscountStore,
+    profileNoteStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -111,6 +112,7 @@ function listen() {
     photoReactionStore,
     studentVerificationStore,
     partnerVenueDiscountStore,
+    profileNoteStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -4511,6 +4513,81 @@ test("GET /api/partner-venues/:venueId/claim defaults to null before claiming (#
   try {
     const res = await fetch(`${baseUrl}/api/partner-venues/bellas-bistro/claim?author=alice`);
     assert.deepEqual(await res.json(), { code: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/profile-notes/:subject saves a private note (#307)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-notes/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "alice", text: "met at the coffee shop" }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { note: "met at the coffee shop" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/profile-notes/:subject rejects a missing viewer (#307)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/profile-notes/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "note" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/profile-notes/:subject returns the viewer's own note (#307)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/profile-notes/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "alice", text: "met at the coffee shop" }),
+    });
+    const res = await fetch(`${baseUrl}/api/profile-notes/bob?viewer=alice`);
+    assert.deepEqual(await res.json(), { note: "met at the coffee shop" });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/profile-notes/:subject never returns another viewer's note (#307)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/profile-notes/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "alice", text: "met at the coffee shop" }),
+    });
+    const res = await fetch(`${baseUrl}/api/profile-notes/bob?viewer=carol`);
+    assert.deepEqual(await res.json(), { note: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/profile-notes/:subject removes the viewer's note (#307)", async () => {
+  const { server, baseUrl, profileNoteStore } = listen();
+  try {
+    profileNoteStore.setNote("alice", "bob", "met at the coffee shop");
+    const res = await fetch(`${baseUrl}/api/profile-notes/bob`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "alice" }),
+    });
+    assert.equal(res.status, 204);
+    assert.equal(profileNoteStore.getNote("alice", "bob"), null);
   } finally {
     server.close();
   }
