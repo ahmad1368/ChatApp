@@ -187,6 +187,7 @@ import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
 import { optimizePhoto } from "./photoOptimization";
 import { computeActivityPercentile } from "./activityLevel";
+import { computeResponseSpeed } from "./responseSpeed";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -2760,6 +2761,20 @@ export function createApp(deps?: {
       roomMessages.filter((m) => m.author === author).map((m) => ({ roomId, text: m.text, createdAt: m.createdAt }))
     );
     res.json(analyzeTypingPattern(messages));
+  });
+
+  // Tinder's real "System showing a user's message response speed"
+  // (#254) — a genuine badge shown on the profile itself (unlike #95's
+  // deliberately hidden Smart Score), so not admin-gated. Same cross-room
+  // aggregation as #236's typing-pattern detector, but every room's
+  // messages (not just this author's own) since a reply gap needs to see
+  // what it was replying to.
+  app.get("/api/response-speed/:author", (req, res) => {
+    const author = req.params.author;
+    const events = [...messagesByRoom.entries()].flatMap(([roomId, roomMessages]) =>
+      roomMessages.map((m) => ({ roomId, author: m.author, createdAt: m.createdAt }))
+    );
+    res.json(computeResponseSpeed(events, author));
   });
 
   // Match.com's real "Suggest a suitable date location based on shared

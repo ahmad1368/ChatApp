@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getOrCreateGuestIdentity } from "../../guestIdentity";
 import ProfilePhotoGallery from "../../ProfilePhotoGallery";
 import BackgroundMusicPlayer from "../../BackgroundMusicPlayer";
+import ResponseSpeedBadge from "../../ResponseSpeedBadge";
 import { formatHeightCm, MeasurementSystem } from "../../measurementUnits";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -154,6 +155,7 @@ export default function ViewProfilePage({ params }: { params: { author: string }
               : "Activity unknown"}
         </p>
       )}
+      <ResponseSpeedBadge author={params.author} />
       {preview && (
         <dl style={{ marginTop: 8 }}>
           {(Object.entries(preview) as [keyof ProfilePreviewData, unknown][]).map(([key, value]) => (
