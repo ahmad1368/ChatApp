@@ -14,6 +14,7 @@ import EducationInfoEditor from "../../EducationInfoEditor";
 import HeightInfoEditor from "../../HeightInfoEditor";
 import LifestyleInfoEditor from "../../LifestyleInfoEditor";
 import FamilyPlansInfoEditor from "../../FamilyPlansInfoEditor";
+import MaritalStatusInfoEditor from "../../MaritalStatusInfoEditor";
 import ZodiacInfoEditor from "../../ZodiacInfoEditor";
 import LanguagesInfoEditor from "../../LanguagesInfoEditor";
 import BeliefsInfoEditor from "../../BeliefsInfoEditor";
@@ -71,6 +72,7 @@ export default function ProfileSettingsPage() {
       <HeightInfoEditor author={author} />
       <LifestyleInfoEditor author={author} />
       <FamilyPlansInfoEditor author={author} />
+      <MaritalStatusInfoEditor author={author} />
       <ZodiacInfoEditor author={author} />
       <LanguagesInfoEditor author={author} />
       <BeliefsInfoEditor author={author} />

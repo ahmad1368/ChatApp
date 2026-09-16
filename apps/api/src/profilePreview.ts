@@ -3,6 +3,7 @@ import { EducationInfo } from "./educationInfo";
 import { HeightInfo } from "./heightInfo";
 import { LifestyleInfo, SmokingOption, DrinkingOption } from "./lifestyleInfo";
 import { FamilyPlansInfo, FamilyPlansOption } from "./familyPlansInfo";
+import { MaritalStatusInfo, MaritalStatusOption } from "./maritalStatusInfo";
 import { ZodiacInfo, ZodiacSign } from "./zodiacInfo";
 import { LanguagesInfo, Language } from "./languagesInfo";
 import { BeliefsInfo, ReligionOption, PoliticalViewOption } from "./beliefsInfo";
@@ -21,6 +22,7 @@ export interface ProfilePreviewInput {
   heightInfo: HeightInfo;
   lifestyleInfo: LifestyleInfo;
   familyPlansInfo: FamilyPlansInfo;
+  maritalStatusInfo: MaritalStatusInfo;
   zodiacInfo: ZodiacInfo;
   languagesInfo: LanguagesInfo;
   beliefsInfo: BeliefsInfo;
@@ -41,6 +43,7 @@ export interface ProfilePreview {
   smoking?: SmokingOption;
   drinking?: DrinkingOption;
   familyPlans?: FamilyPlansOption;
+  maritalStatus?: MaritalStatusOption;
   zodiacSign?: ZodiacSign;
   languages?: Language[];
   religion?: ReligionOption;
@@ -82,6 +85,10 @@ export function buildProfilePreview(input: ProfilePreviewInput): ProfilePreview 
 
   if (input.familyPlansInfo.familyPlans && !input.familyPlansInfo.hideFamilyPlans) {
     preview.familyPlans = input.familyPlansInfo.familyPlans;
+  }
+
+  if (input.maritalStatusInfo.maritalStatus && !input.maritalStatusInfo.hideMaritalStatus) {
+    preview.maritalStatus = input.maritalStatusInfo.maritalStatus;
   }
 
   if (input.zodiacInfo.zodiacSign && !input.zodiacInfo.hideZodiac) preview.zodiacSign = input.zodiacInfo.zodiacSign;
