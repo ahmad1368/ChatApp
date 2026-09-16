@@ -30,6 +30,7 @@ import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
 import FontSizeToggle from "./FontSizeToggle";
 import HighContrastToggle from "./HighContrastToggle";
+import OneHandedModeToggle from "./OneHandedModeToggle";
 import ReportDialog from "./ReportDialog";
 import CallCaptions from "./CallCaptions";
 import SOSButton from "./SOSButton";
@@ -2032,6 +2033,7 @@ export default function ChatRoom({
           <ThemeToggle />
           <FontSizeToggle />
           <HighContrastToggle />
+          <OneHandedModeToggle />
           <LocaleToggle />
           <button className="chat-app__theme-toggle" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)">
             ⌨ Shortcuts
