@@ -11,6 +11,7 @@ import SharedContacts from "../SharedContacts";
 import FacebookMutualConnections from "../FacebookMutualConnections";
 import MusicMatches from "../MusicMatches";
 import WeekendPlanMatches from "../WeekendPlanMatches";
+import ZodiacMatches from "../ZodiacMatches";
 import BioMatches from "../BioMatches";
 import AdBanner from "../AdBanner";
 import VoiceSwipeControl from "../VoiceSwipeControl";
@@ -297,6 +298,7 @@ export default function DiscoverPage() {
       <FacebookMutualConnections author={author} />
       <MusicMatches author={author} />
       <WeekendPlanMatches author={author} />
+      <ZodiacMatches author={author} />
       <BioMatches author={author} />
       {/* Web-only "grid or list" browsing (#115) — an alternative to the
           one-at-a-time swipe card, its own persisted preference. */}
