@@ -15,6 +15,7 @@ import { InstagramService } from "./instagramAuth";
 import { GiphyService } from "./giphy";
 import { AiAvatarService } from "./aiAvatar";
 import { BackgroundCheckService } from "./backgroundCheck";
+import { GpsVerificationService } from "./gpsVerification";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -59,6 +60,7 @@ function listen() {
     backgroundCheckStore,
     swipeStore,
     photoChallengeStore,
+    gpsVerificationStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -100,6 +102,7 @@ function listen() {
     backgroundCheckStore,
     swipeStore,
     photoChallengeStore,
+    gpsVerificationStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -148,6 +151,13 @@ function listenWithBackgroundCheck(backgroundCheckService: BackgroundCheckServic
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}`, backgroundCheckStore };
+}
+
+function listenWithGpsVerification(gpsVerificationService: GpsVerificationService) {
+  const { app, gpsVerificationStore } = createApp({ gpsVerificationService });
+  const server = app.listen(0);
+  const { port } = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${port}`, gpsVerificationStore };
 }
 
 function listenWithGiphy(giphyService: GiphyService) {
@@ -4358,6 +4368,71 @@ test("GET /api/photo-challenge/submissions ranks highest-voted first (#298)", as
     const res = await fetch(`${baseUrl}/api/photo-challenge/submissions`);
     const body = await res.json();
     assert.equal(body.submissions[0].author, "bob");
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/gps-verification/:author defaults to unverified (#299)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/gps-verification/alice`);
+    assert.deepEqual(await res.json(), { verified: false, distanceKm: null, verifiedAt: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/gps-verification/:author rejects invalid coordinates (#299)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/gps-verification/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 200, lng: 0 }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/gps-verification/:author verifies and stores the result when GPS matches network location (#299)", async () => {
+  const gpsVerificationService = new GpsVerificationService(async () => ({ lat: 40.71, lng: -74.0 }));
+  const { server, baseUrl, gpsVerificationStore } = listenWithGpsVerification(gpsVerificationService);
+  try {
+    const res = await fetch(`${baseUrl}/api/gps-verification/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 40.7128, lng: -74.006 }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.verified, true);
+    assert.match(body.reason, /matches/);
+
+    const getRes = await fetch(`${baseUrl}/api/gps-verification/alice`);
+    assert.equal((await getRes.json()).verified, true);
+    assert.equal(gpsVerificationStore.hasVerifiedBadge("alice"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/gps-verification/:author flags a mismatch as unverified (possible VPN) (#299)", async () => {
+  const gpsVerificationService = new GpsVerificationService(async () => ({ lat: 51.5074, lng: -0.1278 }));
+  const { server, baseUrl, gpsVerificationStore } = listenWithGpsVerification(gpsVerificationService);
+  try {
+    const res = await fetch(`${baseUrl}/api/gps-verification/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 40.7128, lng: -74.006 }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.verified, false);
+    assert.match(body.reason, /VPN/);
+    assert.equal(gpsVerificationStore.hasVerifiedBadge("alice"), false);
   } finally {
     server.close();
   }
