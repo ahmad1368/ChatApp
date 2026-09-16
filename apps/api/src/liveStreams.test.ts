@@ -106,3 +106,45 @@ test("each stream's comments and viewers are independent", () => {
   assert.equal(store.getComments(streamB.id).length, 0);
   assert.deepEqual(store.getStream(streamB.id)?.viewers, []);
 });
+
+test("start() rejects inviting yourself (#316)", () => {
+  const store = new LiveStreamStore();
+  const result = store.start("alice", "Private stream", "alice");
+  assert.equal(result.success, false);
+});
+
+test("start() with an invitedViewer creates a private stream, excluded from the public list (#316)", () => {
+  const store = new LiveStreamStore();
+  const result = store.start("alice", "Just for bob", "bob");
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.stream.invitedViewer, "bob");
+  assert.deepEqual(store.listActiveStreams(), []);
+});
+
+test("listMyPrivateStreamInvites() surfaces a private stream only to the invited viewer (#316)", () => {
+  const store = new LiveStreamStore();
+  store.start("alice", "Just for bob", "bob");
+  assert.equal(store.listMyPrivateStreamInvites("bob").length, 1);
+  assert.deepEqual(store.listMyPrivateStreamInvites("carol"), []);
+});
+
+test("join() rejects a viewer who isn't the invited Match on a private stream (#316)", () => {
+  const store = new LiveStreamStore();
+  const { stream } = store.start("alice", "Just for bob", "bob") as { success: true; stream: { id: string } };
+  const result = store.join("carol", stream.id);
+  assert.equal(result.success, false);
+});
+
+test("join() allows the invited Match on a private stream (#316)", () => {
+  const store = new LiveStreamStore();
+  const { stream } = store.start("alice", "Just for bob", "bob") as { success: true; stream: { id: string } };
+  const result = store.join("bob", stream.id);
+  assert.equal(result.success, true);
+});
+
+test("a public (non-invited) stream still appears in listActiveStreams() (#316)", () => {
+  const store = new LiveStreamStore();
+  store.start("alice", "Public stream");
+  assert.equal(store.listActiveStreams().length, 1);
+});
