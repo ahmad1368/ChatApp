@@ -102,6 +102,7 @@ import { MessageDraftStore } from "./messageDrafts";
 import { PublicKeyStore } from "./e2eeKeys";
 import { BlockStore } from "./blocks";
 import { ContactBlockStore } from "./contactBlocks";
+import { EmailDomainBlockStore } from "./emailDomainBlock";
 import { PinnedChatsStore } from "./pinnedChats";
 import { ArchivedChatsStore } from "./archivedChats";
 import { searchMessages } from "./messageSearch";
@@ -235,6 +236,7 @@ export function createApp(deps?: {
   reportStore: ReportStore;
   blockStore: BlockStore;
   contactBlockStore: ContactBlockStore;
+  emailDomainBlockStore: EmailDomainBlockStore;
   pinnedChatsStore: PinnedChatsStore;
   archivedChatsStore: ArchivedChatsStore;
   watermarkStore: WatermarkStore;
@@ -460,6 +462,7 @@ export function createApp(deps?: {
   const publicKeyStore = new PublicKeyStore();
   const blockStore = new BlockStore();
   const contactBlockStore = new ContactBlockStore();
+  const emailDomainBlockStore = new EmailDomainBlockStore();
   const pinnedChatsStore = new PinnedChatsStore();
   const archivedChatsStore = new ArchivedChatsStore();
   const watermarkStore = new WatermarkStore();
@@ -820,6 +823,32 @@ export function createApp(deps?: {
       return;
     }
     const matches = contactBlockStore.findMatchingAuthors(author, req.body?.phoneNumbers);
+    const blockedAuthors = matches.filter((matched) => blockStore.block(author, matched).success);
+    res.status(200).json({ blockedAuthors });
+  });
+
+  // Self-declared email, same shape as the phone number above — see
+  // emailDomainBlock.ts for the honest scoping.
+  app.post("/api/profile/email", (req, res) => {
+    const result = emailDomainBlockStore.registerEmail(req.body?.author, req.body?.email);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  // Bumble's real "Ability to block a specific email domain" (#260):
+  // sweep-blocks every currently registered author whose self-declared
+  // email domain matches one of the given domains, via the same
+  // BlockStore a manual block would use.
+  app.post("/api/email-domains/block", (req, res) => {
+    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    const matches = emailDomainBlockStore.findMatchingAuthors(author, req.body?.domains);
     const blockedAuthors = matches.filter((matched) => blockStore.block(author, matched).success);
     res.status(200).json({ blockedAuthors });
   });
@@ -5938,6 +5967,7 @@ export function createApp(deps?: {
     reportStore,
     blockStore,
     contactBlockStore,
+    emailDomainBlockStore,
     pinnedChatsStore,
     archivedChatsStore,
     watermarkStore,
