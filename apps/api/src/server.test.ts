@@ -62,6 +62,7 @@ function listen() {
     photoChallengeStore,
     gpsVerificationStore,
     membershipStore,
+    photoReactionStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -105,6 +106,7 @@ function listen() {
     photoChallengeStore,
     gpsVerificationStore,
     membershipStore,
+    photoReactionStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -4245,6 +4247,124 @@ test("GET /api/photos/:id 404s for an unknown id", async () => {
   try {
     const res = await fetch(`${baseUrl}/api/photos/does-not-exist`);
     assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/photo-reactions/emojis returns the fixed emoji catalog (#304)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/photo-reactions/emojis`);
+    const body = await res.json();
+    assert.ok(body.emojis.includes("❤️"));
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/photos/:id/reaction 404s for an unknown photo (#304)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/photos/does-not-exist/reaction`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "alice", emoji: "❤️" }),
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/photos/:id/reaction rejects an invalid emoji (#304)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("bob", "image/png", TINY_PNG_BASE64);
+    const photoId = uploaded.success ? uploaded.photo.id : "";
+    const res = await fetch(`${baseUrl}/api/photos/${photoId}/reaction`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "alice", emoji: "🍕" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/photos/:id/reaction records a reaction, then GET reflects it in the summary and viewerReaction (#304)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("bob", "image/png", TINY_PNG_BASE64);
+    const photoId = uploaded.success ? uploaded.photo.id : "";
+
+    const putRes = await fetch(`${baseUrl}/api/photos/${photoId}/reaction`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "alice", emoji: "❤️" }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { emoji: "❤️" });
+
+    await fetch(`${baseUrl}/api/photos/${photoId}/reaction`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "carol", emoji: "❤️" }),
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/photos/${photoId}/reactions?viewer=alice`);
+    assert.deepEqual(await getRes.json(), { summary: [{ emoji: "❤️", count: 2 }], viewerReaction: "❤️" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/photos/:id/reaction replaces a viewer's previous reaction rather than stacking it (#304)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("bob", "image/png", TINY_PNG_BASE64);
+    const photoId = uploaded.success ? uploaded.photo.id : "";
+
+    await fetch(`${baseUrl}/api/photos/${photoId}/reaction`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "alice", emoji: "❤️" }),
+    });
+    await fetch(`${baseUrl}/api/photos/${photoId}/reaction`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "alice", emoji: "🔥" }),
+    });
+
+    const getRes = await fetch(`${baseUrl}/api/photos/${photoId}/reactions?viewer=alice`);
+    assert.deepEqual(await getRes.json(), { summary: [{ emoji: "🔥", count: 1 }], viewerReaction: "🔥" });
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/photos/:id/reaction removes the viewer's reaction (#304)", async () => {
+  const { server, baseUrl, photoReactionStore } = listen();
+  try {
+    photoReactionStore.react("photo-1", "alice", "❤️");
+    const res = await fetch(`${baseUrl}/api/photos/photo-1/reaction`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewer: "alice" }),
+    });
+    assert.equal(res.status, 204);
+    assert.equal(photoReactionStore.getViewerReaction("photo-1", "alice"), null);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/photos/:id/reactions defaults to an empty summary and null viewerReaction (#304)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/photos/photo-1/reactions?viewer=alice`);
+    assert.deepEqual(await res.json(), { summary: [], viewerReaction: null });
   } finally {
     server.close();
   }

@@ -167,6 +167,7 @@ import { BeliefsInfoStore } from "./beliefsInfo";
 import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
 import { DietInfoStore, DIET_OPTIONS } from "./dietInfo";
 import { BloodTypeInfoStore, BLOOD_TYPE_OPTIONS } from "./bloodTypeInfo";
+import { PhotoReactionStore, PHOTO_REACTION_EMOJIS } from "./photoReactions";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
@@ -315,6 +316,7 @@ export function createApp(deps?: {
   petsInfoStore: PetsInfoStore;
   dietInfoStore: DietInfoStore;
   bloodTypeInfoStore: BloodTypeInfoStore;
+  photoReactionStore: PhotoReactionStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
@@ -573,6 +575,7 @@ export function createApp(deps?: {
   const petsInfoStore = new PetsInfoStore();
   const dietInfoStore = new DietInfoStore();
   const bloodTypeInfoStore = new BloodTypeInfoStore();
+  const photoReactionStore = new PhotoReactionStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
@@ -1072,6 +1075,42 @@ export function createApp(deps?: {
     } catch {
       res.status(500).json({ error: "Failed to render photo" });
     }
+  });
+
+  // Tinder's real "Ability to react with an emoji on each profile photo"
+  // (#304) — see photoReactions.ts for the real fixed-emoji catalog.
+  app.get("/api/photo-reactions/emojis", (_req, res) => {
+    res.json({ emojis: PHOTO_REACTION_EMOJIS });
+  });
+
+  app.put("/api/photos/:id/reaction", (req, res) => {
+    if (!photoStore.get(req.params.id)) {
+      res.status(404).json({ error: "Photo not found" });
+      return;
+    }
+    const result = photoReactionStore.react(req.params.id, req.body?.viewer, req.body?.emoji);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ emoji: result.emoji });
+  });
+
+  app.delete("/api/photos/:id/reaction", (req, res) => {
+    const result = photoReactionStore.removeReaction(req.params.id, req.body?.viewer);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  app.get("/api/photos/:id/reactions", (req, res) => {
+    const viewer = typeof req.query.viewer === "string" ? req.query.viewer : "";
+    res.json({
+      summary: photoReactionStore.getSummary(req.params.id),
+      viewerReaction: viewer ? photoReactionStore.getViewerReaction(req.params.id, viewer) : null,
+    });
   });
 
   // Hinge's real "Ability to create a custom AI avatar based on the
@@ -6783,6 +6822,7 @@ export function createApp(deps?: {
     petsInfoStore,
     dietInfoStore,
     bloodTypeInfoStore,
+    photoReactionStore,
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,
