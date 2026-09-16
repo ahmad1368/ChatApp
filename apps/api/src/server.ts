@@ -125,6 +125,8 @@ import { UsageLimitStore, UsageTimeStore, getUsageStatus, USAGE_LIMIT_OPTIONS_MI
 import { PerContactRingtoneStore } from "./perContactRingtone";
 import { computeMoodCompatibility } from "./musicMood";
 import { FeedbackStore } from "./feedback";
+import { BackgroundCheckService } from "./backgroundCheck";
+import { BackgroundCheckStore } from "./backgroundCheckRecord";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -237,6 +239,7 @@ export function createApp(deps?: {
   instagramService?: InstagramService;
   translationService?: TranslationService;
   aiAvatarService?: AiAvatarService;
+  backgroundCheckService?: BackgroundCheckService;
 }): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
@@ -273,6 +276,7 @@ export function createApp(deps?: {
   usageTimeStore: UsageTimeStore;
   perContactRingtoneStore: PerContactRingtoneStore;
   feedbackStore: FeedbackStore;
+  backgroundCheckStore: BackgroundCheckStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -517,6 +521,8 @@ export function createApp(deps?: {
   const usageTimeStore = new UsageTimeStore();
   const perContactRingtoneStore = new PerContactRingtoneStore();
   const feedbackStore = new FeedbackStore();
+  const backgroundCheckService = deps?.backgroundCheckService ?? new BackgroundCheckService();
+  const backgroundCheckStore = new BackgroundCheckStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -1097,6 +1103,57 @@ export function createApp(deps?: {
     }
     res.setHeader("Content-Type", record.mimeType);
     res.status(200).send(record.data);
+  });
+
+  // Raya's real "Ability to verify a certificate of no criminal record
+  // (optional)" (#295) — see backgroundCheck.ts for the real Checkr
+  // integration and this environment's honest missing-credential gap,
+  // and backgroundCheckRecord.ts for the per-author status.
+  app.post("/api/background-check/:author", async (req, res) => {
+    const author = req.params.author;
+    if (!backgroundCheckService.isConfigured()) {
+      res.status(503).json({ error: "Background check verification is not configured on this server" });
+      return;
+    }
+    const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+    if (!email) {
+      res.status(400).json({ error: "email is required" });
+      return;
+    }
+
+    const invitation = await backgroundCheckService.createInvitation(email);
+    if (!invitation) {
+      res.status(502).json({ error: "Failed to create a background check invitation" });
+      return;
+    }
+
+    const record = backgroundCheckStore.recordInvitation(author, invitation.candidateId, invitation.invitationUrl);
+    res.status(201).json(record);
+  });
+
+  app.get("/api/background-check/:author", (req, res) => {
+    res.json(backgroundCheckStore.get(req.params.author));
+  });
+
+  app.post("/api/background-check/:author/refresh", async (req, res) => {
+    const author = req.params.author;
+    if (!backgroundCheckService.isConfigured()) {
+      res.status(503).json({ error: "Background check verification is not configured on this server" });
+      return;
+    }
+    const record = backgroundCheckStore.get(author);
+    if (!record.candidateId) {
+      res.status(404).json({ error: "No background check has been requested for this author" });
+      return;
+    }
+
+    const status = await backgroundCheckService.fetchReportStatus(record.candidateId);
+    if (!status) {
+      res.status(502).json({ error: "Failed to fetch the background check report status" });
+      return;
+    }
+
+    res.json(backgroundCheckStore.updateStatus(author, status));
   });
 
   // Tinder's real "WebAssembly technology support for the browser
@@ -6535,6 +6592,7 @@ export function createApp(deps?: {
     usageTimeStore,
     perContactRingtoneStore,
     feedbackStore,
+    backgroundCheckStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,

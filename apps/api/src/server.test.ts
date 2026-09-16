@@ -14,6 +14,7 @@ import { SpotifyService } from "./spotifyAuth";
 import { InstagramService } from "./instagramAuth";
 import { GiphyService } from "./giphy";
 import { AiAvatarService } from "./aiAvatar";
+import { BackgroundCheckService } from "./backgroundCheck";
 
 function makePaginationMessage(id: string, index: number): ChatMessage {
   return {
@@ -55,6 +56,7 @@ function listen() {
     usageTimeStore,
     perContactRingtoneStore,
     feedbackStore,
+    backgroundCheckStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -93,6 +95,7 @@ function listen() {
     usageTimeStore,
     perContactRingtoneStore,
     feedbackStore,
+    backgroundCheckStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -134,6 +137,13 @@ function listenWithAiAvatar(aiAvatarService: AiAvatarService) {
   const server = app.listen(0);
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}`, photoStore };
+}
+
+function listenWithBackgroundCheck(backgroundCheckService: BackgroundCheckService) {
+  const { app, backgroundCheckStore } = createApp({ backgroundCheckService });
+  const server = app.listen(0);
+  const { port } = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${port}`, backgroundCheckStore };
 }
 
 function listenWithGiphy(giphyService: GiphyService) {
@@ -3957,6 +3967,123 @@ test("POST /api/ai-avatar/:author returns 502 when generation fails even though 
       body: JSON.stringify({ photoId, style: "anime" }),
     });
     assert.equal(res.status, 502);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/background-check/:author defaults to notRequested (#295)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/background-check/alice`);
+    assert.deepEqual(await res.json(), { status: "notRequested", candidateId: null, invitationUrl: null, requestedAt: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/background-check/:author returns 503 when not configured (#295)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/background-check/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "alice@example.com" }),
+    });
+    assert.equal(res.status, 503);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/background-check/:author rejects a missing email even when configured (#295)", async () => {
+  const backgroundCheckService = new BackgroundCheckService(
+    "test-key",
+    async () => ({ candidateId: "c1", invitationUrl: "https://checkr.example/invite/c1" }),
+    async () => "clear"
+  );
+  const { server, baseUrl } = listenWithBackgroundCheck(backgroundCheckService);
+  try {
+    const res = await fetch(`${baseUrl}/api/background-check/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/background-check/:author creates an invitation when configured (#295)", async () => {
+  const backgroundCheckService = new BackgroundCheckService(
+    "test-key",
+    async () => ({ candidateId: "c1", invitationUrl: "https://checkr.example/invite/c1" }),
+    async () => "clear"
+  );
+  const { server, baseUrl } = listenWithBackgroundCheck(backgroundCheckService);
+  try {
+    const res = await fetch(`${baseUrl}/api/background-check/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "alice@example.com" }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.status, "invited");
+    assert.equal(body.candidateId, "c1");
+    assert.equal(body.invitationUrl, "https://checkr.example/invite/c1");
+
+    const getRes = await fetch(`${baseUrl}/api/background-check/alice`);
+    assert.equal((await getRes.json()).status, "invited");
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/background-check/:author returns 502 when the invitation fails even though configured (#295)", async () => {
+  const backgroundCheckService = new BackgroundCheckService("test-key", async () => undefined, async () => undefined);
+  const { server, baseUrl } = listenWithBackgroundCheck(backgroundCheckService);
+  try {
+    const res = await fetch(`${baseUrl}/api/background-check/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "alice@example.com" }),
+    });
+    assert.equal(res.status, 502);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/background-check/:author/refresh updates the status from Checkr's report (#295)", async () => {
+  const backgroundCheckService = new BackgroundCheckService(
+    "test-key",
+    async () => ({ candidateId: "c1", invitationUrl: "https://checkr.example/invite/c1" }),
+    async () => "clear"
+  );
+  const { server, baseUrl, backgroundCheckStore } = listenWithBackgroundCheck(backgroundCheckService);
+  try {
+    backgroundCheckStore.recordInvitation("alice", "c1", "https://checkr.example/invite/c1");
+    const res = await fetch(`${baseUrl}/api/background-check/alice/refresh`, { method: "POST" });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).status, "clear");
+    assert.equal(backgroundCheckStore.hasCleanRecordBadge("alice"), true);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/background-check/:author/refresh 404s when no check was ever requested (#295)", async () => {
+  const backgroundCheckService = new BackgroundCheckService(
+    "test-key",
+    async () => ({ candidateId: "c1", invitationUrl: "https://checkr.example/invite/c1" }),
+    async () => "clear"
+  );
+  const { server, baseUrl } = listenWithBackgroundCheck(backgroundCheckService);
+  try {
+    const res = await fetch(`${baseUrl}/api/background-check/alice/refresh`, { method: "POST" });
+    assert.equal(res.status, 404);
   } finally {
     server.close();
   }
