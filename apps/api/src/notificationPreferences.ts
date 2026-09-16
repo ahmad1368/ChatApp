@@ -22,6 +22,9 @@ export const NOTIFICATION_CATEGORIES = [
   // #277's "Alert for date cancellation if not confirmed by both
   // parties on the day" — see dateInvites.ts's isOverdueForConfirmation.
   "dateCancelled",
+  // #290's "Show a thank-you message after an effective first violation
+  // report" — see reports.ts's countResolvedByReporter().
+  "reportThankYou",
 ] as const;
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 
@@ -36,6 +39,7 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
   adminBroadcast: true,
   securityAlert: true,
   dateCancelled: true,
+  reportThankYou: true,
 };
 
 export type UpdatePreferencesResult = { success: true; preferences: NotificationPreferences } | { success: false; error: string };

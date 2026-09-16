@@ -138,4 +138,31 @@ describe("ReportStore", () => {
       assert.ok(result.report.reviewedAt);
     }
   });
+
+  it("countResolvedByReporter() is 0 before any report is resolved", () => {
+    const store = new ReportStore();
+    store.submit("alice", { reportedAuthor: "bob", reason: "spam" });
+    assert.equal(store.countResolvedByReporter("alice"), 0);
+  });
+
+  it("countResolvedByReporter() counts only this reporter's resolved reports", () => {
+    const store = new ReportStore();
+    const first = store.submit("alice", { reportedAuthor: "bob", reason: "spam" });
+    const second = store.submit("alice", { reportedAuthor: "carol", reason: "harassment" });
+    store.submit("dave", { reportedAuthor: "bob", reason: "spam" });
+    assert.ok(first.success && second.success);
+    store.review(first.report.id, "admin", "resolved", undefined);
+    assert.equal(store.countResolvedByReporter("alice"), 1);
+    store.review(second.report.id, "admin", "resolved", undefined);
+    assert.equal(store.countResolvedByReporter("alice"), 2);
+    assert.equal(store.countResolvedByReporter("dave"), 0);
+  });
+
+  it("countResolvedByReporter() excludes dismissed reports", () => {
+    const store = new ReportStore();
+    const submitted = store.submit("alice", { reportedAuthor: "bob", reason: "spam" });
+    assert.ok(submitted.success);
+    store.review(submitted.report.id, "admin", "dismissed", undefined);
+    assert.equal(store.countResolvedByReporter("alice"), 0);
+  });
 });

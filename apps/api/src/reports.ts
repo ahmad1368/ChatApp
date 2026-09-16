@@ -132,6 +132,17 @@ export class ReportStore {
       .sort((a, b) => b.pendingCount - a.pendingCount);
   }
 
+  /**
+   * How many of `reporterAuthor`'s own reports have been marked
+   * "resolved" (real action taken, not just filed) — #290's "thank the
+   * reporter the first time their report was actually effective" checks
+   * this equals exactly 1 right after a review call, so the thank-you
+   * fires once, the first time it becomes true, not on every resolve.
+   */
+  countResolvedByReporter(reporterAuthor: string): number {
+    return this.reports.filter((r) => r.reporterAuthor === reporterAuthor && r.status === "resolved").length;
+  }
+
   /** The actual admin decision on one report: resolved (action taken) or dismissed (no action needed). */
   review(reportId: unknown, reviewer: unknown, status: unknown, note: unknown): ReviewReportResult {
     const id = typeof reportId === "string" ? reportId.trim() : "";
