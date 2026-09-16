@@ -100,13 +100,21 @@ export interface TicTacToeGame {
 
 export const DATE_INVITE_RESPONSES = ["accepted", "declined"] as const;
 export type DateInviteResponse = (typeof DATE_INVITE_RESPONSES)[number];
-export type DateInviteStatus = "pending" | DateInviteResponse;
+// Raya's real "Alert for date cancellation if not confirmed by both
+// parties on the day" (#277) — an accepted invite that reaches its
+// proposed time without both the sender and recipient reconfirming gets
+// auto-cancelled, alerting both sides, rather than just silently passing.
+export type DateInviteStatus = "pending" | DateInviteResponse | "cancelled";
 
 export interface DateInvite {
   location: string;
   proposedAt: string;
   note?: string;
   status: DateInviteStatus;
+  // #277's day-of reconfirmation — the recipient's identity (needed to
+  // know who "both parties" are) and who has actually reconfirmed so far.
+  recipient?: string;
+  confirmedBy?: string[];
 }
 
 export const DATE_PROPOSAL_CATEGORIES = ["cinema", "cafe", "restaurant", "park", "drinks"] as const;

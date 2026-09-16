@@ -126,7 +126,7 @@ import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
 import { createGame, applyMove } from "./ticTacToe";
 import { DATE_PROPOSAL_LABELS, isDateProposalCategory } from "./dateProposals";
-import { createDateInvite, respondToDateInvite } from "./dateInvites";
+import { createDateInvite, respondToDateInvite, confirmDate, isOverdueForConfirmation } from "./dateInvites";
 import { RecaptchaService } from "./recaptcha";
 import { scanForSpamContent, SPAM_DETECTOR_REPORTER_AUTHOR } from "./spamDetector";
 import { scanForInappropriateContent, CONTENT_WARNING_REPORTER_AUTHOR } from "./contentWarning";
@@ -6336,6 +6336,7 @@ export async function createChatServer() {
     genderInfoStore,
     matchExpiryStore,
     notificationPreferencesStore,
+    notificationInboxStore,
     banStore,
     requireAdmin,
     coinStore,
@@ -6365,6 +6366,31 @@ export async function createChatServer() {
       memory: process.memoryUsage(),
     });
   });
+
+  // Raya's real "Alert for date cancellation if not confirmed by both
+  // parties on the day" (#277) — same periodic-sweep stand-in for a
+  // job-queue as #154's match-expiry reminder above, just defined here
+  // (not inside createApp()) since it needs `io` to live-update any open
+  // chat window, not only push/inbox.
+  const DATE_CANCELLATION_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
+  setInterval(() => {
+    for (const [roomId, messages] of messagesByRoom.entries()) {
+      for (const message of messages) {
+        const invite = message.dateInvite;
+        if (!invite || !isOverdueForConfirmation(invite, message.author)) continue;
+
+        message.dateInvite = { ...invite, status: "cancelled" };
+        io.to(roomId).emit("date-invite:updated", { messageId: message.id, dateInvite: message.dateInvite });
+
+        const title = "Date invitation cancelled";
+        const body = `Your planned date at ${invite.location} was cancelled — not both sides confirmed it was still on.`;
+        for (const author of [message.author, invite.recipient!]) {
+          if (!notificationPreferencesStore.isEnabled(author, "dateCancelled")) continue;
+          notificationInboxStore.record(author, "dateCancelled", title, body);
+        }
+      }
+    }
+  }, DATE_CANCELLATION_SWEEP_INTERVAL_MS).unref();
 
   io.on("connection", (socket) => {
     socket.on("join", (roomId: string = DEFAULT_ROOM_ID) => {
@@ -6594,7 +6620,7 @@ export async function createChatServer() {
       // set here, the same "server owns the derived truth" stance as the
       // live-location expiresAt above.
       if (payload.dateInvite) {
-        const inviteResult = createDateInvite(payload.dateInvite);
+        const inviteResult = createDateInvite(payload.dateInvite, payload.recipient);
         if (!inviteResult.success) {
           socket.emit("message:rejected", { reason: "invalid_date_invite", error: inviteResult.error });
           return;
@@ -6776,6 +6802,33 @@ export async function createChatServer() {
         io.to(roomId).emit("date-invite:updated", { messageId, dateInvite: message.dateInvite });
       }
     );
+
+    // Raya's real "Alert for date cancellation if not confirmed by both
+    // parties on the day" (#277) — either side reconfirming an accepted
+    // invite; see dateInvites.ts's confirmDate for the sender/recipient
+    // rule. The actual overdue-cancellation check runs on the periodic
+    // sweep below, not here.
+    socket.on("date-invite:confirm", (payload: { roomId?: string; messageId?: string; author?: string }) => {
+      const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+      const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
+      const author = typeof payload?.author === "string" ? payload.author : "";
+      if (!roomId || !messageId || !author) return;
+
+      const message = messagesByRoom.get(roomId)?.find((m) => m.id === messageId);
+      if (!message?.dateInvite) {
+        socket.emit("date-invite:rejected", { messageId, error: "Date invitation not found" });
+        return;
+      }
+
+      const result = confirmDate(message.dateInvite, message.author, author);
+      if (!result.success) {
+        socket.emit("date-invite:rejected", { messageId, error: result.error });
+        return;
+      }
+
+      message.dateInvite = result.dateInvite;
+      io.to(roomId).emit("date-invite:updated", { messageId, dateInvite: message.dateInvite });
+    });
 
     // WhatsApp/Bumble's real "Delete for Everyone" (#134) — see
     // messageDeletion.ts for the sender-only/time-window rule. Unlike
