@@ -31,6 +31,7 @@ import ThemeToggle from "./ThemeToggle";
 import FontSizeToggle from "./FontSizeToggle";
 import HighContrastToggle from "./HighContrastToggle";
 import ReportDialog from "./ReportDialog";
+import CallCaptions from "./CallCaptions";
 import SOSButton from "./SOSButton";
 import BiometricLock from "./BiometricLock";
 import { getOrCreateGuestIdentity } from "./guestIdentity";
@@ -678,6 +679,10 @@ export default function ChatRoom({
   const [callState, setCallState] = useState<"idle" | "calling" | "ringing" | "active">("idle");
   const [activeCall, setActiveCall] = useState<CallInfo | null>(null);
   const [callError, setCallError] = useState<string | null>(null);
+  // Tinder's real "Automatic captions for video calls" (#246) — the other
+  // participant's live transcript, relayed via call:caption; see
+  // CallCaptions.tsx for the local speech-to-text side of this.
+  const [remoteCaption, setRemoteCaption] = useState<string | null>(null);
   // Bumble's real "mandatory text-first" video-call gate (#130) — lets the
   // button show how many more messages are needed instead of a dead click.
   const [videoCallEligibility, setVideoCallEligibility] = useState<{ eligible: boolean; messagesExchanged: number; required: number } | null>(
@@ -1280,6 +1285,10 @@ export default function ChatRoom({
       setCallError(reason ?? "Call failed");
       setCallState("idle");
     });
+    socket.on("call:caption", ({ to, text }: { callId: string; from: string; to: string; text: string }) => {
+      if (to !== authorRef.current) return;
+      setRemoteCaption(text);
+    });
     // Bumble's real AI "unkind message" warning (#143) — a soft nudge, not
     // a rejection: the server held the message back and is asking the
     // sender to confirm before it goes through.
@@ -1816,6 +1825,7 @@ export default function ChatRoom({
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     setActiveCall(null);
     setCallState("idle");
+    setRemoteCaption(null);
   };
 
   const createPeerConnection = (callId: string, remoteAuthor: string, video: boolean): RTCPeerConnection => {
@@ -2145,6 +2155,16 @@ export default function ChatRoom({
             <div className="chat-app__video-call">
               <video ref={remoteVideoRef} className="chat-app__remote-video" autoPlay playsInline />
               <video ref={localVideoRef} className="chat-app__local-video" autoPlay playsInline muted />
+              <CallCaptions
+                active={callState === "active"}
+                onTranscript={(text) => {
+                  if (!activeCall) return;
+                  const remoteAuthor = activeCall.caller === author ? activeCall.callee : activeCall.caller;
+                  socketRef.current?.emit("call:caption", { callId: activeCall.id, roomId, from: author, to: remoteAuthor, text });
+                }}
+                remoteCaption={remoteCaption}
+                remoteLabel={activeCall.caller === author ? activeCall.callee : activeCall.caller}
+              />
             </div>
           ) : (
             <audio ref={remoteAudioRef} autoPlay />

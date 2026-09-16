@@ -664,6 +664,73 @@ test("call:signal relays an opaque WebRTC payload to the room", async () => {
   }
 });
 
+test("call:caption relays transcribed text to the room only once the call is active (#246)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const caller = await connectClient(baseUrl);
+  const callee = await connectClient(baseUrl);
+  try {
+    caller.emit("join", "room-1");
+    callee.emit("join", "room-1");
+    await settle();
+
+    const incoming = waitFor<{ id: string }>(callee, "call:incoming");
+    caller.emit("call:invite", { roomId: "room-1", caller: "alice", callee: "bob" });
+    const call = await incoming;
+
+    // Not active yet (still ringing) — the caption is dropped.
+    let receivedTooEarly = false;
+    callee.once("call:caption", () => {
+      receivedTooEarly = true;
+    });
+    caller.emit("call:caption", { callId: call.id, roomId: "room-1", from: "alice", to: "bob", text: "hello there" });
+    await settle();
+    assert.equal(receivedTooEarly, false);
+
+    const accepted = waitFor<{ id: string }>(caller, "call:accepted");
+    callee.emit("call:accept", { callId: call.id, author: "bob" });
+    await accepted;
+
+    const caption = waitFor<{ callId: string; from: string; to: string; text: string }>(callee, "call:caption");
+    caller.emit("call:caption", { callId: call.id, roomId: "room-1", from: "alice", to: "bob", text: "hello there" });
+    assert.deepEqual(await caption, { callId: call.id, from: "alice", to: "bob", text: "hello there" });
+  } finally {
+    caller.close();
+    callee.close();
+    httpServer.close();
+  }
+});
+
+test("call:caption drops an empty transcript", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const caller = await connectClient(baseUrl);
+  const callee = await connectClient(baseUrl);
+  try {
+    caller.emit("join", "room-1");
+    callee.emit("join", "room-1");
+    await settle();
+
+    const incoming = waitFor<{ id: string }>(callee, "call:incoming");
+    caller.emit("call:invite", { roomId: "room-1", caller: "alice", callee: "bob" });
+    const call = await incoming;
+
+    const accepted = waitFor<{ id: string }>(caller, "call:accepted");
+    callee.emit("call:accept", { callId: call.id, author: "bob" });
+    await accepted;
+
+    let received = false;
+    callee.once("call:caption", () => {
+      received = true;
+    });
+    caller.emit("call:caption", { callId: call.id, roomId: "room-1", from: "alice", to: "bob", text: "   " });
+    await settle();
+    assert.equal(received, false);
+  } finally {
+    caller.close();
+    callee.close();
+    httpServer.close();
+  }
+});
+
 test("message:edit updates the text and broadcasts message:edited (#133)", async () => {
   const { httpServer, baseUrl } = await startChatServer();
   const sender = await connectClient(baseUrl);
