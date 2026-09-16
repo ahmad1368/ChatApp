@@ -51,6 +51,8 @@ function listen() {
     clearedHistoryStore,
     aiAvatarStore,
     wasmFilterUsageStore,
+    usageLimitStore,
+    usageTimeStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -85,6 +87,8 @@ function listen() {
     clearedHistoryStore,
     aiAvatarStore,
     wasmFilterUsageStore,
+    usageLimitStore,
+    usageTimeStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -3901,6 +3905,99 @@ test("wasm-filter-usage counts are tracked independently per author (#287)", asy
     const bobRes = await fetch(`${baseUrl}/api/wasm-filter-usage/bob`);
     assert.deepEqual(await aliceRes.json(), { count: 1 });
     assert.deepEqual(await bobRes.json(), { count: 2 });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/usage-limit/options returns the fixed limit choices (#289)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/usage-limit/options`);
+    const body = await res.json();
+    assert.deepEqual(body.options, [15, 30, 60, 90, 120]);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/usage-limit/:author defaults to no limit (#289)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/usage-limit/alice`);
+    assert.deepEqual(await res.json(), { dailyLimitMinutes: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/usage-limit/:author sets and clears the limit (#289)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const setRes = await fetch(`${baseUrl}/api/usage-limit/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dailyLimitMinutes: 30 }),
+    });
+    assert.deepEqual(await setRes.json(), { dailyLimitMinutes: 30 });
+
+    const clearRes = await fetch(`${baseUrl}/api/usage-limit/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dailyLimitMinutes: null }),
+    });
+    assert.deepEqual(await clearRes.json(), { dailyLimitMinutes: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/usage-limit/:author rejects an unlisted value (#289)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/usage-limit/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dailyLimitMinutes: 45 }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/usage-time/:author defaults to 0 minutes with no limit reached (#289)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/usage-time/alice`);
+    assert.deepEqual(await res.json(), { usageMinutesToday: 0, dailyLimitMinutes: null, limitReached: false });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/usage-time/:author accumulates usage and reports limitReached once the limit is met (#289)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/usage-limit/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dailyLimitMinutes: 15 }),
+    });
+
+    const first = await fetch(`${baseUrl}/api/usage-time/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seconds: 300 }),
+    });
+    assert.deepEqual(await first.json(), { usageMinutesToday: 5, dailyLimitMinutes: 15, limitReached: false });
+
+    const second = await fetch(`${baseUrl}/api/usage-time/alice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seconds: 600 }),
+    });
+    assert.deepEqual(await second.json(), { usageMinutesToday: 15, dailyLimitMinutes: 15, limitReached: true });
   } finally {
     server.close();
   }
