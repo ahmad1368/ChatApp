@@ -113,6 +113,7 @@ import { ContactBlockStore } from "./contactBlocks";
 import { EmailDomainBlockStore } from "./emailDomainBlock";
 import { PinnedChatsStore } from "./pinnedChats";
 import { ArchivedChatsStore } from "./archivedChats";
+import { FavoritesStore } from "./favorites";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -251,6 +252,7 @@ export function createApp(deps?: {
   emailDomainBlockStore: EmailDomainBlockStore;
   pinnedChatsStore: PinnedChatsStore;
   archivedChatsStore: ArchivedChatsStore;
+  favoritesStore: FavoritesStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -485,6 +487,7 @@ export function createApp(deps?: {
   const emailDomainBlockStore = new EmailDomainBlockStore();
   const pinnedChatsStore = new PinnedChatsStore();
   const archivedChatsStore = new ArchivedChatsStore();
+  const favoritesStore = new FavoritesStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -824,6 +827,31 @@ export function createApp(deps?: {
 
   app.get("/api/archived-chats/:viewerAuthor", (req, res) => {
     res.json({ archivedChats: archivedChatsStore.getArchivedChats(req.params.viewerAuthor) });
+  });
+
+  // Tinder's real "Ability to define a favorites list" (#279): a personal
+  // shortlist over any profile a viewer has seen (matched or not), separate
+  // from swiping — see favorites.ts.
+  app.post("/api/favorites", (req, res) => {
+    const result = favoritesStore.addFavorite(req.body?.viewerAuthor, req.body?.targetAuthor);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ favorited: true });
+  });
+
+  app.delete("/api/favorites", (req, res) => {
+    const result = favoritesStore.removeFavorite(req.body?.viewerAuthor, req.body?.targetAuthor);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  app.get("/api/favorites/:viewerAuthor", (req, res) => {
+    res.json({ favorites: favoritesStore.getFavorites(req.params.viewerAuthor) });
   });
 
   // Self-declared phone number (same client-supplied-identity limitation as
@@ -6229,6 +6257,7 @@ export function createApp(deps?: {
     emailDomainBlockStore,
     pinnedChatsStore,
     archivedChatsStore,
+    favoritesStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,

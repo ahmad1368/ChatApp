@@ -45,6 +45,7 @@ function listen() {
     matchExpiryStore,
     pinnedChatsStore,
     archivedChatsStore,
+    favoritesStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -74,6 +75,7 @@ function listen() {
     matchExpiryStore,
     pinnedChatsStore,
     archivedChatsStore,
+    favoritesStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -3188,6 +3190,64 @@ test("DELETE /api/archived-chats unarchives a chat (#139)", async () => {
     });
     assert.equal(res.status, 204);
     assert.equal(archivedChatsStore.isArchived("alice", "bob"), false);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/favorites favorites a profile (#279)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/favorites`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice", targetAuthor: "bob" }),
+    });
+    assert.equal(res.status, 201);
+    const listRes = await fetch(`${baseUrl}/api/favorites/alice`);
+    assert.deepEqual((await listRes.json()).favorites, ["bob"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/favorites rejects missing fields (#279)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/favorites`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/favorites/:viewerAuthor returns only that viewer's own favorites (#279)", async () => {
+  const { server, baseUrl, favoritesStore } = listen();
+  try {
+    favoritesStore.addFavorite("alice", "bob");
+    favoritesStore.addFavorite("dave", "alice");
+    const res = await fetch(`${baseUrl}/api/favorites/alice`);
+    assert.deepEqual((await res.json()).favorites, ["bob"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("DELETE /api/favorites unfavorites a profile (#279)", async () => {
+  const { server, baseUrl, favoritesStore } = listen();
+  try {
+    favoritesStore.addFavorite("alice", "bob");
+    const res = await fetch(`${baseUrl}/api/favorites`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice", targetAuthor: "bob" }),
+    });
+    assert.equal(res.status, 204);
+    assert.equal(favoritesStore.isFavorite("alice", "bob"), false);
   } finally {
     server.close();
   }
