@@ -2760,6 +2760,7 @@ export default function ChatRoom({
         {editingPhotoFile && (
           <PhotoEditor
             file={editingPhotoFile}
+            author={author}
             onCancel={() => setEditingPhotoFile(null)}
             onSave={(blob) => {
               setEditingPhotoFile(null);

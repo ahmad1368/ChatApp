@@ -119,6 +119,7 @@ import { StrangerPictureBlockStore } from "./strangerPictureBlock";
 import { getSimilarProfiles } from "./similarProfiles";
 import { ClearedHistoryStore } from "./clearedHistory";
 import { AiAvatarService, AiAvatarStore, isAiAvatarStyle, AI_AVATAR_STYLES } from "./aiAvatar";
+import { WasmFilterUsageStore } from "./wasmFilterUsage";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -262,6 +263,7 @@ export function createApp(deps?: {
   strangerPictureBlockStore: StrangerPictureBlockStore;
   clearedHistoryStore: ClearedHistoryStore;
   aiAvatarStore: AiAvatarStore;
+  wasmFilterUsageStore: WasmFilterUsageStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -501,6 +503,7 @@ export function createApp(deps?: {
   const clearedHistoryStore = new ClearedHistoryStore();
   const aiAvatarService = deps?.aiAvatarService ?? new AiAvatarService();
   const aiAvatarStore = new AiAvatarStore();
+  const wasmFilterUsageStore = new WasmFilterUsageStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -1081,6 +1084,19 @@ export function createApp(deps?: {
     }
     res.setHeader("Content-Type", record.mimeType);
     res.status(200).send(record.data);
+  });
+
+  // Tinder's real "WebAssembly technology support for the browser
+  // version" (#287) — records that the real WASM-computed posterize
+  // filter (PhotoEditor.tsx/wasmPosterize.ts) was actually applied — see
+  // wasmFilterUsage.ts.
+  app.post("/api/wasm-filter-usage/:author", (req, res) => {
+    const count = wasmFilterUsageStore.record(req.params.author);
+    res.status(201).json({ count });
+  });
+
+  app.get("/api/wasm-filter-usage/:author", (req, res) => {
+    res.json({ count: wasmFilterUsageStore.getCount(req.params.author) });
   });
 
   // Photo album access level (#59): Bumble's real "Private Album" control,
@@ -6389,6 +6405,7 @@ export function createApp(deps?: {
     strangerPictureBlockStore,
     clearedHistoryStore,
     aiAvatarStore,
+    wasmFilterUsageStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,
