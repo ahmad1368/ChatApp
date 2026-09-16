@@ -21,6 +21,7 @@ import NotificationInbox from "./NotificationInbox";
 import { compressImage, blobToBase64 } from "./imageCompression";
 import { computeWaveform } from "./voiceNoteWaveform";
 import VoiceNotePlayer from "./VoiceNotePlayer";
+import { buildGoogleCalendarLink } from "./googleCalendarLink";
 import GifPicker from "./GifPicker";
 import LocationPicker, { LocationSharePayload } from "./LocationPicker";
 import DateInvitePicker, { DateInviteSharePayload } from "./DateInvitePicker";
@@ -258,7 +259,24 @@ function DateInviteCard({
       {dateInvite.status === "pending" && isOwnMessage && (
         <p className="chat-app__date-invite-status">Waiting for a response…</p>
       )}
-      {dateInvite.status === "accepted" && <p className="chat-app__date-invite-status">✅ Accepted</p>}
+      {dateInvite.status === "accepted" && (
+        <>
+          <p className="chat-app__date-invite-status">✅ Accepted</p>
+          <a
+            className="chat-app__link-button"
+            href={buildGoogleCalendarLink({
+              title: `Date at ${dateInvite.location}`,
+              location: dateInvite.location,
+              proposedAt: dateInvite.proposedAt,
+              details: dateInvite.note,
+            })}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            📅 Add to Google Calendar
+          </a>
+        </>
+      )}
       {dateInvite.status === "declined" && <p className="chat-app__date-invite-status">❌ Declined</p>}
     </div>
   );
