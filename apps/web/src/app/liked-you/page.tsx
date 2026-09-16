@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getOrCreateGuestIdentity } from "../guestIdentity";
+import { vibrateForeground, vibrationPatternForCategory } from "../notificationSound";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -58,6 +59,13 @@ export default function LikedYouPage() {
         throw new Error(body.error ?? "Failed to swipe");
       }
       setMatchNotice(body.matched ? candidate : null);
+      // Bumble's real "Haptic feedback on like or Match" (#248) — same
+      // navigator.vibrate patterns discover/page.tsx's main swipe uses.
+      if (body.matched) {
+        vibrateForeground(vibrationPatternForCategory("newMatch"));
+      } else if (direction === "like") {
+        vibrateForeground(vibrationPatternForCategory("newLike"));
+      }
       setLikedBy((prev) => prev.filter((entry) => entry.author !== candidate));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to swipe");
