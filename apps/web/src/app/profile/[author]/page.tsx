@@ -8,6 +8,7 @@ import BackgroundMusicPlayer from "../../BackgroundMusicPlayer";
 import ResponseSpeedBadge from "../../ResponseSpeedBadge";
 import MembershipDuration from "../../MembershipDuration";
 import StudentVerificationBadge from "../../StudentVerificationBadge";
+import LanguageCertificateBadge from "../../LanguageCertificateBadge";
 import PrivateProfileNote from "../../PrivateProfileNote";
 import SimilarProfiles from "../../SimilarProfiles";
 import { formatHeightCm, MeasurementSystem } from "../../measurementUnits";
@@ -166,6 +167,7 @@ export default function ViewProfilePage({ params }: { params: { author: string }
       <ResponseSpeedBadge author={params.author} />
       <MembershipDuration author={params.author} />
       <StudentVerificationBadge author={params.author} />
+      <LanguageCertificateBadge author={params.author} />
       <PrivateProfileNote viewer={viewer} subject={params.author} />
       {preview && (
         <dl style={{ marginTop: 8 }}>
