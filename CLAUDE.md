@@ -42,6 +42,10 @@ Issue #165 ("Set custom ringtones and alerts for the app") is an exact duplicate
 
 Issue #168 ("Quickly change the app language") is an exact duplicate of already-implemented #9 ("Multilingual (i18n) and RTL/LTR support") in the auto-generated backlog — same feature, no differentiating angle. #9 already shipped exactly this: `LocaleToggle` (`apps/web/src/app/LocaleProvider.tsx`) is a one-tap dropdown always visible in the chat header, switching language instantly (flips `lang`/`dir` on `<html>`, persists to `localStorage`) — as "quick" as a language switcher gets. No separate implementation was made for #168 — skip it in `/next-issue` picks (see that file's step 1) and close it as a duplicate of #9 once confirmed.
 
+## Known backlog overlap: #84 and #269
+
+Issue #269 ("Ability to set 'I'm traveling' mode") is an exact duplicate of already-implemented #84 ("Show work/travel mode") in the auto-generated backlog — same feature, same reference framing, no differentiating angle (unlike #102's Passport mode, which is a genuinely different, functional location-override feature, not a cosmetic badge). #84 already shipped this: `TravelModeInfoStore` (`PUT`/`GET /api/travel-mode-info/:author`) is a real "I'm temporarily somewhere else" toggle plus an optional destination string. No separate implementation was made for #269 — skip it in `/next-issue` picks (see that file's step 1) and close it as a duplicate of #84 once confirmed.
+
 ## Issue workflow
 
 Issues are tracked on GitHub (`gh issue list`) and implemented one at a time via `/next-issue` (`.claude/commands/next-issue.md`). Read that file for the exact branch/PR rules before doing any issue work — do not improvise a different workflow.
