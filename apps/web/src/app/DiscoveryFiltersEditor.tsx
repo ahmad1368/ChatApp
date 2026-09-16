@@ -12,15 +12,17 @@ const DRINKING_LABELS: Record<string, string> = {
 };
 
 /**
- * OkCupid's advanced discovery filters (#96, extended by #97 and #98):
- * height range, education requirement, required languages, non-smoking,
- * allowed drinking, and verified-only. Narrows /api/swipe-candidates for
- * this author — see discoveryFilters.ts for the matching logic and for
- * the documented gap between this app's guest identities and real,
- * selfie-verified accounts that "verified only" relies on.
+ * OkCupid's advanced discovery filters (#96, extended by #97, #98, and
+ * #257): height range, education requirement, required languages,
+ * non-smoking, allowed drinking, verified-only, and favorite pets.
+ * Narrows /api/swipe-candidates for this author — see discoveryFilters.ts
+ * for the matching logic and for the documented gap between this app's
+ * guest identities and real, selfie-verified accounts that "verified
+ * only" relies on.
  */
 export default function DiscoveryFiltersEditor({ author }: { author: string }) {
   const [catalog, setCatalog] = useState<string[]>([]);
+  const [petCatalog, setPetCatalog] = useState<string[]>([]);
   const [minHeightCm, setMinHeightCm] = useState("");
   const [maxHeightCm, setMaxHeightCm] = useState("");
   const [requireEducation, setRequireEducation] = useState(false);
@@ -28,16 +30,19 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
   const [requireNonSmoking, setRequireNonSmoking] = useState(false);
   const [allowedDrinking, setAllowedDrinking] = useState<string[]>([]);
   const [requireVerifiedOnly, setRequireVerifiedOnly] = useState(false);
+  const [requiredPets, setRequiredPets] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     Promise.all([
       fetch(`${API_URL}/api/languages-info/catalog`).then((res) => res.json()),
+      fetch(`${API_URL}/api/pets-info/catalog`).then((res) => res.json()),
       fetch(`${API_URL}/api/discovery-filters/${encodeURIComponent(author)}`).then((res) => res.json()),
     ])
-      .then(([catalogBody, filtersBody]) => {
+      .then(([catalogBody, petCatalogBody, filtersBody]) => {
         setCatalog(catalogBody.languages ?? []);
+        setPetCatalog(petCatalogBody.pets ?? []);
         const filters = filtersBody.filters;
         setMinHeightCm(filters?.minHeightCm != null ? String(filters.minHeightCm) : "");
         setMaxHeightCm(filters?.maxHeightCm != null ? String(filters.maxHeightCm) : "");
@@ -46,6 +51,7 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
         setRequireNonSmoking(filters?.requireNonSmoking ?? false);
         setAllowedDrinking(filters?.allowedDrinking ?? []);
         setRequireVerifiedOnly(filters?.requireVerifiedOnly ?? false);
+        setRequiredPets(filters?.requiredPets ?? []);
       })
       .catch(() => {});
   }, [author]);
@@ -58,6 +64,10 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
 
   const toggleDrinking = (option: string) => {
     setAllowedDrinking((prev) => (prev.includes(option) ? prev.filter((d) => d !== option) : [...prev, option]));
+  };
+
+  const togglePet = (pet: string) => {
+    setRequiredPets((prev) => (prev.includes(pet) ? prev.filter((p) => p !== pet) : [...prev, pet]));
   };
 
   const save = async () => {
@@ -75,6 +85,7 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
           requireNonSmoking,
           allowedDrinking,
           requireVerifiedOnly,
+          requiredPets,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -170,6 +181,22 @@ export default function DiscoveryFiltersEditor({ author }: { author: string }) {
         />
         Only show verified profiles
       </label>
+
+      <p style={{ marginTop: 8, marginBottom: 4 }}>Must have at least one of these pets:</p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {petCatalog.map((pet) => {
+          const isSelected = requiredPets.includes(pet);
+          return (
+            <button
+              key={pet}
+              onClick={() => togglePet(pet)}
+              style={{ textTransform: "capitalize", fontWeight: isSelected ? "bold" : "normal" }}
+            >
+              {pet}
+            </button>
+          );
+        })}
+      </div>
 
       <button onClick={save} disabled={busy} style={{ marginTop: 8 }}>
         Save

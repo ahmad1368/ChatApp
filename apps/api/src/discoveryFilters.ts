@@ -1,6 +1,7 @@
 import { MIN_HEIGHT_CM, MAX_HEIGHT_CM } from "./heightInfo";
 import { LANGUAGE_CATALOG, Language } from "./languagesInfo";
 import { DRINKING_OPTIONS, DrinkingOption, SmokingOption } from "./lifestyleInfo";
+import { PET_CATALOG, Pet } from "./petsInfo";
 
 export interface DiscoveryFilters {
   minHeightCm: number | null;
@@ -10,6 +11,7 @@ export interface DiscoveryFilters {
   requireNonSmoking: boolean;
   allowedDrinking: DrinkingOption[];
   requireVerifiedOnly: boolean;
+  requiredPets: Pet[];
 }
 
 export type UpdateDiscoveryFiltersResult =
@@ -23,6 +25,7 @@ export interface CandidateProfileData {
   smoking: SmokingOption | null;
   drinking: DrinkingOption | null;
   isVerified: boolean;
+  pets: string[];
 }
 
 const EMPTY_FILTERS: DiscoveryFilters = {
@@ -33,6 +36,7 @@ const EMPTY_FILTERS: DiscoveryFilters = {
   requireNonSmoking: false,
   allowedDrinking: [],
   requireVerifiedOnly: false,
+  requiredPets: [],
 };
 
 function isLanguage(value: unknown): value is Language {
@@ -43,12 +47,17 @@ function isDrinkingOption(value: unknown): value is DrinkingOption {
   return typeof value === "string" && (DRINKING_OPTIONS as readonly string[]).includes(value);
 }
 
+function isPet(value: unknown): value is Pet {
+  return typeof value === "string" && (PET_CATALOG as readonly string[]).includes(value);
+}
+
 /**
  * OkCupid's real advanced discovery filters (#96, extended by #97 with
- * non-smoking/lifestyle and #98 with a verified-only toggle), scoped to
- * the fields the issues name — height, education, language, smoking,
- * drinking, identity verification — from the profile data #68/#69/#70/#73
- * already collect. Filtering reads that data regardless of each
+ * non-smoking/lifestyle, #98 with a verified-only toggle, and #257 with a
+ * favorite-pets filter), scoped to the fields the issues name — height,
+ * education, language, smoking, drinking, identity verification, pets —
+ * from the profile data #68/#69/#70/#73/#75 already collect. Filtering
+ * reads that data regardless of each
  * candidate's own hide-on-my-profile flag (hideHeight, etc.): same
  * precedent as #94's interest-compatibility scorer reading interests
  * regardless of hideInterests — a "don't show this on my profile" choice
@@ -83,7 +92,8 @@ export class DiscoveryFiltersStore {
     requiredLanguages: unknown,
     requireNonSmoking: unknown,
     allowedDrinking: unknown,
-    requireVerifiedOnly: unknown
+    requireVerifiedOnly: unknown,
+    requiredPets: unknown
   ): UpdateDiscoveryFiltersResult {
     const authorName = typeof author === "string" ? author.trim() : "";
     if (!authorName) {
@@ -132,6 +142,17 @@ export class DiscoveryFiltersStore {
       drinkingOptions.push(entry);
     }
 
+    if (!Array.isArray(requiredPets)) {
+      return { success: false, error: "requiredPets must be a list" };
+    }
+    const pets: Pet[] = [];
+    for (const entry of requiredPets) {
+      if (!isPet(entry)) {
+        return { success: false, error: "Invalid pet in requiredPets" };
+      }
+      pets.push(entry);
+    }
+
     const filters: DiscoveryFilters = {
       minHeightCm: min,
       maxHeightCm: max,
@@ -140,6 +161,7 @@ export class DiscoveryFiltersStore {
       requireNonSmoking: requireNonSmoking === true,
       allowedDrinking: drinkingOptions,
       requireVerifiedOnly: requireVerifiedOnly === true,
+      requiredPets: pets,
     };
     this.filtersByAuthor.set(authorName, filters);
     return { success: true, filters };
@@ -171,6 +193,9 @@ export function candidateMatchesFilters(filters: DiscoveryFilters, candidate: Ca
     return false;
   }
   if (filters.requireVerifiedOnly && !candidate.isVerified) {
+    return false;
+  }
+  if (filters.requiredPets.length > 0 && !filters.requiredPets.some((p) => candidate.pets.includes(p))) {
     return false;
   }
   return true;
