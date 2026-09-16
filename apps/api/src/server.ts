@@ -188,6 +188,7 @@ import { computeProfileCompletion } from "./profileCompletion";
 import { optimizePhoto } from "./photoOptimization";
 import { computeActivityPercentile } from "./activityLevel";
 import { computeResponseSpeed } from "./responseSpeed";
+import { computeZodiacCompatibility } from "./zodiacCompatibility";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -1189,6 +1190,35 @@ export function createApp(deps?: {
 
   app.get("/api/zodiac-info/:author", (req, res) => {
     res.json({ zodiacInfo: zodiacInfoStore.get(req.params.author) });
+  });
+
+  // Hinge's real "Ability to measure zodiac sign compatibility by birth
+  // month" (#255) — see zodiacCompatibility.ts's doc comment for the
+  // real, published element-based astrology formula this reuses #72's
+  // already-computed sign for. Same drawn-from-the-same-pool shape as
+  // #119's weekend-plan matches, filtered to pairs astrology folklore
+  // doesn't call a clash.
+  app.get("/api/zodiac-matches/:author", (req, res) => {
+    const author = req.params.author;
+    const authorZodiac = zodiacInfoStore.get(author);
+    if (!authorZodiac.zodiacSign || authorZodiac.hideZodiac) {
+      res.json({ candidates: [] });
+      return;
+    }
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .map((c) => c.author);
+    const authorSign = authorZodiac.zodiacSign;
+    const zodiacMatches = pool
+      .map((candidate) => {
+        const candidateZodiac = zodiacInfoStore.get(candidate);
+        if (!candidateZodiac.zodiacSign || candidateZodiac.hideZodiac) return null;
+        const match = computeZodiacCompatibility(authorSign, candidateZodiac.zodiacSign);
+        return match.compatible ? { author: candidate, zodiacSign: candidateZodiac.zodiacSign, ...match } : null;
+      })
+      .filter((entry) => entry !== null)
+      .sort((a, b) => b.score - a.score);
+    res.json({ candidates: zodiacMatches });
   });
 
   // Editable-anytime "languages I'm fluent in" (#73), same
