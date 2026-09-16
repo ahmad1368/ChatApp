@@ -42,6 +42,7 @@ import HighContrastToggle from "./HighContrastToggle";
 import OneHandedModeToggle from "./OneHandedModeToggle";
 import ReportDialog from "./ReportDialog";
 import CallCaptions from "./CallCaptions";
+import CallQualityFeedbackPrompt from "./CallQualityFeedbackPrompt";
 import SOSButton from "./SOSButton";
 import BiometricLock from "./BiometricLock";
 import { getOrCreateGuestIdentity } from "./guestIdentity";
@@ -753,6 +754,12 @@ export default function ChatRoom({
   );
   const activeCallRef = useRef<CallInfo | null>(null);
   activeCallRef.current = activeCall;
+  const callStateRef = useRef<typeof callState>("idle");
+  callStateRef.current = callState;
+  // #309's post-call quality feedback prompt — only offered after a call
+  // actually connected (callState reached "active"), never for one that
+  // was just ringing/declined/missed.
+  const [callFeedbackPrompt, setCallFeedbackPrompt] = useState<{ callId: string } | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -1984,6 +1991,9 @@ export default function ChatRoom({
   const STUN_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
   const teardownCall = () => {
+    if (callStateRef.current === "active" && activeCallRef.current) {
+      setCallFeedbackPrompt({ callId: activeCallRef.current.id });
+    }
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -2359,6 +2369,13 @@ export default function ChatRoom({
             <audio ref={remoteAudioRef} autoPlay />
           )}
         </div>
+      )}
+      {callFeedbackPrompt && (
+        <CallQualityFeedbackPrompt
+          callId={callFeedbackPrompt.callId}
+          author={author}
+          onClose={() => setCallFeedbackPrompt(null)}
+        />
       )}
       {callError && <p style={{ color: "var(--color-danger)" }}>{callError}</p>}
       {editError && <p style={{ color: "var(--color-danger)" }}>{editError}</p>}

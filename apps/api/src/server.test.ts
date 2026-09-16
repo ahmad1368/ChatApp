@@ -67,6 +67,7 @@ function listen() {
     partnerVenueDiscountStore,
     profileNoteStore,
     superLikeOptOutStore,
+    callQualityFeedbackStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -115,6 +116,7 @@ function listen() {
     partnerVenueDiscountStore,
     profileNoteStore,
     superLikeOptOutStore,
+    callQualityFeedbackStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -1194,6 +1196,93 @@ test("GET /api/admin/feedback returns submitted feedback, newest first (#294)", 
     assert.deepEqual(
       body.feedback.map((f: { message: string }) => f.message),
       ["second", "first"]
+    );
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("GET /api/call-quality-feedback/issues returns the fixed issue catalog (#309)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/call-quality-feedback/issues`);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.issues));
+    assert.ok(body.issues.includes("connectionDropped"));
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/call-quality-feedback accepts valid feedback (#309)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/call-quality-feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callId: "call-1", author: "alice", rating: 2, issues: ["audioCutOut"], comment: "choppy" }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.feedback.rating, 2);
+    assert.deepEqual(body.feedback.issues, ["audioCutOut"]);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/call-quality-feedback rejects an invalid rating (#309)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/call-quality-feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callId: "call-1", author: "alice", rating: 9 }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/admin/call-quality-feedback requires the admin key (#309)", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/call-quality-feedback`);
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("GET /api/admin/call-quality-feedback returns submitted feedback, newest first (#309)", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/call-quality-feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callId: "call-1", author: "alice", rating: 5 }),
+    });
+    await fetch(`${baseUrl}/api/call-quality-feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callId: "call-2", author: "bob", rating: 1, issues: ["connectionDropped"] }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/call-quality-feedback`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(
+      body.feedback.map((f: { callId: string }) => f.callId),
+      ["call-2", "call-1"]
     );
   } finally {
     server.close();
