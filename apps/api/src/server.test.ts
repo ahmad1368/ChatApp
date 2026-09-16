@@ -66,6 +66,7 @@ function listen() {
     studentVerificationStore,
     partnerVenueDiscountStore,
     profileNoteStore,
+    superLikeOptOutStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -113,6 +114,7 @@ function listen() {
     studentVerificationStore,
     partnerVenueDiscountStore,
     profileNoteStore,
+    superLikeOptOutStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -8141,6 +8143,57 @@ test("POST /api/swipes with direction superlike counts toward a match and decrem
       body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
     });
     assert.deepEqual(await matchRes.json(), { matched: true });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/super-like-opt-out/:author toggles the setting (#308)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/super-like-opt-out/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ disabled: true }),
+    });
+    assert.deepEqual(await res.json(), { disabled: true });
+
+    const getRes = await fetch(`${baseUrl}/api/super-like-opt-out/bob`);
+    assert.deepEqual(await getRes.json(), { disabled: true });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/super-like-opt-out/:author defaults to false (#308)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/super-like-opt-out/bob`);
+    assert.deepEqual(await res.json(), { disabled: false });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/swipes downgrades a superlike to a like when the recipient has opted out (#308)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/super-like-opt-out/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ disabled: true }),
+    });
+
+    const swipeRes = await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "superlike" }),
+    });
+    assert.equal(swipeRes.status, 201);
+
+    // The Super Like allowance shouldn't be spent since it was delivered as a plain like.
+    const remainingRes = await fetch(`${baseUrl}/api/super-likes-remaining/alice`);
+    assert.deepEqual(await remainingRes.json(), { remaining: 1 });
   } finally {
     server.close();
   }
