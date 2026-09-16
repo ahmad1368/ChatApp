@@ -169,6 +169,7 @@ import { DietInfoStore, DIET_OPTIONS } from "./dietInfo";
 import { BloodTypeInfoStore, BLOOD_TYPE_OPTIONS } from "./bloodTypeInfo";
 import { PhotoReactionStore, PHOTO_REACTION_EMOJIS } from "./photoReactions";
 import { StudentVerificationStore } from "./studentVerification";
+import { PartnerVenueDiscountStore, PARTNER_VENUES } from "./partnerVenueDiscounts";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
@@ -319,6 +320,7 @@ export function createApp(deps?: {
   bloodTypeInfoStore: BloodTypeInfoStore;
   photoReactionStore: PhotoReactionStore;
   studentVerificationStore: StudentVerificationStore;
+  partnerVenueDiscountStore: PartnerVenueDiscountStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
@@ -579,6 +581,7 @@ export function createApp(deps?: {
   const bloodTypeInfoStore = new BloodTypeInfoStore();
   const photoReactionStore = new PhotoReactionStore();
   const studentVerificationStore = new StudentVerificationStore();
+  const partnerVenueDiscountStore = new PartnerVenueDiscountStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
@@ -1144,6 +1147,32 @@ export function createApp(deps?: {
 
   app.get("/api/student-verification/:author", (req, res) => {
     res.json(studentVerificationStore.getStatus(req.params.author));
+  });
+
+  // Match.com's real "Suggest dates at venues with special discounts for
+  // app users" (#306) — see partnerVenueDiscounts.ts for the real fixed
+  // partner catalog and claim mechanics.
+  app.get("/api/partner-venues", (_req, res) => {
+    res.json({ venues: PARTNER_VENUES });
+  });
+
+  app.post("/api/partner-venues/:venueId/claim", (req, res) => {
+    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    const result = partnerVenueDiscountStore.claim(author, req.params.venueId);
+    if (!result.success) {
+      res.status(404).json({ error: result.error });
+      return;
+    }
+    res.json({ venue: result.venue, code: result.code });
+  });
+
+  app.get("/api/partner-venues/:venueId/claim", (req, res) => {
+    const author = typeof req.query.author === "string" ? req.query.author : "";
+    res.json({ code: author ? partnerVenueDiscountStore.getClaim(author, req.params.venueId) : null });
   });
 
   // Hinge's real "Ability to create a custom AI avatar based on the
@@ -6857,6 +6886,7 @@ export function createApp(deps?: {
     bloodTypeInfoStore,
     photoReactionStore,
     studentVerificationStore,
+    partnerVenueDiscountStore,
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,

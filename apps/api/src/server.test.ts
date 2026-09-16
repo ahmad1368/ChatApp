@@ -64,6 +64,7 @@ function listen() {
     membershipStore,
     photoReactionStore,
     studentVerificationStore,
+    partnerVenueDiscountStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -109,6 +110,7 @@ function listen() {
     membershipStore,
     photoReactionStore,
     studentVerificationStore,
+    partnerVenueDiscountStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -4439,6 +4441,76 @@ test("GET /api/student-verification/:author defaults to unverified (#305)", asyn
   try {
     const res = await fetch(`${baseUrl}/api/student-verification/alice`);
     assert.deepEqual(await res.json(), { verified: false });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/partner-venues returns the fixed partner catalog (#306)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/partner-venues`);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.venues));
+    assert.ok(body.venues.length > 0);
+    assert.ok(body.venues.some((v: { id: string }) => v.id === "bellas-bistro"));
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/partner-venues/:venueId/claim rejects an unknown venue (#306)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/partner-venues/not-a-real-venue/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/partner-venues/:venueId/claim rejects a missing author (#306)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/partner-venues/bellas-bistro/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/partner-venues/:venueId/claim then GET returns the same code (#306)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const claimRes = await fetch(`${baseUrl}/api/partner-venues/bellas-bistro/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    assert.equal(claimRes.status, 200);
+    const claimBody = await claimRes.json();
+    assert.ok(claimBody.code);
+
+    const getRes = await fetch(`${baseUrl}/api/partner-venues/bellas-bistro/claim?author=alice`);
+    assert.deepEqual(await getRes.json(), { code: claimBody.code });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/partner-venues/:venueId/claim defaults to null before claiming (#306)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/partner-venues/bellas-bistro/claim?author=alice`);
+    assert.deepEqual(await res.json(), { code: null });
   } finally {
     server.close();
   }
