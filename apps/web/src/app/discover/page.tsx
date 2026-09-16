@@ -24,6 +24,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 interface SwipeCandidate {
   author: string;
   compatibility: number;
+  distanceKm: number | null;
 }
 
 type ViewMode = "card" | "grid" | "list";
@@ -351,7 +352,10 @@ export default function DiscoverPage() {
             <p style={{ fontSize: 20, fontWeight: "bold" }}>
               <Link href={`/profile/${encodeURIComponent(current.author)}`}>{current.author}</Link>
             </p>
-            <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{current.compatibility}% match</p>
+            <p style={{ color: "var(--color-muted)", fontSize: 13 }}>
+              {current.compatibility}% match
+              {current.distanceKm !== null && ` · ${current.distanceKm} km away`}
+            </p>
             <WeatherBadge author={author} candidate={current.author} />
             <ProfileShareButton sharer={author} candidateAuthor={current.author} />
             <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16 }}>
@@ -421,7 +425,10 @@ export default function DiscoverPage() {
                 <Link href={`/profile/${encodeURIComponent(candidate.author)}`} style={{ fontWeight: "bold" }}>
                   {candidate.author}
                 </Link>
-                <p style={{ color: "var(--color-muted)", fontSize: 12, margin: 0 }}>{candidate.compatibility}% match</p>
+                <p style={{ color: "var(--color-muted)", fontSize: 12, margin: 0 }}>
+                  {candidate.compatibility}% match
+                  {candidate.distanceKm !== null && ` · ${candidate.distanceKm} km away`}
+                </p>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => swipe("pass", candidate.author)} disabled={busy}>

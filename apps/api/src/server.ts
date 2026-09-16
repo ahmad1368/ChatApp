@@ -20,6 +20,7 @@ import { exportDataForAuthor } from "./dataExport";
 import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDeletion";
 import { isValidCoordinates, LocationStore, haversineDistanceKm } from "./locationPrivacy";
 import { WeatherService, isFarAway } from "./weather";
+import { computeDisplayDistanceKm } from "./distanceDisplay";
 import { PushService } from "./push";
 import { WeeklyDigestStore, buildWeeklyDigest } from "./weeklyDigest";
 import { buildWidgetSummary } from "./widgetSummary";
@@ -1905,13 +1906,25 @@ export function createApp(deps?: {
   // discoveryFilters.ts for the contrast) — it's a one-off query, not a
   // standing filter the swiper wants applied to every future session.
   app.get("/api/swipe-candidates/:author", (req, res) => {
+    const author = req.params.author;
     const bioKeyword = typeof req.query.bioKeyword === "string" ? req.query.bioKeyword : "";
     const excludeCandidate = bioKeyword
       ? (a: string, b: string) => isExcludedCandidate(a, b) || !bioMatchesKeyword(bioStore.get(b), bioKeyword)
       : isExcludedCandidate;
-    res.json({
-      candidates: swipeStore.getCandidates(req.params.author, excludeCandidate, getCandidateCompatibility, getCandidateBoostLevel),
-    });
+    // #270's "Ability to hide geographic distance from others" — the
+    // missing display half of #80's ProfileVisibilityStore.hideDistance.
+    const viewerLocation = locations.getEffectiveLocation(author);
+    const candidates = swipeStore
+      .getCandidates(author, excludeCandidate, getCandidateCompatibility, getCandidateBoostLevel)
+      .map((candidate) => ({
+        ...candidate,
+        distanceKm: computeDisplayDistanceKm(
+          viewerLocation,
+          locations.getEffectiveLocation(candidate.author),
+          profileVisibilityStore.get(candidate.author).hideDistance
+        ),
+      }));
+    res.json({ candidates });
   });
 
   // Tinder's real Boost/Super Boost (#105, #106): free here since this

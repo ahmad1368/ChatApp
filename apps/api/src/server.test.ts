@@ -6093,7 +6093,7 @@ test("GET /api/swipe-candidates/:author returns other joined authors, excluding 
     const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.deepEqual(body.candidates, [{ author: "carol", compatibility: 0 }]);
+    assert.deepEqual(body.candidates, [{ author: "carol", compatibility: 0, distanceKm: null }]);
   } finally {
     server.close();
   }
@@ -6717,9 +6717,61 @@ test("GET /api/swipe-candidates/:author includes a real interest-compatibility s
     const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
     const body = await res.json();
     assert.deepEqual(body.candidates, [
-      { author: "carol", compatibility: 100 },
-      { author: "bob", compatibility: 0 },
+      { author: "carol", compatibility: 100, distanceKm: null },
+      { author: "bob", compatibility: 0, distanceKm: null },
     ]);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author includes distanceKm when both sides have a location, and hides it when the candidate opts out (#270)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/users/alice/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 51.5074, lng: -0.1278 }),
+    });
+    await fetch(`${baseUrl}/api/users/bob/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 51.51, lng: -0.13 }),
+    });
+    await fetch(`${baseUrl}/api/users/carol/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 48.8566, lng: 2.3522 }),
+    });
+    await fetch(`${baseUrl}/api/profile-visibility/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hideAge: false, hideDistance: true }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    const bob = body.candidates.find((c: { author: string }) => c.author === "bob");
+    const carol = body.candidates.find((c: { author: string }) => c.author === "carol");
+    assert.equal(typeof bob.distanceKm, "number");
+    assert.ok(bob.distanceKm < 10);
+    assert.equal(carol.distanceKm, null);
   } finally {
     server.close();
   }
