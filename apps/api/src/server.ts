@@ -81,6 +81,7 @@ import { GroupEventStore } from "./groupEvents";
 import { ForumStore } from "./forums";
 import { VenueCheckInStore } from "./venueCheckIns";
 import { AudioRoomStore } from "./audioRooms";
+import { LiveStreamStore } from "./liveStreams";
 import { RelationshipBlogStore } from "./relationshipBlog";
 import { LocalSinglesEventStore } from "./localSinglesEvents";
 import { InterestGroupStore } from "./interestGroups";
@@ -340,6 +341,7 @@ export function createApp(deps?: {
   forumStore: ForumStore;
   venueCheckInStore: VenueCheckInStore;
   audioRoomStore: AudioRoomStore;
+  liveStreamStore: LiveStreamStore;
   relationshipBlogStore: RelationshipBlogStore;
   localSinglesEventStore: LocalSinglesEventStore;
   interestGroupStore: InterestGroupStore;
@@ -468,6 +470,7 @@ export function createApp(deps?: {
   const forumStore = new ForumStore();
   const venueCheckInStore = new VenueCheckInStore();
   const audioRoomStore = new AudioRoomStore();
+  const liveStreamStore = new LiveStreamStore();
   const relationshipBlogStore = new RelationshipBlogStore();
   const localSinglesEventStore = new LocalSinglesEventStore();
   const interestGroupStore = new InterestGroupStore();
@@ -2598,6 +2601,76 @@ export function createApp(deps?: {
       return;
     }
     res.json({ success: true });
+  });
+
+  // Badoo's real "Support for one-on-one or group live streams" (#274)
+  // — see liveStreams.ts for the honest scoping (real membership/live
+  // comments; no SFU to fan a broadcaster's video out to more than one
+  // viewer, the same disclosed gap #225's AudioRoomStore already has).
+  app.post("/api/live-streams", (req, res) => {
+    const result = liveStreamStore.start(req.body?.broadcaster, req.body?.title);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ stream: result.stream });
+  });
+
+  app.get("/api/live-streams", (_req, res) => {
+    res.json({ streams: liveStreamStore.listActiveStreams() });
+  });
+
+  app.get("/api/live-streams/:streamId", (req, res) => {
+    const stream = liveStreamStore.getStream(req.params.streamId);
+    if (!stream) {
+      res.status(404).json({ error: "Stream not found" });
+      return;
+    }
+    res.json({ stream, isFirstViewer: req.query.viewer ? liveStreamStore.isFirstViewer(req.params.streamId, String(req.query.viewer)) : false });
+  });
+
+  app.post("/api/live-streams/:streamId/join", (req, res) => {
+    const result = liveStreamStore.join(req.body?.viewer, req.params.streamId);
+    if (!result.success) {
+      const status = result.error === "Stream not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ stream: result.stream });
+  });
+
+  app.post("/api/live-streams/:streamId/leave", (req, res) => {
+    const result = liveStreamStore.leave(req.body?.viewer, req.params.streamId);
+    if (!result.success) {
+      const status = result.error === "Stream not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  app.delete("/api/live-streams/:streamId", (req, res) => {
+    const result = liveStreamStore.end(req.body?.broadcaster, req.params.streamId);
+    if (!result.success) {
+      const status = result.error === "Stream not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  app.post("/api/live-streams/:streamId/comments", (req, res) => {
+    const result = liveStreamStore.postComment(req.body?.author, req.params.streamId, req.body?.text);
+    if (!result.success) {
+      const status = result.error === "Stream not found" ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ comment: result.comment });
+  });
+
+  app.get("/api/live-streams/:streamId/comments", (req, res) => {
+    res.json({ comments: liveStreamStore.getComments(req.params.streamId) });
   });
 
   // eHarmony's real "Educational blog section with relationship
@@ -6224,6 +6297,7 @@ export function createApp(deps?: {
     forumStore,
     venueCheckInStore,
     audioRoomStore,
+    liveStreamStore,
     relationshipBlogStore,
     localSinglesEventStore,
     interestGroupStore,
