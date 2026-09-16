@@ -176,6 +176,7 @@ import { PhotoInteractionStore } from "./photoInteractions";
 import { PhotoAltTextStore } from "./photoAltText";
 import { bioMatchesKeyword } from "./bioSearch";
 import { ContactsGraphStore } from "./contactsGraph";
+import { FacebookConnectStore } from "./facebookConnect";
 import { ViewModeStore } from "./viewMode";
 import { computeMusicMatch } from "./musicMatch";
 import { WeekendPlansStore, WEEKEND_PLAN_CATALOG } from "./weekendPlans";
@@ -287,6 +288,7 @@ export function createApp(deps?: {
   photoInteractionStore: PhotoInteractionStore;
   photoAltTextStore: PhotoAltTextStore;
   contactsGraphStore: ContactsGraphStore;
+  facebookConnectStore: FacebookConnectStore;
   viewModeStore: ViewModeStore;
   weekendPlansStore: WeekendPlansStore;
   readReceiptStore: ReadReceiptStore;
@@ -521,6 +523,7 @@ export function createApp(deps?: {
   const photoInteractionStore = new PhotoInteractionStore();
   const photoAltTextStore = new PhotoAltTextStore();
   const contactsGraphStore = new ContactsGraphStore();
+  const facebookConnectStore = new FacebookConnectStore();
   const viewModeStore = new ViewModeStore();
   const weekendPlansStore = new WeekendPlansStore();
   const readReceiptStore = new ReadReceiptStore();
@@ -1946,6 +1949,57 @@ export function createApp(deps?: {
       .filter((entry) => entry.sharedContacts > 0)
       .sort((a, b) => b.sharedContacts - a.sharedContacts);
     res.json({ candidates: withSharedContacts });
+  });
+
+  // Tinder's real "Show Facebook mutual connections if the account is
+  // linked" (#253) — see facebookConnect.ts's doc comment for how this
+  // differs from #114's phone-contacts-based workaround. Reuses #24's
+  // facebookAuthService to verify the token, then fetches the user's real
+  // (app-authorized-only, per Facebook's own platform restriction) friend
+  // ids via the Graph API.
+  app.post("/api/facebook-connect", async (req, res) => {
+    if (!facebookAuthService.isConfigured()) {
+      res.status(503).json({ error: "Facebook Sign-In is not configured on this server" });
+      return;
+    }
+    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
+    const accessToken = typeof req.body?.accessToken === "string" ? req.body.accessToken : "";
+    if (!author) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    const profile = await facebookAuthService.verify(accessToken);
+    if (!profile) {
+      res.status(401).json({ error: "Invalid Facebook access token" });
+      return;
+    }
+    const friendIds = await facebookAuthService.fetchFriends(accessToken);
+    res.json({ facebookConnect: facebookConnectStore.connect(author, friendIds) });
+  });
+
+  app.delete("/api/facebook-connect/:author", (req, res) => {
+    res.json({ facebookConnect: facebookConnectStore.disconnect(req.params.author) });
+  });
+
+  app.put("/api/facebook-connect/:author/hide", (req, res) => {
+    res.json({ facebookConnect: facebookConnectStore.setHideFacebookFriends(req.params.author, req.body?.hideFacebookFriends === true) });
+  });
+
+  app.get("/api/facebook-connect/:author", (req, res) => {
+    res.json({ facebookConnect: facebookConnectStore.get(req.params.author) });
+  });
+
+  // Same drawn-from-the-same-pool shape as #114's /api/shared-contacts.
+  app.get("/api/facebook-mutual-connections/:author", (req, res) => {
+    const author = req.params.author;
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE)
+      .map((c) => c.author);
+    const withMutualFriends = pool
+      .map((candidate) => ({ author: candidate, mutualFriends: facebookConnectStore.getMutualFriendCount(author, candidate) }))
+      .filter((entry) => entry.mutualFriends > 0)
+      .sort((a, b) => b.mutualFriends - a.mutualFriends);
+    res.json({ candidates: withMutualFriends });
   });
 
   // Hinge's real "you both like X" shared-interest framing (#118) applied
@@ -5850,6 +5904,7 @@ export function createApp(deps?: {
     termsAcceptanceStore,
     photoInteractionStore,
     contactsGraphStore,
+    facebookConnectStore,
     viewModeStore,
     weekendPlansStore,
     readReceiptStore,
