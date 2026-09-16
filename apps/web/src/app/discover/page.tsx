@@ -20,6 +20,8 @@ import ProfileShareButton from "../ProfileShareButton";
 import TotalMatchesBadge from "../TotalMatchesBadge";
 import WeatherBadge from "../WeatherBadge";
 import LottieAnimation from "../LottieAnimation";
+import TiltCard from "../TiltCard";
+import TiltCardsToggle, { useTiltCardsPreference } from "../TiltCardsToggle";
 import { vibrateForeground, vibrationPatternForCategory } from "../notificationSound";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -57,6 +59,7 @@ export default function DiscoverPage() {
   const [unlimitedRewinds, setUnlimitedRewinds] = useState(false);
   const [bioKeyword, setBioKeyword] = useState("");
   const [viewMode, setViewModeState] = useState<ViewMode>("card");
+  const [tiltCardsEnabled, setTiltCardsEnabled] = useTiltCardsPreference();
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
   // OkCupid/Tinder's real bio keyword search (#113): a one-off query
@@ -343,6 +346,7 @@ export default function DiscoverPage() {
             {mode === "card" ? "🂠 Card" : mode === "grid" ? "▦ Grid" : "☰ List"}
           </button>
         ))}
+        {viewMode === "card" && <TiltCardsToggle enabled={tiltCardsEnabled} onChange={setTiltCardsEnabled} />}
       </div>
       {matchNotice && (
         <div style={{ background: "#fef3c7", padding: 12, borderRadius: 8, marginBottom: 12 }}>
@@ -376,6 +380,7 @@ export default function DiscoverPage() {
       )}
       {viewMode === "card" ? (
         current ? (
+          <TiltCard enabled={tiltCardsEnabled}>
           <div style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 32, marginTop: 16 }}>
             <p style={{ fontSize: 20, fontWeight: "bold" }}>
               <Link href={`/profile/${encodeURIComponent(current.author)}`}>{current.author}</Link>
@@ -432,6 +437,7 @@ export default function DiscoverPage() {
             )}
             <AdBanner author={author} />
           </div>
+          </TiltCard>
         ) : (
           <p style={{ color: "var(--color-muted)", marginTop: 16 }}>No more profiles right now — check back later.</p>
         )
