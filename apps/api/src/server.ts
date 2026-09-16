@@ -170,6 +170,7 @@ import { BloodTypeInfoStore, BLOOD_TYPE_OPTIONS } from "./bloodTypeInfo";
 import { PhotoReactionStore, PHOTO_REACTION_EMOJIS } from "./photoReactions";
 import { StudentVerificationStore } from "./studentVerification";
 import { PartnerVenueDiscountStore, PARTNER_VENUES } from "./partnerVenueDiscounts";
+import { ProfileNoteStore } from "./profileNotes";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
@@ -321,6 +322,7 @@ export function createApp(deps?: {
   photoReactionStore: PhotoReactionStore;
   studentVerificationStore: StudentVerificationStore;
   partnerVenueDiscountStore: PartnerVenueDiscountStore;
+  profileNoteStore: ProfileNoteStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
@@ -582,6 +584,7 @@ export function createApp(deps?: {
   const photoReactionStore = new PhotoReactionStore();
   const studentVerificationStore = new StudentVerificationStore();
   const partnerVenueDiscountStore = new PartnerVenueDiscountStore();
+  const profileNoteStore = new ProfileNoteStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
@@ -1173,6 +1176,38 @@ export function createApp(deps?: {
   app.get("/api/partner-venues/:venueId/claim", (req, res) => {
     const author = typeof req.query.author === "string" ? req.query.author : "";
     res.json({ code: author ? partnerVenueDiscountStore.getClaim(author, req.params.venueId) : null });
+  });
+
+  // Tinder's real "Ability to add a private note on someone's profile
+  // (visible only to you)" (#307) — see profileNotes.ts: strictly scoped
+  // to the note's own author, never returned to the profile's subject.
+  app.put("/api/profile-notes/:subject", (req, res) => {
+    const viewer = typeof req.body?.viewer === "string" ? req.body.viewer.trim() : "";
+    if (!viewer) {
+      res.status(400).json({ error: "viewer is required" });
+      return;
+    }
+    const result = profileNoteStore.setNote(viewer, req.params.subject, req.body?.text);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ note: result.note });
+  });
+
+  app.get("/api/profile-notes/:subject", (req, res) => {
+    const viewer = typeof req.query.viewer === "string" ? req.query.viewer : "";
+    res.json({ note: viewer ? profileNoteStore.getNote(viewer, req.params.subject) : null });
+  });
+
+  app.delete("/api/profile-notes/:subject", (req, res) => {
+    const viewer = typeof req.body?.viewer === "string" ? req.body.viewer.trim() : "";
+    if (!viewer) {
+      res.status(400).json({ error: "viewer is required" });
+      return;
+    }
+    profileNoteStore.deleteNote(viewer, req.params.subject);
+    res.status(204).send();
   });
 
   // Hinge's real "Ability to create a custom AI avatar based on the
@@ -6887,6 +6922,7 @@ export function createApp(deps?: {
     photoReactionStore,
     studentVerificationStore,
     partnerVenueDiscountStore,
+    profileNoteStore,
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,
