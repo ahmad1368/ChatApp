@@ -6090,11 +6090,17 @@ export function createApp(deps?: {
     res.json(checkVideoCallEligibility(roomMessages, caller, callee));
   });
 
-  // Badoo's real beauty filter/background blur during video calls (#131)
-  // — a persisted preference; the actual pixel processing happens
-  // entirely client-side when a call starts, see videoCallEffects.ts.
+  // Badoo's real beauty filter/background blur during video calls (#131),
+  // extended by #317's real noise suppression — a persisted preference;
+  // the actual processing happens entirely client-side when a call
+  // starts, see videoCallEffects.ts.
   app.put("/api/video-call-effects/:author", (req, res) => {
-    const result = videoCallEffectsStore.update(req.params.author, req.body?.beautyFilter, req.body?.backgroundBlur);
+    const result = videoCallEffectsStore.update(
+      req.params.author,
+      req.body?.beautyFilter,
+      req.body?.backgroundBlur,
+      req.body?.noiseSuppression
+    );
     if (!result.success) {
       res.status(400).json({ error: result.error });
       return;
