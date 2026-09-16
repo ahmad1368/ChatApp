@@ -71,6 +71,7 @@ function listen() {
     muteMatchStore,
     ageInfoStore,
     messageAgeLimitStore,
+    dateNoResponseAlertStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -123,6 +124,7 @@ function listen() {
     muteMatchStore,
     ageInfoStore,
     messageAgeLimitStore,
+    dateNoResponseAlertStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -5126,6 +5128,45 @@ test("GET /api/shared-dates/shared/:shareCode 404s for an unknown code", async (
   try {
     const res = await fetch(`${baseUrl}/api/shared-dates/shared/does-not-exist`);
     assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/shared-dates attaches a positionally-matched contact phone (#314)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/shared-dates`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", ...VALID_SHARED_DATE_PAYLOAD, contactPhones: ["+15551234567"] }),
+    });
+    const body = await res.json();
+    assert.equal(body.contacts[0].phone, "+15551234567");
+    assert.equal(body.noResponseAlertSent, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/shared-dates/:id/no-response-alerts defaults to an empty list (#314)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/shared-dates/does-not-exist/no-response-alerts`);
+    assert.deepEqual(await res.json(), { alerts: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/shared-dates/:id/no-response-alerts reflects sent alerts (#314)", async () => {
+  const { server, baseUrl, dateNoResponseAlertStore } = listen();
+  try {
+    dateNoResponseAlertStore.send("date-1", "Sam", "+15551234567", "Alice hasn't checked in.");
+    const res = await fetch(`${baseUrl}/api/shared-dates/date-1/no-response-alerts`);
+    const body = await res.json();
+    assert.equal(body.alerts.length, 1);
+    assert.equal(body.alerts[0].contactName, "Sam");
   } finally {
     server.close();
   }
