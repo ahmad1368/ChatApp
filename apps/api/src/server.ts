@@ -1781,6 +1781,7 @@ export function createApp(deps?: {
       smoking: candidateLifestyle.smoking,
       drinking: candidateLifestyle.drinking,
       isVerified: verificationStore.isVerified(b),
+      pets: petsInfoStore.get(b).pets,
     };
     if (!candidateMatchesFilters(filters, candidateData)) {
       return true;
@@ -4269,9 +4270,10 @@ export function createApp(deps?: {
     res.json({ mode: viewModeStore.get(req.params.author) });
   });
 
-  // OkCupid's advanced discovery filters (#96, extended by #97 and #98):
-  // height range, education requirement, required languages, non-smoking,
-  // allowed drinking, and verified-only — narrows /api/swipe-candidates.
+  // OkCupid's advanced discovery filters (#96, extended by #97, #98, and
+  // #257): height range, education requirement, required languages,
+  // non-smoking, allowed drinking, verified-only, and favorite pets —
+  // narrows /api/swipe-candidates.
   app.put("/api/discovery-filters/:author", (req, res) => {
     const result = discoveryFiltersStore.update(
       req.params.author,
@@ -4281,7 +4283,8 @@ export function createApp(deps?: {
       req.body?.requiredLanguages,
       req.body?.requireNonSmoking,
       req.body?.allowedDrinking,
-      req.body?.requireVerifiedOnly
+      req.body?.requireVerifiedOnly,
+      req.body?.requiredPets
     );
     if (!result.success) {
       res.status(400).json({ error: result.error });

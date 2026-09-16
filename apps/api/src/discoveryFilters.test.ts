@@ -11,6 +11,7 @@ const EMPTY_FILTERS_JSON = {
   requireNonSmoking: false,
   allowedDrinking: [],
   requireVerifiedOnly: false,
+  requiredPets: [],
 };
 
 test("get() returns empty filters before any update", () => {
@@ -20,37 +21,43 @@ test("get() returns empty filters before any update", () => {
 
 test("update() rejects a missing author", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("", 160, 190, false, [], false, [], false);
+  const result = store.update("", 160, 190, false, [], false, [], false, []);
   assert.equal(result.success, false);
 });
 
 test("update() rejects an out-of-range minHeightCm", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("alice", 50, null, false, [], false, [], false);
+  const result = store.update("alice", 50, null, false, [], false, [], false, []);
   assert.equal(result.success, false);
 });
 
 test("update() rejects minHeightCm greater than maxHeightCm", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("alice", 190, 160, false, [], false, [], false);
+  const result = store.update("alice", 190, 160, false, [], false, [], false, []);
   assert.equal(result.success, false);
 });
 
 test("update() rejects an invalid language in requiredLanguages", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("alice", null, null, false, ["klingon"], false, [], false);
+  const result = store.update("alice", null, null, false, ["klingon"], false, [], false, []);
   assert.equal(result.success, false);
 });
 
 test("update() rejects an invalid drinking option in allowedDrinking", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("alice", null, null, false, [], false, ["a-lot"], false);
+  const result = store.update("alice", null, null, false, [], false, ["a-lot"], false, []);
+  assert.equal(result.success, false);
+});
+
+test("update() rejects an invalid pet in requiredPets", () => {
+  const store = new DiscoveryFiltersStore();
+  const result = store.update("alice", null, null, false, [], false, [], false, ["dragon"]);
   assert.equal(result.success, false);
 });
 
 test("update() accepts valid filters, then get() returns them", () => {
   const store = new DiscoveryFiltersStore();
-  const result = store.update("alice", 160, 190, true, ["english"], true, ["no", "sometimes"], true);
+  const result = store.update("alice", 160, 190, true, ["english"], true, ["no", "sometimes"], true, ["dog", "cat"]);
   assert.equal(result.success, true);
   assert.deepEqual(store.get("alice"), {
     minHeightCm: 160,
@@ -60,12 +67,13 @@ test("update() accepts valid filters, then get() returns them", () => {
     requireNonSmoking: true,
     allowedDrinking: ["no", "sometimes"],
     requireVerifiedOnly: true,
+    requiredPets: ["dog", "cat"],
   });
 });
 
 test("each author's filters are independent", () => {
   const store = new DiscoveryFiltersStore();
-  store.update("alice", 160, 190, true, ["english"], true, ["no"], true);
+  store.update("alice", 160, 190, true, ["english"], true, ["no"], true, ["dog"]);
   assert.deepEqual(store.get("bob"), EMPTY_FILTERS_JSON);
 });
 
@@ -77,6 +85,7 @@ const NO_FILTERS: DiscoveryFilters = {
   requireNonSmoking: false,
   allowedDrinking: [],
   requireVerifiedOnly: false,
+  requiredPets: [],
 };
 
 const NO_DATA: CandidateProfileData = {
@@ -86,6 +95,7 @@ const NO_DATA: CandidateProfileData = {
   smoking: null,
   drinking: null,
   isVerified: false,
+  pets: [],
 };
 
 test("candidateMatchesFilters() matches everyone when no filters are set", () => {
@@ -170,4 +180,19 @@ test("candidateMatchesFilters() excludes an unverified candidate when requireVer
 test("candidateMatchesFilters() includes a verified candidate when requireVerifiedOnly is set", () => {
   const filters = { ...NO_FILTERS, requireVerifiedOnly: true };
   assert.equal(candidateMatchesFilters(filters, { ...NO_DATA, isVerified: true }), true);
+});
+
+test("candidateMatchesFilters() excludes a candidate with none of the required pets", () => {
+  const filters: DiscoveryFilters = { ...NO_FILTERS, requiredPets: ["dog", "cat"] };
+  assert.equal(candidateMatchesFilters(filters, { ...NO_DATA, pets: ["fish"] }), false);
+});
+
+test("candidateMatchesFilters() excludes a candidate with no pets set when requiredPets is active", () => {
+  const filters: DiscoveryFilters = { ...NO_FILTERS, requiredPets: ["dog"] };
+  assert.equal(candidateMatchesFilters(filters, NO_DATA), false);
+});
+
+test("candidateMatchesFilters() includes a candidate with at least one required pet", () => {
+  const filters: DiscoveryFilters = { ...NO_FILTERS, requiredPets: ["dog", "cat"] };
+  assert.equal(candidateMatchesFilters(filters, { ...NO_DATA, pets: ["cat", "bird"] }), true);
 });

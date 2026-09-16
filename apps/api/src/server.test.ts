@@ -6784,6 +6784,7 @@ const EMPTY_DISCOVERY_FILTERS = {
   requireNonSmoking: false,
   allowedDrinking: [],
   requireVerifiedOnly: false,
+  requiredPets: [],
 };
 
 test("GET /api/discovery-filters/:author returns empty filters before any update", async () => {
@@ -6811,6 +6812,7 @@ test("PUT /api/discovery-filters/:author saves filters and GET returns them", as
         requireNonSmoking: true,
         allowedDrinking: ["no", "sometimes"],
         requireVerifiedOnly: true,
+        requiredPets: ["dog", "cat"],
       }),
     });
     assert.equal(putRes.status, 200);
@@ -6822,6 +6824,7 @@ test("PUT /api/discovery-filters/:author saves filters and GET returns them", as
       requireNonSmoking: true,
       allowedDrinking: ["no", "sometimes"],
       requireVerifiedOnly: true,
+      requiredPets: ["dog", "cat"],
     };
     assert.deepEqual(await putRes.json(), { filters: expected });
 
@@ -6980,6 +6983,7 @@ test("GET /api/swipe-candidates/:author excludes candidates that fail the swiper
         requiredLanguages: [],
         requireNonSmoking: false,
         allowedDrinking: [],
+        requiredPets: [],
       }),
     });
 
@@ -7024,6 +7028,7 @@ test("GET /api/swipe-candidates/:author excludes candidates missing a required l
         requiredLanguages: ["french"],
         requireNonSmoking: false,
         allowedDrinking: [],
+        requiredPets: [],
       }),
     });
 
@@ -7075,6 +7080,7 @@ test("GET /api/swipe-candidates/:author excludes smokers when requireNonSmoking 
         requiredLanguages: [],
         requireNonSmoking: true,
         allowedDrinking: [],
+        requiredPets: [],
       }),
     });
 
@@ -7119,6 +7125,7 @@ test("GET /api/swipe-candidates/:author excludes candidates outside allowedDrink
         requiredLanguages: [],
         requireNonSmoking: false,
         allowedDrinking: ["no"],
+        requiredPets: [],
       }),
     });
 
@@ -7179,6 +7186,7 @@ test("GET /api/swipe-candidates/:author excludes unverified candidates when requ
         requireNonSmoking: false,
         allowedDrinking: [],
         requireVerifiedOnly: true,
+        requiredPets: [],
       }),
     });
 
@@ -7192,6 +7200,61 @@ test("GET /api/swipe-candidates/:author excludes unverified candidates when requ
     server.close();
     if (previous === undefined) delete process.env.ADMIN_API_KEY;
     else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("GET /api/swipe-candidates/:author excludes candidates missing a required pet (#257)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/pets-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pets: ["fish"], hidePets: false }),
+    });
+    await fetch(`${baseUrl}/api/pets-info/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pets: ["dog"], hidePets: false }),
+    });
+
+    await fetch(`${baseUrl}/api/discovery-filters/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        minHeightCm: null,
+        maxHeightCm: null,
+        requireEducation: false,
+        requiredLanguages: [],
+        requireNonSmoking: false,
+        allowedDrinking: [],
+        requiredPets: ["dog", "cat"],
+      }),
+    });
+
+    const res2 = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body2 = await res2.json();
+    assert.deepEqual(
+      body2.candidates.map((c: { author: string }) => c.author),
+      ["carol"]
+    );
+  } finally {
+    server.close();
   }
 });
 
