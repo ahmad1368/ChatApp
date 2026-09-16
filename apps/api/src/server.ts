@@ -118,6 +118,7 @@ import { getLottieAnimationCatalog } from "./lottieAnimations";
 import { StrangerPictureBlockStore } from "./strangerPictureBlock";
 import { getSimilarProfiles } from "./similarProfiles";
 import { ClearedHistoryStore } from "./clearedHistory";
+import { AiAvatarService, AiAvatarStore, isAiAvatarStyle, AI_AVATAR_STYLES } from "./aiAvatar";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -229,6 +230,7 @@ export function createApp(deps?: {
   giphyService?: GiphyService;
   instagramService?: InstagramService;
   translationService?: TranslationService;
+  aiAvatarService?: AiAvatarService;
 }): {
   app: Express;
   messagesByRoom: Map<string, ChatMessage[]>;
@@ -259,6 +261,7 @@ export function createApp(deps?: {
   favoritesStore: FavoritesStore;
   strangerPictureBlockStore: StrangerPictureBlockStore;
   clearedHistoryStore: ClearedHistoryStore;
+  aiAvatarStore: AiAvatarStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -496,6 +499,8 @@ export function createApp(deps?: {
   const favoritesStore = new FavoritesStore();
   const strangerPictureBlockStore = new StrangerPictureBlockStore();
   const clearedHistoryStore = new ClearedHistoryStore();
+  const aiAvatarService = deps?.aiAvatarService ?? new AiAvatarService();
+  const aiAvatarStore = new AiAvatarStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -1027,6 +1032,55 @@ export function createApp(deps?: {
     } catch {
       res.status(500).json({ error: "Failed to render photo" });
     }
+  });
+
+  // Hinge's real "Ability to create a custom AI avatar based on the
+  // user's photos" (#286) — see aiAvatar.ts for the real Stability AI
+  // integration and this environment's honest missing-credential gap.
+  app.get("/api/ai-avatar/styles", (_req, res) => {
+    res.json({ styles: AI_AVATAR_STYLES });
+  });
+
+  app.post("/api/ai-avatar/:author", async (req, res) => {
+    const author = req.params.author;
+    if (!aiAvatarService.isConfigured()) {
+      res.status(503).json({ error: "AI avatar generation is not configured on this server" });
+      return;
+    }
+    if (!isAiAvatarStyle(req.body?.style)) {
+      res.status(400).json({ error: `style must be one of: ${AI_AVATAR_STYLES.join(", ")}` });
+      return;
+    }
+    const photo = photoStore.get(req.body?.photoId);
+    if (!photo || photo.author !== author) {
+      res.status(404).json({ error: "Photo not found for this author" });
+      return;
+    }
+
+    const generated = await aiAvatarService.generate(photo.data, photo.mimeType, req.body.style);
+    if (!generated) {
+      res.status(502).json({ error: "Failed to generate an AI avatar" });
+      return;
+    }
+
+    const createdAt = new Date().toISOString();
+    aiAvatarStore.set(author, { style: req.body.style, mimeType: "image/png", data: generated, createdAt });
+    res.status(201).json({ style: req.body.style, createdAt });
+  });
+
+  app.get("/api/ai-avatar/:author", (req, res) => {
+    const record = aiAvatarStore.get(req.params.author);
+    res.json(record ? { style: record.style, createdAt: record.createdAt } : { style: null, createdAt: null });
+  });
+
+  app.get("/api/ai-avatar/:author/image", (req, res) => {
+    const record = aiAvatarStore.get(req.params.author);
+    if (!record) {
+      res.status(404).json({ error: "No AI avatar generated yet" });
+      return;
+    }
+    res.setHeader("Content-Type", record.mimeType);
+    res.status(200).send(record.data);
   });
 
   // Photo album access level (#59): Bumble's real "Private Album" control,
@@ -6334,6 +6388,7 @@ export function createApp(deps?: {
     favoritesStore,
     strangerPictureBlockStore,
     clearedHistoryStore,
+    aiAvatarStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,

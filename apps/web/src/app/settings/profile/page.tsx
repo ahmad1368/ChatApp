@@ -36,6 +36,7 @@ import GenderInfoEditor from "../../GenderInfoEditor";
 import AchievementsInfoEditor from "../../AchievementsInfoEditor";
 import DisplayNameModeEditor from "../../DisplayNameModeEditor";
 import StylizedAvatarEditor from "../../StylizedAvatarEditor";
+import AiAvatarEditor from "../../AiAvatarEditor";
 import DiscoveryFiltersEditor from "../../DiscoveryFiltersEditor";
 import ProfileCompletion from "../../ProfileCompletion";
 import ProfilePreview from "../../ProfilePreview";
@@ -91,6 +92,7 @@ export default function ProfileSettingsPage() {
       <AchievementsInfoEditor author={author} />
       <DisplayNameModeEditor author={author} />
       <StylizedAvatarEditor author={author} />
+      <AiAvatarEditor author={author} />
       <ProfileVisibilityEditor author={author} />
       <VanishModeEditor author={author} />
       <SnoozeAccountEditor author={author} />
