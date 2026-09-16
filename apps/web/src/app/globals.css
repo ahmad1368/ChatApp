@@ -21,6 +21,20 @@
   --chat-gap: 8px;
   --chat-messages-height: 240px;
   --chat-font-size: 1rem;
+
+  /* #303's "Ability to switch chat theme (night date, sunset, classic)"
+     — "classic" is simply this variable left at its default, which
+     already tracks --color-panel (and therefore light/dark mode)
+     without a dedicated override. */
+  --chat-theme-background: var(--color-panel);
+}
+
+:root[data-chat-theme="sunset"] {
+  --chat-theme-background: linear-gradient(160deg, #ff9a76 0%, #ff6a88 55%, #ffa8c5 100%);
+}
+
+:root[data-chat-theme="nightDate"] {
+  --chat-theme-background: linear-gradient(160deg, #0f2027 0%, #203a43 55%, #2c5364 100%);
 }
 
 /* User-adjustable text size (#242) — wins over the desktop breakpoint's
@@ -300,7 +314,7 @@ input[type="reset"] {
   flex-direction: column;
   gap: 6px;
   border: 1px solid var(--color-border);
-  background: var(--color-panel);
+  background: var(--chat-theme-background);
   border-radius: 8px;
   padding: 12px;
   height: var(--chat-messages-height);

@@ -36,6 +36,7 @@ import { playRingtone, RingtoneId } from "./notificationSound";
 import LocationMessage from "./LocationMessage";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
+import ChatThemeToggle from "./ChatThemeToggle";
 import FontSizeToggle from "./FontSizeToggle";
 import HighContrastToggle from "./HighContrastToggle";
 import OneHandedModeToggle from "./OneHandedModeToggle";
@@ -2215,6 +2216,7 @@ export default function ChatRoom({
           <Link href="/share-my-date">📍 Share My Date</Link>
           <NotificationInbox author={author} />
           <ThemeToggle />
+          <ChatThemeToggle />
           <FontSizeToggle />
           <HighContrastToggle />
           <OneHandedModeToggle />
