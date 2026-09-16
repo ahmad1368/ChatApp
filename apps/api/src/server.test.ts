@@ -75,6 +75,7 @@ function listen() {
     attachmentStyleStore,
     keywordBlacklistStore,
     languageCertificateStore,
+    targetImmigrationCountryStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -131,6 +132,7 @@ function listen() {
     attachmentStyleStore,
     keywordBlacklistStore,
     languageCertificateStore,
+    targetImmigrationCountryStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -13152,6 +13154,123 @@ test("GET /api/weekend-plan-matches/:author excludes a candidate hiding their we
     });
 
     const res = await fetch(`${baseUrl}/api/weekend-plan-matches/alice`);
+    assert.deepEqual(await res.json(), { candidates: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/target-immigration-country/catalog returns the fixed country catalog (#325)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/target-immigration-country/catalog`);
+    const body = await res.json();
+    assert.ok(body.countries.includes("canada"));
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/target-immigration-country/:author sets the target country, then GET returns it (#325)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/target-immigration-country/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetCountry: "canada", hideTargetCountry: false }),
+    });
+    assert.deepEqual(await putRes.json(), { info: { targetCountry: "canada", hideTargetCountry: false } });
+
+    const getRes = await fetch(`${baseUrl}/api/target-immigration-country/alice`);
+    assert.deepEqual(await getRes.json(), { info: { targetCountry: "canada", hideTargetCountry: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/target-immigration-country/:author rejects an invalid country (#325)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/target-immigration-country/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetCountry: "narnia", hideTargetCountry: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/target-country-matches/:author returns candidates targeting the same country (#325)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/target-immigration-country/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetCountry: "canada", hideTargetCountry: false }),
+    });
+    await fetch(`${baseUrl}/api/target-immigration-country/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetCountry: "canada", hideTargetCountry: false }),
+    });
+    await fetch(`${baseUrl}/api/target-immigration-country/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetCountry: "germany", hideTargetCountry: false }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/target-country-matches/alice`);
+    const body = await res.json();
+    assert.deepEqual(body.candidates, [{ author: "bob", targetCountry: "canada" }]);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/target-country-matches/:author excludes a candidate hiding their target country (#325)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    await fetch(`${baseUrl}/api/target-immigration-country/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetCountry: "canada", hideTargetCountry: false }),
+    });
+    await fetch(`${baseUrl}/api/target-immigration-country/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetCountry: "canada", hideTargetCountry: true }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/target-country-matches/alice`);
     assert.deepEqual(await res.json(), { candidates: [] });
   } finally {
     server.close();
