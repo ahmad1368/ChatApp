@@ -39,6 +39,7 @@ import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
 import ChatThemeToggle from "./ChatThemeToggle";
 import FontSizeToggle from "./FontSizeToggle";
+import FontFamilyToggle from "./FontFamilyToggle";
 import HighContrastToggle from "./HighContrastToggle";
 import OneHandedModeToggle from "./OneHandedModeToggle";
 import ReportDialog from "./ReportDialog";
@@ -2325,6 +2326,7 @@ export default function ChatRoom({
           <ThemeToggle />
           <ChatThemeToggle />
           <FontSizeToggle />
+          <FontFamilyToggle />
           <HighContrastToggle />
           <OneHandedModeToggle />
           <LocaleToggle />

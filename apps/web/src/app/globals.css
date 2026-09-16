@@ -27,6 +27,22 @@
      already tracks --color-panel (and therefore light/dark mode)
      without a dedicated override. */
   --chat-theme-background: var(--color-panel);
+
+  /* #328's "Ability to set a custom app font" — "system" (the default)
+     is simply this variable left at its original system-ui stack. */
+  --app-font-family: system-ui, -apple-system, sans-serif;
+}
+
+:root[data-font-family="serif"] {
+  --app-font-family: Georgia, "Times New Roman", serif;
+}
+
+:root[data-font-family="monospace"] {
+  --app-font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+:root[data-font-family="rounded"] {
+  --app-font-family: "Comic Sans MS", "Comic Sans", "Chalkboard SE", cursive;
 }
 
 :root[data-chat-theme="sunset"] {
@@ -166,7 +182,7 @@
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--app-font-family);
   background: var(--color-bg);
   color: var(--color-text);
 }
