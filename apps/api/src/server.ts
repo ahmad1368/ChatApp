@@ -111,6 +111,7 @@ import { ArchivedChatsStore } from "./archivedChats";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
+import { DuplicatePhotoDetector } from "./duplicatePhotoDetection";
 import { SharedDateStore } from "./sharedDates";
 import { ProfileShareStore } from "./profileShare";
 import { SOSStore } from "./sos";
@@ -245,6 +246,7 @@ export function createApp(deps?: {
   archivedChatsStore: ArchivedChatsStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
+  duplicatePhotoDetector: DuplicatePhotoDetector;
   sharedDateStore: SharedDateStore;
   profileShareStore: ProfileShareStore;
   sosStore: SOSStore;
@@ -474,6 +476,7 @@ export function createApp(deps?: {
   const archivedChatsStore = new ArchivedChatsStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
+  const duplicatePhotoDetector = new DuplicatePhotoDetector();
   const sharedDateStore = new SharedDateStore();
   const profileShareStore = new ProfileShareStore();
   const sosStore = new SOSStore();
@@ -903,7 +906,11 @@ export function createApp(deps?: {
     // Bumble's real "Smart and manual review of uploaded photos" (#172)
     // — every upload joins the admin review queue; see photoReview.ts.
     photoReviewStore.enqueue(result.photo.id, result.photo.author);
-    res.status(201).json({ id: result.photo.id });
+    // Tinder's real "System to detect duplicate or internet-copied
+    // images" (#267) — see duplicatePhotoDetection.ts for the honest
+    // exact-hash-only scoping. Feeds fakeProfileDetector.ts below.
+    const duplicateCheck = duplicatePhotoDetector.recordAndCheck(result.photo.author, result.photo.data);
+    res.status(201).json({ id: result.photo.id, duplicate: duplicateCheck.isDuplicate });
   });
 
   // Watermarks are burned into the pixel data dynamically on every serve
@@ -1828,6 +1835,7 @@ export function createApp(deps?: {
     const fakeProfileScan = scanCandidateForFakeProfile({
       bio: bioStore.get(b),
       reportCount: reportStore.countFor(b),
+      hasDuplicatePhoto: duplicatePhotoDetector.isFlagged(b),
     });
     if (fakeProfileScan.flagged) {
       return true;
@@ -6054,6 +6062,7 @@ export function createApp(deps?: {
     archivedChatsStore,
     watermarkStore,
     photoStore,
+    duplicatePhotoDetector,
     sharedDateStore,
     profileShareStore,
     sosStore,
