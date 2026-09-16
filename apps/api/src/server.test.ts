@@ -574,6 +574,27 @@ test("PUT /api/users/:author/location rejects out-of-range coordinates", async (
   }
 });
 
+test("PUT /api/users/:author/location does not flag a first-ever location or a plausible nearby move", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const first = await fetch(`${baseUrl}/api/users/alice/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 51.5074, lng: -0.1278 }),
+    });
+    assert.equal((await first.json()).suddenLocationChange, false);
+
+    const second = await fetch(`${baseUrl}/api/users/alice/location`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: 51.51, lng: -0.13 }),
+    });
+    assert.equal((await second.json()).suddenLocationChange, false);
+  } finally {
+    server.close();
+  }
+});
+
 test("GET /api/users/:author/location returns 404 when no location is on file", async () => {
   const { server, baseUrl } = listen();
   try {
