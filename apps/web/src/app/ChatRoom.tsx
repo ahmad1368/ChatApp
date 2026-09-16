@@ -20,6 +20,7 @@ import KeyboardShortcutsHelp from "./KeyboardShortcutsHelp";
 import NotificationInbox from "./NotificationInbox";
 import { compressImage, blobToBase64 } from "./imageCompression";
 import { computeWaveform } from "./voiceNoteWaveform";
+import VoiceNotePlayer from "./VoiceNotePlayer";
 import GifPicker from "./GifPicker";
 import LocationPicker, { LocationSharePayload } from "./LocationPicker";
 import DateInvitePicker, { DateInviteSharePayload } from "./DateInvitePicker";
@@ -442,16 +443,7 @@ function MessageRow({
         ) : message.selfDestructImageUrl ? (
           <SelfDestructPhoto url={message.selfDestructImageUrl} viewer={viewer} />
         ) : message.audioUrl ? (
-          <div className="chat-app__voice-note">
-            {message.waveform && message.waveform.length > 0 && (
-              <div className="chat-app__waveform" aria-hidden>
-                {message.waveform.map((peak, i) => (
-                  <div key={i} className="chat-app__waveform-bar" style={{ height: `${Math.max(10, peak * 100)}%` }} />
-                ))}
-              </div>
-            )}
-            <audio controls src={message.audioUrl} />
-          </div>
+          <VoiceNotePlayer audioUrl={message.audioUrl} waveform={message.waveform} />
         ) : message.imageUrl ? (
           message.suspicious ? (
             <SuspiciousPhoto url={message.imageUrl} />
