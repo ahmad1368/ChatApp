@@ -26,6 +26,7 @@ import { WeeklyDigestStore, buildWeeklyDigest } from "./weeklyDigest";
 import { buildWidgetSummary } from "./widgetSummary";
 import { buildMessagePushPreview } from "./messagePushPreview";
 import { findRealGiftIdea, buildRealGiftSuggestion } from "./realGiftSuggestions";
+import { LocationChangeAlertStore } from "./locationChangeAlert";
 import { NotificationPreferencesStore } from "./notificationPreferences";
 import { NotificationInboxStore } from "./notificationInbox";
 import { NotificationSoundStore, VIBRATION_PATTERNS } from "./notificationSound";
@@ -296,6 +297,7 @@ export function createApp(deps?: {
   profileBoostStore: ProfileBoostStore;
   peakHoursStore: PeakHoursStore;
   crossedPathsStore: CrossedPathsStore;
+  locationChangeAlertStore: LocationChangeAlertStore;
   squadStore: SquadStore;
   presenceStore: PresenceStore;
   presenceVisibilityStore: PresenceVisibilityStore;
@@ -539,6 +541,7 @@ export function createApp(deps?: {
   const profileBoostStore = new ProfileBoostStore();
   const peakHoursStore = new PeakHoursStore();
   const crossedPathsStore = new CrossedPathsStore();
+  const locationChangeAlertStore = new LocationChangeAlertStore();
   const squadStore = new SquadStore();
   const presenceStore = new PresenceStore();
   const presenceVisibilityStore = new PresenceVisibilityStore();
@@ -5304,7 +5307,19 @@ export function createApp(deps?: {
     // recorded as one ping in this author's recent-location trail — see
     // crossedPaths.ts for why a ping rather than continuous tracking.
     crossedPathsStore.recordPing(author, req.body);
-    res.json({ approximate: locations.getApproximateLocation(author) });
+    // Bumble's real "Automatic alert on sudden change in geographic
+    // location" (#273) — see locationChangeAlert.ts for the real
+    // implied-speed math behind this.
+    const locationCheck = locationChangeAlertStore.recordAndCheck(author, req.body);
+    if (locationCheck.suddenChange && notificationPreferencesStore.isEnabled(author, "securityAlert")) {
+      notificationInboxStore.record(
+        author,
+        "securityAlert",
+        "Unusual location change detected",
+        `Your location jumped ${Math.round(locationCheck.distanceKm)} km in a way that doesn't look like real travel. If this wasn't you, check your account security.`
+      );
+    }
+    res.json({ approximate: locations.getApproximateLocation(author), suddenLocationChange: locationCheck.suddenChange });
   });
 
   // Tinder's real Passport (#102) means this now returns the active
@@ -6167,6 +6182,7 @@ export function createApp(deps?: {
     profileBoostStore,
     peakHoursStore,
     crossedPathsStore,
+    locationChangeAlertStore,
     squadStore,
     presenceStore,
     vanishModeStore,

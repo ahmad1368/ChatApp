@@ -13,6 +13,12 @@ export const NOTIFICATION_CATEGORIES = [
   "matchExpiryReminder",
   "liveEventStart",
   "adminBroadcast",
+  // #273's "Automatic alert on sudden change in geographic location" —
+  // a real safety signal (see locationChangeAlert.ts), kept as an
+  // ordinary opt-out category like the others rather than a special-
+  // cased always-on alert, consistent with this store's "opt-out, not
+  // opt-in" default.
+  "securityAlert",
 ] as const;
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 
@@ -25,6 +31,7 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
   matchExpiryReminder: true,
   liveEventStart: true,
   adminBroadcast: true,
+  securityAlert: true,
 };
 
 export type UpdatePreferencesResult = { success: true; preferences: NotificationPreferences } | { success: false; error: string };

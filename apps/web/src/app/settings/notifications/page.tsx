@@ -13,6 +13,7 @@ const CATEGORIES: { key: string; label: string; description: string }[] = [
   { key: "matchExpiryReminder", label: "Expiring chat reminders", description: "A match's 24-hour window is about to close" },
   { key: "liveEventStart", label: "Live events", description: "An event you're subscribed to is starting" },
   { key: "adminBroadcast", label: "Announcements", description: "An admin sends an app-wide announcement" },
+  { key: "securityAlert", label: "Security alerts", description: "Your account shows an unusual, potentially unsafe change (e.g. a sudden location jump)" },
 ];
 
 /**
