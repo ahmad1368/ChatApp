@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatMegabytes, getConnectionInfo, shouldWarnBeforeUpload } from "./mobileDataUploadWarning";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const MAX_DURATION_SECONDS = 30;
@@ -28,6 +29,7 @@ export default function IntroVideoUpload({ author }: { author: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [videoKey, setVideoKey] = useState(0);
+  const [pendingUpload, setPendingUpload] = useState<File | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/api/intro-video/${encodeURIComponent(author)}`, { method: "HEAD" })
@@ -35,7 +37,7 @@ export default function IntroVideoUpload({ author }: { author: string }) {
       .catch(() => setHasVideo(false));
   }, [author]);
 
-  const upload = async (file: File) => {
+  const doUpload = async (file: File) => {
     setError(null);
     setBusy(true);
     try {
@@ -73,6 +75,17 @@ export default function IntroVideoUpload({ author }: { author: string }) {
     }
   };
 
+  // Tinder's real "Alert for large video upload volume on mobile data"
+  // (#310) — a large file on a detected cellular/Data Saver connection
+  // pauses for confirmation instead of silently spending mobile data.
+  const upload = (file: File) => {
+    if (shouldWarnBeforeUpload(file.size, getConnectionInfo())) {
+      setPendingUpload(file);
+      return;
+    }
+    doUpload(file);
+  };
+
   const remove = async () => {
     await fetch(`${API_URL}/api/intro-video/${encodeURIComponent(author)}`, { method: "DELETE" });
     setHasVideo(false);
@@ -91,6 +104,28 @@ export default function IntroVideoUpload({ author }: { author: string }) {
         onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
       />
       {error && <p style={{ color: "var(--color-danger)" }}>{error}</p>}
+      {pendingUpload && (
+        <div style={{ border: "1px solid var(--color-border)", borderRadius: 8, padding: 8, marginTop: 8 }}>
+          <p style={{ margin: 0 }}>
+            You&apos;re on mobile data — uploading this {formatMegabytes(pendingUpload.size)} video may use a lot of
+            data. Upload anyway?
+          </p>
+          <div style={{ marginTop: 6 }}>
+            <button
+              onClick={() => {
+                const file = pendingUpload;
+                setPendingUpload(null);
+                if (file) doUpload(file);
+              }}
+            >
+              Upload anyway
+            </button>
+            <button onClick={() => setPendingUpload(null)} style={{ marginLeft: 6 }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {hasVideo && (
         <div style={{ marginTop: 8 }}>
           <video
