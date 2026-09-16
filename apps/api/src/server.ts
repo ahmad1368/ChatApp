@@ -117,6 +117,7 @@ import { FavoritesStore } from "./favorites";
 import { getLottieAnimationCatalog } from "./lottieAnimations";
 import { StrangerPictureBlockStore } from "./strangerPictureBlock";
 import { getSimilarProfiles } from "./similarProfiles";
+import { ClearedHistoryStore } from "./clearedHistory";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -257,6 +258,7 @@ export function createApp(deps?: {
   archivedChatsStore: ArchivedChatsStore;
   favoritesStore: FavoritesStore;
   strangerPictureBlockStore: StrangerPictureBlockStore;
+  clearedHistoryStore: ClearedHistoryStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -493,6 +495,7 @@ export function createApp(deps?: {
   const archivedChatsStore = new ArchivedChatsStore();
   const favoritesStore = new FavoritesStore();
   const strangerPictureBlockStore = new StrangerPictureBlockStore();
+  const clearedHistoryStore = new ClearedHistoryStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -880,6 +883,22 @@ export function createApp(deps?: {
       return;
     }
     res.json({ enabled: result.enabled });
+  });
+
+  // Feeld's real "Ability to one-sidedly delete conversation history"
+  // (#285) — see clearedHistory.ts for why this is one-sided and scoped
+  // to a viewer+chatAuthor pair.
+  app.post("/api/cleared-history", (req, res) => {
+    const result = clearedHistoryStore.clear(req.body?.viewerAuthor, req.body?.chatAuthor);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ clearedAt: result.clearedAt });
+  });
+
+  app.get("/api/cleared-history/:viewerAuthor/:chatAuthor", (req, res) => {
+    res.json({ clearedAt: clearedHistoryStore.getClearedAt(req.params.viewerAuthor, req.params.chatAuthor) });
   });
 
   // Self-declared phone number (same client-supplied-identity limitation as
@@ -5291,13 +5310,18 @@ export function createApp(deps?: {
     const blockFiltered = viewer ? unfiltered.filter((m) => !blockStore.isMutuallyBlocked(viewer, m.author)) : unfiltered;
     // #281's "don't receive picture messages from strangers" applies the
     // same way, on top of blocking — see strangerPictureBlock.ts.
-    const all = viewer
+    const strangerPictureFiltered = viewer
       ? blockFiltered.filter((m) => {
           const hasPicture = Boolean(m.imageUrl || m.selfDestructImageUrl);
           const isMatch = swipeStore.getMatches(viewer).includes(m.author);
           return !strangerPictureBlockStore.shouldHidePicture(viewer, m.author, hasPicture, isMatch);
         })
       : blockFiltered;
+    // #285's one-sided "clear conversation history" applies last — see
+    // clearedHistory.ts.
+    const all = viewer
+      ? strangerPictureFiltered.filter((m) => !clearedHistoryStore.isHidden(viewer, m.author, m.createdAt))
+      : strangerPictureFiltered;
 
     const since = typeof req.query.since === "string" ? req.query.since : undefined;
     if (since !== undefined) {
@@ -6309,6 +6333,7 @@ export function createApp(deps?: {
     archivedChatsStore,
     favoritesStore,
     strangerPictureBlockStore,
+    clearedHistoryStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,

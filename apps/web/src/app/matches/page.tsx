@@ -75,6 +75,18 @@ export default function MatchesPage() {
       .catch(() => {});
   };
 
+  // Feeld's real "Ability to one-sidedly delete conversation history"
+  // (#285) — clears this viewer's own view only; the other side's view is
+  // untouched. See clearedHistory.ts.
+  const clearHistory = (chatAuthor: string) => {
+    if (!window.confirm(`Delete your view of the conversation history with ${chatAuthor}? Only your side is cleared.`)) return;
+    fetch(`${API_URL}/api/cleared-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: author, chatAuthor }),
+    }).catch(() => {});
+  };
+
   const unmatch = (chatAuthor: string) => {
     if (!window.confirm(`Unmatch ${chatAuthor} and delete this chat? This can't be undone.`)) return;
     fetch(`${API_URL}/api/matches/${encodeURIComponent(author)}/${encodeURIComponent(chatAuthor)}`, {
@@ -204,6 +216,20 @@ export default function MatchesPage() {
                   {match.archived ? "Unarchive" : "Archive"}
                 </button>
                 <Link href={`/room/${DEFAULT_ROOM_ID}`}>Chat</Link>
+                <button
+                  type="button"
+                  onClick={() => clearHistory(match.author)}
+                  style={{
+                    fontSize: 12,
+                    background: "none",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 6,
+                    padding: "4px 8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Clear history
+                </button>
                 <button
                   type="button"
                   onClick={() => unmatch(match.author)}

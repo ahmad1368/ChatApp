@@ -47,6 +47,7 @@ function listen() {
     archivedChatsStore,
     favoritesStore,
     strangerPictureBlockStore,
+    clearedHistoryStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -78,6 +79,7 @@ function listen() {
     archivedChatsStore,
     favoritesStore,
     strangerPictureBlockStore,
+    clearedHistoryStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -3402,6 +3404,85 @@ test("GET /api/rooms/:roomId/messages doesn't hide a stranger's text-only messag
     });
     messagesByRoom.set("general", [
       { id: "1", roomId: "general", author: "bob", text: "hi", createdAt: new Date().toISOString() },
+    ]);
+
+    const res = await fetch(`${baseUrl}/api/rooms/general/messages?viewer=alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.map((m: { author: string }) => m.author),
+      ["bob"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/cleared-history clears the viewer's own history with an author (#285)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/cleared-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice", chatAuthor: "bob" }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.ok(body.clearedAt);
+
+    const getRes = await fetch(`${baseUrl}/api/cleared-history/alice/bob`);
+    assert.deepEqual(await getRes.json(), { clearedAt: body.clearedAt });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/cleared-history rejects missing fields (#285)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/cleared-history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: "alice" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages hides an author's messages sent before the viewer's clear point (#285)", async () => {
+  const { server, baseUrl, messagesByRoom, clearedHistoryStore } = listen();
+  try {
+    clearedHistoryStore.clear("alice", "bob");
+    messagesByRoom.set("general", [
+      { id: "1", roomId: "general", author: "bob", text: "old message", createdAt: new Date(Date.now() - 60_000).toISOString() },
+      { id: "2", roomId: "general", author: "carol", text: "unaffected", createdAt: new Date(Date.now() - 60_000).toISOString() },
+    ]);
+
+    const res = await fetch(`${baseUrl}/api/rooms/general/messages?viewer=alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.map((m: { author: string }) => m.author),
+      ["carol"]
+    );
+
+    const bobsView = await fetch(`${baseUrl}/api/rooms/general/messages?viewer=bob`);
+    const bobsBody = await bobsView.json();
+    assert.deepEqual(
+      bobsBody.map((m: { author: string }) => m.author).sort(),
+      ["bob", "carol"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages still shows a new message sent after the clear point (#285)", async () => {
+  const { server, baseUrl, messagesByRoom, clearedHistoryStore } = listen();
+  try {
+    clearedHistoryStore.clear("alice", "bob");
+    messagesByRoom.set("general", [
+      { id: "1", roomId: "general", author: "bob", text: "hi again", createdAt: new Date(Date.now() + 60_000).toISOString() },
     ]);
 
     const res = await fetch(`${baseUrl}/api/rooms/general/messages?viewer=alice`);
