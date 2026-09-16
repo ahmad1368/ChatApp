@@ -16,6 +16,7 @@ import BioMatches from "../BioMatches";
 import AdBanner from "../AdBanner";
 import VoiceSwipeControl from "../VoiceSwipeControl";
 import ProfileShareButton from "../ProfileShareButton";
+import TotalMatchesBadge from "../TotalMatchesBadge";
 import WeatherBadge from "../WeatherBadge";
 import { vibrateForeground, vibrationPatternForCategory } from "../notificationSound";
 
@@ -270,6 +271,7 @@ export default function DiscoverPage() {
         <Link href="/double-date">Double Date</Link> &middot; <Link href="/live-events">Live Events</Link> &middot;{" "}
         <Link href="/message-requests">Message requests</Link>
       </p>
+      <TotalMatchesBadge />
       <ProfileBoost author={author} />
       <div style={{ display: "flex", gap: 6, justifyContent: "center", margin: "8px 0" }}>
         <input

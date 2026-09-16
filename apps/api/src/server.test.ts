@@ -9792,6 +9792,33 @@ test("GET /api/admin/metrics (#171) returns real live counts from the app's own 
   }
 });
 
+test("GET /api/stats/matches reports the real live total match count with no admin key required (#278)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const before = await fetch(`${baseUrl}/api/stats/matches`);
+    assert.equal(before.status, 200);
+    const { totalMatches: initialTotal } = await before.json();
+    assert.equal(typeof initialTotal, "number");
+
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+
+    const after = await fetch(`${baseUrl}/api/stats/matches`);
+    const { totalMatches } = await after.json();
+    assert.equal(totalMatches, initialTotal + 1);
+  } finally {
+    server.close();
+  }
+});
+
 test("Photo review (#172): an uploaded photo joins the admin review queue as pending", async () => {
   const previous = process.env.ADMIN_API_KEY;
   process.env.ADMIN_API_KEY = "test-admin-secret";
