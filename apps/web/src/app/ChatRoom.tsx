@@ -32,6 +32,7 @@ import IcebreakerSuggestions from "./IcebreakerSuggestions";
 import AutocompleteChips from "./AutocompleteChips";
 import UsageTimeTracker from "./UsageTimeTracker";
 import AccountSwitcher from "./AccountSwitcher";
+import { playRingtone, RingtoneId } from "./notificationSound";
 import LocationMessage from "./LocationMessage";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
@@ -718,6 +719,11 @@ export default function ChatRoom({
   // room right now, from the live typing:update broadcast.
   const [typingAuthors, setTypingAuthors] = useState<string[]>([]);
   const isTypingRef = useRef(false);
+  // #292's per-contact ringtone: the viewer's own global default (#160),
+  // and a small per-sender cache so a repeat sender doesn't re-fetch
+  // their override on every message.
+  const globalRingtoneRef = useRef<RingtoneId>("default");
+  const contactRingtoneCacheRef = useRef<Map<string, RingtoneId | null>>(new Map());
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Bumble's real "save message drafts" (#150) — debounced the same way
   // as the typing-stop signal above, so navigating away or reloading
@@ -926,6 +932,12 @@ export default function ChatRoom({
   useEffect(() => {
     refreshBlockedAuthors();
     refreshStrangerPictureBlock();
+    fetch(`${API_URL}/api/notification-sound/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => {
+        globalRingtoneRef.current = body?.preference?.ringtone ?? "default";
+      })
+      .catch(() => {});
     setContactPickerSupported(Boolean(getContactsManager()));
     fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/access-level`)
       .then((res) => res.json())
@@ -1232,6 +1244,25 @@ export default function ChatRoom({
       const canNotify = "Notification" in window && Notification.permission === "granted";
       if (!isOwnMessage && document.hidden && canNotify) {
         new Notification(message.author, { body: message.text, tag: roomId });
+      }
+
+      // #292's "customize the chat notification sound per person" — the
+      // sender's per-contact override (if one is set), otherwise this
+      // viewer's own global default (#160). See notificationSound.ts.
+      if (!isOwnMessage) {
+        const cached = contactRingtoneCacheRef.current.get(message.author);
+        if (cached !== undefined) {
+          playRingtone(cached ?? globalRingtoneRef.current);
+        } else {
+          fetch(`${API_URL}/api/notification-sound/${encodeURIComponent(authorRef.current)}/contact/${encodeURIComponent(message.author)}`)
+            .then((res) => res.json())
+            .then((body) => {
+              const override: RingtoneId | null = body?.ringtone ?? null;
+              contactRingtoneCacheRef.current.set(message.author, override);
+              playRingtone(override ?? globalRingtoneRef.current);
+            })
+            .catch(() => playRingtone(globalRingtoneRef.current));
+        }
       }
 
       // Bumble's real sent/delivered/read message status (#125): this

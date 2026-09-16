@@ -53,6 +53,7 @@ function listen() {
     wasmFilterUsageStore,
     usageLimitStore,
     usageTimeStore,
+    perContactRingtoneStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -89,6 +90,7 @@ function listen() {
     wasmFilterUsageStore,
     usageLimitStore,
     usageTimeStore,
+    perContactRingtoneStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -6920,6 +6922,68 @@ test("PUT /api/notification-sound/:author turns off vibration independently of r
     });
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { preference: { ringtone: "default", vibrationEnabled: false } });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/notification-sound/:author/contact/:contact defaults to null (no override) (#292)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/notification-sound/alice/contact/bob`);
+    assert.deepEqual(await res.json(), { ringtone: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/notification-sound/:author/contact/:contact sets and clears a per-contact override (#292)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const setRes = await fetch(`${baseUrl}/api/notification-sound/alice/contact/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ringtone: "chime" }),
+    });
+    assert.deepEqual(await setRes.json(), { ringtone: "chime" });
+
+    const getRes = await fetch(`${baseUrl}/api/notification-sound/alice/contact/bob`);
+    assert.deepEqual(await getRes.json(), { ringtone: "chime" });
+
+    const clearRes = await fetch(`${baseUrl}/api/notification-sound/alice/contact/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ringtone: null }),
+    });
+    assert.deepEqual(await clearRes.json(), { ringtone: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/notification-sound/:author/contact/:contact rejects an invalid ringtone id (#292)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/notification-sound/alice/contact/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ringtone: "airhorn" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("Per-contact overrides don't affect the global ringtone or other contacts (#292)", async () => {
+  const { server, baseUrl, perContactRingtoneStore } = listen();
+  try {
+    perContactRingtoneStore.setOverride("alice", "bob", "pop");
+    const globalRes = await fetch(`${baseUrl}/api/notification-sound/alice`);
+    assert.deepEqual(await globalRes.json(), { preference: { ringtone: "default", vibrationEnabled: true } });
+
+    const otherContactRes = await fetch(`${baseUrl}/api/notification-sound/alice/contact/carol`);
+    assert.deepEqual(await otherContactRes.json(), { ringtone: null });
   } finally {
     server.close();
   }
