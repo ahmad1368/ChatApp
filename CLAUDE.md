@@ -50,6 +50,10 @@ Issue #269 ("Ability to set 'I'm traveling' mode") is an exact duplicate of alre
 
 Issue #276 ("Filter by exact height in centimeters") is an exact duplicate of already-implemented #96 ("Advanced filter by height, education and language") in the auto-generated backlog — same feature, no differentiating angle. #96 already shipped this: `DiscoveryFiltersStore` (`discoveryFilters.ts`) lets each author set a real `minHeightCm`/`maxHeightCm` range (stored and filtered in exact centimeters, not some other unit), enforced by `candidateMatchesFilters()` against `/api/swipe-candidates/:author`, edited via `DiscoveryFiltersEditor` on `/settings/profile` — "exact" doesn't add anything a min=max range doesn't already express. No separate implementation was made for #276 — skip it in `/next-issue` picks (see that file's step 1) and close it as a duplicate of #96 once confirmed.
 
+## Known backlog overlap: #228 and #282
+
+Issue #282 ("Ability to create a group to organize events") is an exact duplicate of already-implemented #228 ("Ability to form interest groups (e.g., a hiking group)") in the auto-generated backlog — same feature (a persistent, joinable group whose members organize real-world/online activities), same reference app (Match.com), no differentiating angle. #228 already shipped exactly this: `InterestGroupStore` (`apps/api/src/interestGroups.ts`) lets any author create a named group, others join/leave it, and members-only organize a capacity-limited, waitlisted `GroupActivity` scoped to that group — the "create a group to organize events" #282 describes. No separate implementation was made for #282 — skip it in `/next-issue` picks (see that file's step 1) and close it as a duplicate of #228 once confirmed.
+
 ## Issue workflow
 
 Issues are tracked on GitHub (`gh issue list`) and implemented one at a time via `/next-issue` (`.claude/commands/next-issue.md`). Read that file for the exact branch/PR rules before doing any issue work — do not improvise a different workflow.
