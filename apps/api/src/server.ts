@@ -130,6 +130,7 @@ import { BackgroundCheckStore } from "./backgroundCheckRecord";
 import { PhotoChallengeStore } from "./photoChallenge";
 import { GpsVerificationService } from "./gpsVerification";
 import { GpsVerificationStore } from "./gpsVerificationRecord";
+import { MembershipStore } from "./membership";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -283,6 +284,7 @@ export function createApp(deps?: {
   backgroundCheckStore: BackgroundCheckStore;
   photoChallengeStore: PhotoChallengeStore;
   gpsVerificationStore: GpsVerificationStore;
+  membershipStore: MembershipStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -532,6 +534,7 @@ export function createApp(deps?: {
   const photoChallengeStore = new PhotoChallengeStore();
   const gpsVerificationService = deps?.gpsVerificationService ?? new GpsVerificationService();
   const gpsVerificationStore = new GpsVerificationStore();
+  const membershipStore = new MembershipStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -1221,6 +1224,23 @@ export function createApp(deps?: {
 
   app.get("/api/gps-verification/:author", (req, res) => {
     res.json(gpsVerificationStore.get(req.params.author));
+  });
+
+  // Tinder's real "Show the user's membership duration on the platform"
+  // (#300) — see membership.ts for why this tracks a guest author's own
+  // first-seen moment rather than #21-28's separate real-account
+  // UserStore.createdAt.
+  app.post("/api/membership/:author/touch", (req, res) => {
+    const joinedAt = membershipStore.recordFirstSeen(req.params.author);
+    if (!joinedAt) {
+      res.status(400).json({ error: "author is required" });
+      return;
+    }
+    res.json({ joinedAt });
+  });
+
+  app.get("/api/membership/:author", (req, res) => {
+    res.json({ joinedAt: membershipStore.getJoinedAt(req.params.author) });
   });
 
   // Tinder's real "WebAssembly technology support for the browser
@@ -6683,6 +6703,7 @@ export function createApp(deps?: {
     backgroundCheckStore,
     photoChallengeStore,
     gpsVerificationStore,
+    membershipStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,
