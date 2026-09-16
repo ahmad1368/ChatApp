@@ -40,6 +40,11 @@ export class SmartScoreStore {
     return { desirabilityRating: this.getRating(author), activityCount: this.getActivityCount(author) };
   }
 
+  /** Every tracked author's raw activity count — #252's percentile calculation is the only consumer. */
+  getAllActivityCounts(): number[] {
+    return Array.from(this.activityByAuthor.values());
+  }
+
   /**
    * Call once per swipe: `swiper` looked at `swiped` and liked or passed.
    * Bumps the swiper's own activity count, then applies a standard Elo

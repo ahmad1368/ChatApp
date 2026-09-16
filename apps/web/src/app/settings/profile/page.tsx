@@ -37,6 +37,7 @@ import DiscoveryFiltersEditor from "../../DiscoveryFiltersEditor";
 import ProfileCompletion from "../../ProfileCompletion";
 import ProfilePreview from "../../ProfilePreview";
 import SmartScoreDisplay from "../../SmartScoreDisplay";
+import ActivityLevelDisplay from "../../ActivityLevelDisplay";
 
 /**
  * "Quickly edit and update details from settings" (#90) — a single place to
@@ -90,6 +91,7 @@ export default function ProfileSettingsPage() {
       <DiscoveryFiltersEditor author={author} />
       <ProfilePreview author={author} />
       <SmartScoreDisplay author={author} />
+      <ActivityLevelDisplay author={author} />
     </main>
   );
 }

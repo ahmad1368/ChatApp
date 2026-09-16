@@ -185,6 +185,7 @@ import { computeInterestCompatibility } from "./interestCompatibility";
 import { buildProfilePreview } from "./profilePreview";
 import { computeProfileCompletion } from "./profileCompletion";
 import { optimizePhoto } from "./photoOptimization";
+import { computeActivityPercentile } from "./activityLevel";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -4447,6 +4448,15 @@ export function createApp(deps?: {
   // smartScore.ts for why they're not blended into one number.
   app.get("/api/smart-score/:author", (req, res) => {
     res.json({ score: smartScoreStore.getScore(req.params.author) });
+  });
+
+  // Tinder's real "Ability to measure user activity level as a
+  // percentage" (#252) — see activityLevel.ts's doc comment for how this
+  // differs from #95's raw activity count and #220's weekly rank.
+  app.get("/api/activity-level/:author", (req, res) => {
+    const activityCount = smartScoreStore.getActivityCount(req.params.author);
+    const percentile = computeActivityPercentile(activityCount, smartScoreStore.getAllActivityCounts());
+    res.json({ activityCount, percentile });
   });
 
   // "Share My Date": its own high-priority, dependency-free safety path,
