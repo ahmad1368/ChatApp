@@ -11,6 +11,7 @@ import BackgroundMusicUploader from "../../BackgroundMusicUploader";
 import ProfilePromptsEditor from "../../ProfilePromptsEditor";
 import JobInfoEditor from "../../JobInfoEditor";
 import EducationInfoEditor from "../../EducationInfoEditor";
+import VoiceResumeRecorder from "../../VoiceResumeRecorder";
 import HeightInfoEditor from "../../HeightInfoEditor";
 import AgeInfoEditor from "../../AgeInfoEditor";
 import MessageAgeLimitEditor from "../../MessageAgeLimitEditor";
@@ -75,6 +76,7 @@ export default function ProfileSettingsPage() {
       <ProfilePromptsEditor author={author} />
       <JobInfoEditor author={author} />
       <EducationInfoEditor author={author} />
+      <VoiceResumeRecorder author={author} />
       <HeightInfoEditor author={author} />
       <AgeInfoEditor author={author} />
       <MessageAgeLimitEditor author={author} />
