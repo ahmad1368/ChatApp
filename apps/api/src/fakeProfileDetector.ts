@@ -4,7 +4,7 @@ import { scanForSpamContent } from "./spamDetector";
 // many independent reports against the same profile is a real signal.
 export const REPORT_THRESHOLD = 3;
 
-export type FakeProfileReason = "reported" | "spam_bio";
+export type FakeProfileReason = "reported" | "spam_bio" | "duplicate_photo";
 
 export interface FakeProfileScanResult {
   flagged: boolean;
@@ -14,6 +14,7 @@ export interface FakeProfileScanResult {
 export interface CandidateProfileSignals {
   bio: string;
   reportCount: number;
+  hasDuplicatePhoto: boolean;
 }
 
 /**
@@ -27,6 +28,10 @@ export interface CandidateProfileSignals {
  *  - the candidate's bio matches spamDetector.ts's existing promo-
  *    phrase/URL heuristic, already used to catch spam in chat messages —
  *    the same patterns work whether the text is a message or a bio.
+ *  - #267's `hasDuplicatePhoto`: the candidate has uploaded a profile
+ *    photo whose exact bytes another author has also uploaded, reusing
+ *    duplicatePhotoDetection.ts's real hash-based exact-duplicate check
+ *    (not a fabricated reverse-image-search integration).
  *
  * Deliberately does NOT re-check phone/address content: bio.ts already
  * rejects that at write time, so a stored bio can never contain it.
@@ -44,6 +49,9 @@ export function scanCandidateForFakeProfile(signals: CandidateProfileSignals): F
   }
   if (scanForSpamContent(signals.bio).flagged) {
     reasons.push("spam_bio");
+  }
+  if (signals.hasDuplicatePhoto) {
+    reasons.push("duplicate_photo");
   }
   return { flagged: reasons.length > 0, reasons };
 }
