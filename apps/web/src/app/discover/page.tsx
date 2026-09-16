@@ -10,6 +10,7 @@ import CrossedPaths from "../CrossedPaths";
 import SharedContacts from "../SharedContacts";
 import FacebookMutualConnections from "../FacebookMutualConnections";
 import MusicMatches from "../MusicMatches";
+import MoodCompatibility from "../MoodCompatibility";
 import WeekendPlanMatches from "../WeekendPlanMatches";
 import ZodiacMatches from "../ZodiacMatches";
 import BioMatches from "../BioMatches";
@@ -325,6 +326,7 @@ export default function DiscoverPage() {
       <SharedContacts author={author} />
       <FacebookMutualConnections author={author} />
       <MusicMatches author={author} />
+      <MoodCompatibility author={author} />
       <WeekendPlanMatches author={author} />
       <ZodiacMatches author={author} />
       <BioMatches author={author} />

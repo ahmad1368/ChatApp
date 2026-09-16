@@ -1,12 +1,17 @@
 export interface SpotifyInfo {
   connected: boolean;
   topTracks: string[];
+  // #293's "System to analyze mood compatibility based on music" — real
+  // averaged Spotify Audio Features (see spotifyAuth.ts), null when that
+  // second API call failed/returned nothing.
+  moodValence: number | null;
+  moodEnergy: number | null;
   // Same "show a detail while letting people hide it" privacy option as
   // #67-#76's other profile-detail hide flags.
   hideSpotify: boolean;
 }
 
-const EMPTY_SPOTIFY_INFO: SpotifyInfo = { connected: false, topTracks: [], hideSpotify: false };
+const EMPTY_SPOTIFY_INFO: SpotifyInfo = { connected: false, topTracks: [], moodValence: null, moodEnergy: null, hideSpotify: false };
 
 /**
  * Per-author Spotify connection state (#77) — one connected account's top
@@ -18,16 +23,22 @@ const EMPTY_SPOTIFY_INFO: SpotifyInfo = { connected: false, topTracks: [], hideS
 export class SpotifyInfoStore {
   private infoByAuthor = new Map<string, SpotifyInfo>();
 
-  connect(author: string, topTracks: string[]): SpotifyInfo {
+  connect(author: string, topTracks: string[], moodValence: number | null = null, moodEnergy: number | null = null): SpotifyInfo {
     const existing = this.infoByAuthor.get(author);
-    const info: SpotifyInfo = { connected: true, topTracks, hideSpotify: existing?.hideSpotify ?? false };
+    const info: SpotifyInfo = { connected: true, topTracks, moodValence, moodEnergy, hideSpotify: existing?.hideSpotify ?? false };
     this.infoByAuthor.set(author, info);
     return info;
   }
 
   disconnect(author: string): SpotifyInfo {
     const existing = this.infoByAuthor.get(author);
-    const info: SpotifyInfo = { connected: false, topTracks: [], hideSpotify: existing?.hideSpotify ?? false };
+    const info: SpotifyInfo = {
+      connected: false,
+      topTracks: [],
+      moodValence: null,
+      moodEnergy: null,
+      hideSpotify: existing?.hideSpotify ?? false,
+    };
     this.infoByAuthor.set(author, info);
     return info;
   }

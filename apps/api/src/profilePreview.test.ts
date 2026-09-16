@@ -17,7 +17,7 @@ function emptyInput(): ProfilePreviewInput {
     beliefsInfo: { religion: null, politicalView: null, hideReligion: false, hidePoliticalView: false },
     petsInfo: { pets: [], hidePets: false },
     personalityInfo: { mbtiType: null, enneagramType: null, hideMbti: false, hideEnneagram: false },
-    spotifyInfo: { connected: false, topTracks: [], hideSpotify: false },
+    spotifyInfo: { connected: false, topTracks: [], moodValence: null, moodEnergy: null, hideSpotify: false },
     instagramInfo: { connected: false, posts: [], hideInstagram: false },
     interestsInfo: { interests: [], hideInterests: false },
   };
@@ -83,13 +83,13 @@ test("buildProfilePreview() respects independent smoking/drinking hide flags", (
 
 test("buildProfilePreview() omits Spotify when not connected even if hideSpotify is false", () => {
   const input = emptyInput();
-  input.spotifyInfo = { connected: false, topTracks: [], hideSpotify: false };
+  input.spotifyInfo = { connected: false, topTracks: [], moodValence: null, moodEnergy: null, hideSpotify: false };
   assert.deepEqual(buildProfilePreview(input), {});
 });
 
 test("buildProfilePreview() includes Spotify top tracks when connected and not hidden", () => {
   const input = emptyInput();
-  input.spotifyInfo = { connected: true, topTracks: ["Song A"], hideSpotify: false };
+  input.spotifyInfo = { connected: true, topTracks: ["Song A"], moodValence: null, moodEnergy: null, hideSpotify: false };
   assert.deepEqual(buildProfilePreview(input), { spotifyTopTracks: ["Song A"] });
 });
 
@@ -134,7 +134,7 @@ test("buildProfilePreview() combines every visible field into one object", () =>
     beliefsInfo: { religion: "buddhist", politicalView: "moderate", hideReligion: false, hidePoliticalView: false },
     petsInfo: { pets: ["dog"], hidePets: false },
     personalityInfo: { mbtiType: "INFP", enneagramType: 4, hideMbti: false, hideEnneagram: false },
-    spotifyInfo: { connected: true, topTracks: ["Song A"], hideSpotify: false },
+    spotifyInfo: { connected: true, topTracks: ["Song A"], moodValence: null, moodEnergy: null, hideSpotify: false },
     instagramInfo: { connected: true, posts: ["https://instagram.com/p/1"], hideInstagram: false },
     interestsInfo: { interests: ["hiking"], hideInterests: false },
   };
