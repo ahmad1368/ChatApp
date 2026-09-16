@@ -58,6 +58,7 @@ function listen() {
     feedbackStore,
     backgroundCheckStore,
     swipeStore,
+    photoChallengeStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -98,6 +99,7 @@ function listen() {
     feedbackStore,
     backgroundCheckStore,
     swipeStore,
+    photoChallengeStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -4231,6 +4233,131 @@ test("GET /api/photos/:id 404s for an unknown id", async () => {
   try {
     const res = await fetch(`${baseUrl}/api/photos/does-not-exist`);
     assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/photo-challenge/theme returns a real theme from the fixed catalog (#298)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/photo-challenge/theme`);
+    const body = await res.json();
+    assert.ok(body.theme);
+    assert.ok(body.weekStart);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-challenge/submissions accepts a valid submission of the author's own photo (#298)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const photoId = uploaded.success ? uploaded.photo.id : "";
+    const res = await fetch(`${baseUrl}/api/photo-challenge/submissions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", photoId }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.submission.author, "alice");
+
+    const listRes = await fetch(`${baseUrl}/api/photo-challenge/submissions`);
+    const listBody = await listRes.json();
+    assert.equal(listBody.submissions.length, 1);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-challenge/submissions rejects a photo belonging to a different author (#298)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("bob", "image/png", TINY_PNG_BASE64);
+    const photoId = uploaded.success ? uploaded.photo.id : "";
+    const res = await fetch(`${baseUrl}/api/photo-challenge/submissions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", photoId }),
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-challenge/submissions rejects a second submission from the same author the same week (#298)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const first = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const second = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    await fetch(`${baseUrl}/api/photo-challenge/submissions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", photoId: first.success ? first.photo.id : "" }),
+    });
+    const res = await fetch(`${baseUrl}/api/photo-challenge/submissions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", photoId: second.success ? second.photo.id : "" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/photo-challenge/submissions/:submissionId/vote increments votes and enforces the anti-gaming rules (#298)", async () => {
+  const { server, baseUrl, photoStore } = listen();
+  try {
+    const uploaded = photoStore.upload("alice", "image/png", TINY_PNG_BASE64);
+    const submitRes = await fetch(`${baseUrl}/api/photo-challenge/submissions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", photoId: uploaded.success ? uploaded.photo.id : "" }),
+    });
+    const { submission } = await submitRes.json();
+
+    const selfVoteRes = await fetch(`${baseUrl}/api/photo-challenge/submissions/${submission.id}/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voter: "alice" }),
+    });
+    assert.equal(selfVoteRes.status, 400);
+
+    const voteRes = await fetch(`${baseUrl}/api/photo-challenge/submissions/${submission.id}/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voter: "bob" }),
+    });
+    assert.equal(voteRes.status, 200);
+    assert.deepEqual(await voteRes.json(), { votes: 1 });
+
+    const duplicateVoteRes = await fetch(`${baseUrl}/api/photo-challenge/submissions/${submission.id}/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voter: "bob" }),
+    });
+    assert.equal(duplicateVoteRes.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/photo-challenge/submissions ranks highest-voted first (#298)", async () => {
+  const { server, baseUrl, photoChallengeStore } = listen();
+  try {
+    photoChallengeStore.submit("alice", "photo-1");
+    photoChallengeStore.submit("bob", "photo-2");
+    const submissions = photoChallengeStore.getSubmissions();
+    photoChallengeStore.vote("carol", submissions[1].id);
+    photoChallengeStore.vote("dave", submissions[1].id);
+
+    const res = await fetch(`${baseUrl}/api/photo-challenge/submissions`);
+    const body = await res.json();
+    assert.equal(body.submissions[0].author, "bob");
   } finally {
     server.close();
   }
