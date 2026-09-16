@@ -1460,6 +1460,9 @@ export default function ChatRoom({
       } else if (payload?.reason === "first_message_gender_rule") {
         // Bumble's real "women message first" rule (#135).
         setImageError(payload.error ?? "Only she can send the first message in this match.");
+      } else if (payload?.reason === "recipient_age_limit") {
+        // Tinder's real exact age limit for receiving messages (#312).
+        setImageError(payload.error ?? "This person has set an age limit that doesn't allow this message.");
       }
     });
 

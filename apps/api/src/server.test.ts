@@ -69,6 +69,8 @@ function listen() {
     superLikeOptOutStore,
     callQualityFeedbackStore,
     muteMatchStore,
+    ageInfoStore,
+    messageAgeLimitStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -119,6 +121,8 @@ function listen() {
     superLikeOptOutStore,
     callQualityFeedbackStore,
     muteMatchStore,
+    ageInfoStore,
+    messageAgeLimitStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -8327,6 +8331,84 @@ test("GET /api/mute-match/:author/:match defaults to null when not muted (#311)"
   try {
     const res = await fetch(`${baseUrl}/api/mute-match/alice/bob`);
     assert.deepEqual(await res.json(), { mutedUntil: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/age-info/:author accepts a valid age (#312)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/age-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ age: 25 }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { age: 25 });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/age-info/:author rejects an age below the minimum (#312)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/age-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ age: 15 }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/age-info/:author defaults to null (#312)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/age-info/alice`);
+    assert.deepEqual(await res.json(), { age: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/message-age-limit/:author accepts a valid range (#312)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/message-age-limit/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minAge: 25, maxAge: 40 }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { limit: { minAge: 25, maxAge: 40 } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/message-age-limit/:author rejects minAge greater than maxAge (#312)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/message-age-limit/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minAge: 40, maxAge: 25 }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/message-age-limit/:author defaults to an unset limit (#312)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/message-age-limit/alice`);
+    assert.deepEqual(await res.json(), { limit: { minAge: null, maxAge: null } });
   } finally {
     server.close();
   }
