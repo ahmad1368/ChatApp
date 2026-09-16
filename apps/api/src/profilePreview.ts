@@ -52,6 +52,7 @@ export interface ProfilePreview {
   mbtiType?: MbtiType;
   enneagramType?: number;
   spotifyTopTracks?: string[];
+  spotifyTopArtists?: string[];
   instagramPosts?: string[];
   interests?: Interest[];
 }
@@ -109,7 +110,10 @@ export function buildProfilePreview(input: ProfilePreviewInput): ProfilePreview 
     preview.enneagramType = input.personalityInfo.enneagramType;
   }
 
-  if (input.spotifyInfo.connected && !input.spotifyInfo.hideSpotify) preview.spotifyTopTracks = input.spotifyInfo.topTracks;
+  if (input.spotifyInfo.connected && !input.spotifyInfo.hideSpotify) {
+    preview.spotifyTopTracks = input.spotifyInfo.topTracks;
+    preview.spotifyTopArtists = input.spotifyInfo.topArtists;
+  }
   if (input.instagramInfo.connected && !input.instagramInfo.hideInstagram) preview.instagramPosts = input.instagramInfo.posts;
 
   if (input.interestsInfo.interests.length > 0 && !input.interestsInfo.hideInterests) {

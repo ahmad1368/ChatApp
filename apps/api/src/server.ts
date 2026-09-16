@@ -231,6 +231,7 @@ import { ContactsGraphStore } from "./contactsGraph";
 import { FacebookConnectStore } from "./facebookConnect";
 import { ViewModeStore } from "./viewMode";
 import { computeMusicMatch } from "./musicMatch";
+import { computeArtistMatch } from "./artistMatch";
 import { WeekendPlansStore, WEEKEND_PLAN_CATALOG } from "./weekendPlans";
 import { computeWeekendPlanMatch } from "./weekendPlanMatch";
 import { computeBioMatch } from "./bioAnalysis";
@@ -2100,7 +2101,9 @@ export function createApp(deps?: {
       return;
     }
 
-    res.json({ spotifyInfo: spotifyInfoStore.connect(author, profile.topTracks, profile.moodValence, profile.moodEnergy) });
+    res.json({
+      spotifyInfo: spotifyInfoStore.connect(author, profile.topTracks, profile.moodValence, profile.moodEnergy, profile.topArtists),
+    });
   });
 
   app.delete("/api/spotify/:author", (req, res) => {
@@ -2908,6 +2911,32 @@ export function createApp(deps?: {
       .filter((entry): entry is { author: string; sharedTracks: string[]; compatibility: number } => entry !== null)
       .sort((a, b) => b.sharedTracks.length - a.sharedTracks.length);
     res.json({ candidates: musicMatches });
+  });
+
+  // Hinge's real "Show a list of shared favorite artists" (#326) — same
+  // shape as #118's music-matches route directly above, applied to
+  // #77/#326's Spotify top artists instead of top tracks. Respects
+  // hideSpotify on both sides, same as #118.
+  app.get("/api/artist-matches/:author", (req, res) => {
+    const author = req.params.author;
+    const authorSpotify = spotifyInfoStore.get(author);
+    if (!authorSpotify.connected || authorSpotify.hideSpotify) {
+      res.json({ candidates: [] });
+      return;
+    }
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
+      .map((c) => c.author);
+    const artistMatches = pool
+      .map((candidate) => {
+        const candidateSpotify = spotifyInfoStore.get(candidate);
+        if (!candidateSpotify.connected || candidateSpotify.hideSpotify) return null;
+        const match = computeArtistMatch(authorSpotify.topArtists, candidateSpotify.topArtists);
+        return match.sharedArtists.length > 0 ? { author: candidate, ...match } : null;
+      })
+      .filter((entry): entry is { author: string; sharedArtists: string[]; compatibility: number } => entry !== null)
+      .sort((a, b) => b.sharedArtists.length - a.sharedArtists.length);
+    res.json({ candidates: artistMatches });
   });
 
   // Hinge's real "System to analyze mood compatibility based on music"

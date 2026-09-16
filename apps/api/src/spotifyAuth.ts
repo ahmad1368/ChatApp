@@ -1,5 +1,6 @@
 const TOKEN_URL = "https://accounts.spotify.com/api/token";
 const TOP_TRACKS_URL = "https://api.spotify.com/v1/me/top/tracks?limit=5";
+const TOP_ARTISTS_URL = "https://api.spotify.com/v1/me/top/artists?limit=5";
 const AUDIO_FEATURES_URL = "https://api.spotify.com/v1/audio-features";
 
 export interface SpotifyCredentials {
@@ -9,6 +10,12 @@ export interface SpotifyCredentials {
 
 export interface SpotifyProfile {
   topTracks: string[];
+  // #326's "Show a list of shared favorite artists" — a real second call
+  // to Spotify's own top-artists endpoint, distinct from the artist name
+  // already folded into each topTracks entry above (that's one artist
+  // per top *track*; this is the account's actual top 5 *artists*, which
+  // can rank differently than "artist of my #1 track").
+  topArtists: string[];
   // #293's "System to analyze mood compatibility based on music" — the
   // average valence (musical positiveness)/energy across the same top
   // tracks above, from Spotify's real Audio Features API. null when that
@@ -65,12 +72,28 @@ export const fetchSpotifyTopTracks: SpotifyTrackFetcher = async (code, redirectU
       .filter((id: string | undefined): id is string => Boolean(id));
 
     const { moodValence, moodEnergy } = await fetchMoodAverages(trackIds, accessToken);
+    const topArtists = await fetchTopArtists(accessToken);
 
-    return { topTracks, moodValence, moodEnergy };
+    return { topTracks, topArtists, moodValence, moodEnergy };
   } catch {
     return undefined;
   }
 };
+
+/** Real call to Spotify's own top-artists endpoint — returns an empty list (never throws) if it fails, so an artists-fetch failure doesn't fail the whole top-tracks fetch. */
+async function fetchTopArtists(accessToken: string): Promise<string[]> {
+  try {
+    const artistsRes = await fetch(TOP_ARTISTS_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!artistsRes.ok) return [];
+    const artistsBody = await artistsRes.json();
+    const items = Array.isArray(artistsBody?.items) ? artistsBody.items : [];
+    return items
+      .map((item: { name?: unknown }) => (typeof item?.name === "string" ? item.name : undefined))
+      .filter((name: string | undefined): name is string => Boolean(name));
+  } catch {
+    return [];
+  }
+}
 
 /** Real call to Spotify's Audio Features API — returns null averages (never throws) if it fails, so a mood-averages failure doesn't fail the whole top-tracks fetch. */
 async function fetchMoodAverages(trackIds: string[], accessToken: string): Promise<{ moodValence: number | null; moodEnergy: number | null }> {

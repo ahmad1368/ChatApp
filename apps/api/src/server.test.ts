@@ -7014,7 +7014,12 @@ test("POST /api/spotify/connect 503s when Spotify isn't configured", async () =>
 
 test("POST /api/spotify/connect rejects a missing author", async () => {
   const { server, baseUrl } = listenWithSpotify(
-    new SpotifyService("client-id", "client-secret", async () => ({ topTracks: ["Song A"], moodValence: null, moodEnergy: null }))
+    new SpotifyService("client-id", "client-secret", async () => ({
+      topTracks: ["Song A"],
+      topArtists: [],
+      moodValence: null,
+      moodEnergy: null,
+    }))
   );
   try {
     const res = await fetch(`${baseUrl}/api/spotify/connect`, {
@@ -7042,9 +7047,14 @@ test("POST /api/spotify/connect returns 401 when the fetcher fails", async () =>
   }
 });
 
-test("POST /api/spotify/connect connects and stores top tracks, then GET/DELETE reflect it", async () => {
+test("POST /api/spotify/connect connects and stores top tracks/artists, then GET/DELETE reflect it", async () => {
   const { server, baseUrl } = listenWithSpotify(
-    new SpotifyService("client-id", "client-secret", async () => ({ topTracks: ["Song A — Artist A"], moodValence: 0.6, moodEnergy: 0.7 }))
+    new SpotifyService("client-id", "client-secret", async () => ({
+      topTracks: ["Song A — Artist A"],
+      topArtists: ["Artist A"],
+      moodValence: 0.6,
+      moodEnergy: 0.7,
+    }))
   );
   try {
     const connectRes = await fetch(`${baseUrl}/api/spotify/connect`, {
@@ -7054,17 +7064,31 @@ test("POST /api/spotify/connect connects and stores top tracks, then GET/DELETE 
     });
     assert.equal(connectRes.status, 200);
     assert.deepEqual(await connectRes.json(), {
-      spotifyInfo: { connected: true, topTracks: ["Song A — Artist A"], moodValence: 0.6, moodEnergy: 0.7, hideSpotify: false },
+      spotifyInfo: {
+        connected: true,
+        topTracks: ["Song A — Artist A"],
+        topArtists: ["Artist A"],
+        moodValence: 0.6,
+        moodEnergy: 0.7,
+        hideSpotify: false,
+      },
     });
 
     const getRes = await fetch(`${baseUrl}/api/spotify-info/alice`);
     assert.deepEqual(await getRes.json(), {
-      spotifyInfo: { connected: true, topTracks: ["Song A — Artist A"], moodValence: 0.6, moodEnergy: 0.7, hideSpotify: false },
+      spotifyInfo: {
+        connected: true,
+        topTracks: ["Song A — Artist A"],
+        topArtists: ["Artist A"],
+        moodValence: 0.6,
+        moodEnergy: 0.7,
+        hideSpotify: false,
+      },
     });
 
     const deleteRes = await fetch(`${baseUrl}/api/spotify/alice`, { method: "DELETE" });
     assert.deepEqual(await deleteRes.json(), {
-      spotifyInfo: { connected: false, topTracks: [], moodValence: null, moodEnergy: null, hideSpotify: false },
+      spotifyInfo: { connected: false, topTracks: [], topArtists: [], moodValence: null, moodEnergy: null, hideSpotify: false },
     });
   } finally {
     server.close();
@@ -7157,7 +7181,7 @@ test("PUT /api/spotify-info/:author updates the hide flag", async () => {
     });
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), {
-      spotifyInfo: { connected: false, topTracks: [], moodValence: null, moodEnergy: null, hideSpotify: true },
+      spotifyInfo: { connected: false, topTracks: [], topArtists: [], moodValence: null, moodEnergy: null, hideSpotify: true },
     });
   } finally {
     server.close();
@@ -13005,6 +13029,83 @@ test("GET /api/music-matches/:author excludes a candidate hiding their Spotify i
     });
 
     const res = await fetch(`${baseUrl}/api/music-matches/alice`);
+    assert.deepEqual(await res.json(), { candidates: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/artist-matches/:author returns candidates sharing at least one top artist (#326)", async () => {
+  const { server, baseUrl, spotifyInfoStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    spotifyInfoStore.connect("alice", [], null, null, ["Artist A", "Artist B"]);
+    spotifyInfoStore.connect("bob", [], null, null, ["Artist A", "Artist C"]);
+    spotifyInfoStore.connect("carol", [], null, null, ["Artist D"]);
+
+    const res = await fetch(`${baseUrl}/api/artist-matches/alice`);
+    const body = await res.json();
+    assert.deepEqual(body.candidates, [{ author: "bob", sharedArtists: ["Artist A"], compatibility: 50 }]);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/artist-matches/:author returns nothing when the author hasn't connected Spotify", async () => {
+  const { server, baseUrl, spotifyInfoStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    spotifyInfoStore.connect("bob", [], null, null, ["Artist A"]);
+
+    const res = await fetch(`${baseUrl}/api/artist-matches/alice`);
+    assert.deepEqual(await res.json(), { candidates: [] });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/artist-matches/:author excludes a candidate hiding their Spotify info", async () => {
+  const { server, baseUrl, spotifyInfoStore } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+
+    spotifyInfoStore.connect("alice", [], null, null, ["Artist A"]);
+    spotifyInfoStore.connect("bob", [], null, null, ["Artist A"]);
+    await fetch(`${baseUrl}/api/spotify-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hideSpotify: true }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/artist-matches/alice`);
     assert.deepEqual(await res.json(), { candidates: [] });
   } finally {
     server.close();
