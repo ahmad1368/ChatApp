@@ -29,6 +29,7 @@ import LocationPicker, { LocationSharePayload } from "./LocationPicker";
 import DateInvitePicker, { DateInviteSharePayload } from "./DateInvitePicker";
 import { applyBeautyFilter, applyBackgroundBlur } from "./beautyFilter";
 import IcebreakerSuggestions from "./IcebreakerSuggestions";
+import AutocompleteChips from "./AutocompleteChips";
 import LocationMessage from "./LocationMessage";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
@@ -2484,6 +2485,7 @@ export default function ChatRoom({
       {!isGuest && callTarget && messages.length < 3 && (
         <IcebreakerSuggestions author={author} candidate={callTarget} onPick={setText} />
       )}
+      {!isGuest && <AutocompleteChips text={text} onComplete={setText} />}
       <div className="chat-app__composer" id="chat-composer">
         <textarea
           ref={composerRef}

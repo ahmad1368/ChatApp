@@ -120,6 +120,7 @@ import { getSimilarProfiles } from "./similarProfiles";
 import { ClearedHistoryStore } from "./clearedHistory";
 import { AiAvatarService, AiAvatarStore, isAiAvatarStyle, AI_AVATAR_STYLES } from "./aiAvatar";
 import { WasmFilterUsageStore } from "./wasmFilterUsage";
+import { predictNextWords } from "./wordPrediction";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -5424,6 +5425,12 @@ export function createApp(deps?: {
     const unfiltered = messagesByRoom.get(roomId) ?? [];
     const all = viewer ? unfiltered.filter((m) => !blockStore.isMutuallyBlocked(viewer, m.author)) : unfiltered;
     res.json({ results: searchMessages(all, query) });
+  });
+
+  // Tinder's real "Automatic word prediction (Autocomplete) in chat"
+  // (#288) — see wordPrediction.ts for the honest frequency-table scoring.
+  app.get("/api/word-predictions", (req, res) => {
+    res.json({ predictions: predictNextWords(req.query.prefix) });
   });
 
   // Bumble's real sent/delivered/read message status (#125) — a REST
