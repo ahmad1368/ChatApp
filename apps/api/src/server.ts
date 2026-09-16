@@ -121,6 +121,7 @@ import { ClearedHistoryStore } from "./clearedHistory";
 import { AiAvatarService, AiAvatarStore, isAiAvatarStyle, AI_AVATAR_STYLES } from "./aiAvatar";
 import { WasmFilterUsageStore } from "./wasmFilterUsage";
 import { predictNextWords } from "./wordPrediction";
+import { UsageLimitStore, UsageTimeStore, getUsageStatus, USAGE_LIMIT_OPTIONS_MINUTES } from "./usageTime";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -265,6 +266,8 @@ export function createApp(deps?: {
   clearedHistoryStore: ClearedHistoryStore;
   aiAvatarStore: AiAvatarStore;
   wasmFilterUsageStore: WasmFilterUsageStore;
+  usageLimitStore: UsageLimitStore;
+  usageTimeStore: UsageTimeStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -505,6 +508,8 @@ export function createApp(deps?: {
   const aiAvatarService = deps?.aiAvatarService ?? new AiAvatarService();
   const aiAvatarStore = new AiAvatarStore();
   const wasmFilterUsageStore = new WasmFilterUsageStore();
+  const usageLimitStore = new UsageLimitStore();
+  const usageTimeStore = new UsageTimeStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -1098,6 +1103,35 @@ export function createApp(deps?: {
 
   app.get("/api/wasm-filter-usage/:author", (req, res) => {
     res.json({ count: wasmFilterUsageStore.getCount(req.params.author) });
+  });
+
+  // Bumble's real "Ability to limit daily app usage time" (#289) — see
+  // usageTime.ts for the honest client-reports/server-aggregates shape
+  // and why a reached limit is disclosed, not enforced.
+  app.get("/api/usage-limit/options", (_req, res) => {
+    res.json({ options: USAGE_LIMIT_OPTIONS_MINUTES });
+  });
+
+  app.get("/api/usage-limit/:author", (req, res) => {
+    res.json({ dailyLimitMinutes: usageLimitStore.getLimit(req.params.author) });
+  });
+
+  app.put("/api/usage-limit/:author", (req, res) => {
+    const result = usageLimitStore.setLimit(req.params.author, req.body?.dailyLimitMinutes ?? null);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ dailyLimitMinutes: result.dailyLimitMinutes });
+  });
+
+  app.get("/api/usage-time/:author", (req, res) => {
+    res.json(getUsageStatus(usageTimeStore, usageLimitStore, req.params.author));
+  });
+
+  app.post("/api/usage-time/:author", (req, res) => {
+    usageTimeStore.recordUsage(req.params.author, req.body?.seconds);
+    res.status(201).json(getUsageStatus(usageTimeStore, usageLimitStore, req.params.author));
   });
 
   // Photo album access level (#59): Bumble's real "Private Album" control,
@@ -6413,6 +6447,8 @@ export function createApp(deps?: {
     clearedHistoryStore,
     aiAvatarStore,
     wasmFilterUsageStore,
+    usageLimitStore,
+    usageTimeStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,

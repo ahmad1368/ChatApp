@@ -30,6 +30,7 @@ import DateInvitePicker, { DateInviteSharePayload } from "./DateInvitePicker";
 import { applyBeautyFilter, applyBackgroundBlur } from "./beautyFilter";
 import IcebreakerSuggestions from "./IcebreakerSuggestions";
 import AutocompleteChips from "./AutocompleteChips";
+import UsageTimeTracker from "./UsageTimeTracker";
 import LocationMessage from "./LocationMessage";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
@@ -2234,6 +2235,7 @@ export default function ChatRoom({
         </div>
       )}
       <SOSButton author={author} />
+      {!isGuest && <UsageTimeTracker author={author} />}
       {callState === "idle" && callTarget && !isGuest && (
         <div className="chat-app__call-buttons">
           <button className="chat-app__call-button" onClick={() => startCall(callTarget, false)}>
@@ -2848,6 +2850,8 @@ export default function ChatRoom({
         <Link href="/settings/stranger-pictures">Picture messages &rarr;</Link>
         {" · "}
         <Link href="/settings/measurement-units">Measurement units &rarr;</Link>
+        {" · "}
+        <Link href="/settings/usage-limit">Daily usage limit &rarr;</Link>
         {" · "}
         <Link href="/settings/permissions">App permissions &rarr;</Link>
         {" · "}
