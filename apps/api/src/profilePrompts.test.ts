@@ -94,3 +94,86 @@ test("each author's prompt answers are independent", () => {
   store.setAnswers("alice", [{ promptId: PROMPT_A, answer: "Alice's answer" }]);
   assert.deepEqual(store.getAnswers("bob"), []);
 });
+
+test("getPinnedPromptId() returns null before any pin", () => {
+  const store = new ProfilePromptsStore();
+  assert.equal(store.getPinnedPromptId("alice"), null);
+});
+
+test("setPinnedPrompt() rejects a missing author", () => {
+  const store = new ProfilePromptsStore();
+  const result = store.setPinnedPrompt("", PROMPT_A);
+  assert.equal(result.success, false);
+});
+
+test("setPinnedPrompt() rejects a prompt the author hasn't answered", () => {
+  const store = new ProfilePromptsStore();
+  store.setAnswers("alice", [{ promptId: PROMPT_A, answer: "A" }]);
+  const result = store.setPinnedPrompt("alice", PROMPT_B);
+  assert.equal(result.success, false);
+  assert.equal(store.getPinnedPromptId("alice"), null);
+});
+
+test("setPinnedPrompt() accepts one of the author's answered prompts", () => {
+  const store = new ProfilePromptsStore();
+  store.setAnswers("alice", [
+    { promptId: PROMPT_A, answer: "A" },
+    { promptId: PROMPT_B, answer: "B" },
+  ]);
+  const result = store.setPinnedPrompt("alice", PROMPT_B);
+  assert.equal(result.success, true);
+  assert.equal(store.getPinnedPromptId("alice"), PROMPT_B);
+});
+
+test("getAnswers() sorts the pinned answer first, keeping the rest in order", () => {
+  const store = new ProfilePromptsStore();
+  store.setAnswers("alice", [
+    { promptId: PROMPT_A, answer: "A" },
+    { promptId: PROMPT_B, answer: "B" },
+    { promptId: PROMPT_C, answer: "C" },
+  ]);
+  store.setPinnedPrompt("alice", PROMPT_C);
+  const answers = store.getAnswers("alice");
+  assert.deepEqual(
+    answers.map((a) => a.promptId),
+    [PROMPT_C, PROMPT_A, PROMPT_B]
+  );
+});
+
+test("setPinnedPrompt() with null unpins", () => {
+  const store = new ProfilePromptsStore();
+  store.setAnswers("alice", [{ promptId: PROMPT_A, answer: "A" }]);
+  store.setPinnedPrompt("alice", PROMPT_A);
+  const result = store.setPinnedPrompt("alice", null);
+  assert.equal(result.success, true);
+  assert.equal(store.getPinnedPromptId("alice"), null);
+});
+
+test("re-answering prompts clears a pin that's no longer in the new set", () => {
+  const store = new ProfilePromptsStore();
+  store.setAnswers("alice", [{ promptId: PROMPT_A, answer: "A" }]);
+  store.setPinnedPrompt("alice", PROMPT_A);
+  store.setAnswers("alice", [{ promptId: PROMPT_B, answer: "B" }]);
+  assert.equal(store.getPinnedPromptId("alice"), null);
+});
+
+test("re-answering prompts keeps a pin that's still in the new set", () => {
+  const store = new ProfilePromptsStore();
+  store.setAnswers("alice", [
+    { promptId: PROMPT_A, answer: "A" },
+    { promptId: PROMPT_B, answer: "B" },
+  ]);
+  store.setPinnedPrompt("alice", PROMPT_A);
+  store.setAnswers("alice", [
+    { promptId: PROMPT_A, answer: "A updated" },
+    { promptId: PROMPT_C, answer: "C" },
+  ]);
+  assert.equal(store.getPinnedPromptId("alice"), PROMPT_A);
+});
+
+test("each author's pinned prompt is independent", () => {
+  const store = new ProfilePromptsStore();
+  store.setAnswers("alice", [{ promptId: PROMPT_A, answer: "A" }]);
+  store.setPinnedPrompt("alice", PROMPT_A);
+  assert.equal(store.getPinnedPromptId("bob"), null);
+});

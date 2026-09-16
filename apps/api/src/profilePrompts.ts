@@ -37,6 +37,8 @@ export type SetPromptAnswersResult =
   | { success: true; answers: ResolvedProfilePromptAnswer[] }
   | { success: false; error: string };
 
+export type SetPinnedPromptResult = { success: true } | { success: false; error: string };
+
 // Same phone-number/address rule onboarding.ts and bio.ts apply to other
 // free-text profile fields — reimplemented locally since it's a private
 // detail in each of those, not a shared export.
@@ -60,9 +62,17 @@ function findPrompt(promptId: string): ProfilePrompt | undefined {
  * Turning a prompt answer into the start of a conversation happens in the
  * existing chat surface (a user viewing this profile can already message
  * them there); no separate "reply to this prompt" message type is modeled.
+ *
+ * Hinge's real "Ability to pin a specific answer above bio prompts"
+ * (#275): a real, independent designation — not just resubmitting
+ * answers in a different order — so a pin survives re-answering the
+ * other two prompts. Resubmitting a whole new answer set via
+ * setAnswers() clears the pin if the pinned prompt isn't part of the
+ * new selection, rather than leaving a dangling reference.
  */
 export class ProfilePromptsStore {
   private answersByAuthor = new Map<string, ProfilePromptAnswer[]>();
+  private pinnedPromptIdByAuthor = new Map<string, string>();
 
   setAnswers(author: unknown, answers: unknown): SetPromptAnswersResult {
     const authorName = typeof author === "string" ? author.trim() : "";
@@ -110,11 +120,42 @@ export class ProfilePromptsStore {
       authorName,
       validated.map(({ promptId, answer }) => ({ promptId, answer }))
     );
+    if (!seenPromptIds.has(this.pinnedPromptIdByAuthor.get(authorName) ?? "")) {
+      this.pinnedPromptIdByAuthor.delete(authorName);
+    }
     return { success: true, answers: validated };
   }
 
+  /** promptId must be one of this author's currently answered prompts; pass null to unpin. */
+  setPinnedPrompt(author: unknown, promptId: unknown): SetPinnedPromptResult {
+    const authorName = typeof author === "string" ? author.trim() : "";
+    if (!authorName) {
+      return { success: false, error: "author is required" };
+    }
+    if (promptId === null || promptId === undefined) {
+      this.pinnedPromptIdByAuthor.delete(authorName);
+      return { success: true };
+    }
+    if (typeof promptId !== "string") {
+      return { success: false, error: "promptId must be a string" };
+    }
+    const answered = this.answersByAuthor.get(authorName) ?? [];
+    if (!answered.some((entry) => entry.promptId === promptId)) {
+      return { success: false, error: "You can only pin one of your own answered prompts" };
+    }
+    this.pinnedPromptIdByAuthor.set(authorName, promptId);
+    return { success: true };
+  }
+
+  getPinnedPromptId(author: string): string | null {
+    return this.pinnedPromptIdByAuthor.get(author) ?? null;
+  }
+
+  /** The pinned answer (if any) always sorts first; the rest keep their stored order. */
   getAnswers(author: string): ResolvedProfilePromptAnswer[] {
     const stored = this.answersByAuthor.get(author) ?? [];
-    return stored.map(({ promptId, answer }) => ({ promptId, answer, prompt: findPrompt(promptId)?.text ?? promptId }));
+    const pinnedId = this.pinnedPromptIdByAuthor.get(author);
+    const ordered = pinnedId ? [...stored].sort((a, b) => (a.promptId === pinnedId ? -1 : b.promptId === pinnedId ? 1 : 0)) : stored;
+    return ordered.map(({ promptId, answer }) => ({ promptId, answer, prompt: findPrompt(promptId)?.text ?? promptId }));
   }
 }

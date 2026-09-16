@@ -21,6 +21,7 @@ const EMPTY_SLOT: Slot = { promptId: "", answer: "" };
 export default function ProfilePromptsEditor({ author }: { author: string }) {
   const [catalog, setCatalog] = useState<ProfilePrompt[]>([]);
   const [slots, setSlots] = useState<Slot[]>([EMPTY_SLOT, EMPTY_SLOT, EMPTY_SLOT]);
+  const [pinnedPromptId, setPinnedPromptId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -37,9 +38,24 @@ export default function ProfilePromptsEditor({ author }: { author: string }) {
         const padded = [...existing];
         while (padded.length < MAX_SELECTED_PROMPTS) padded.push(EMPTY_SLOT);
         setSlots(padded);
+        setPinnedPromptId(answersBody.pinnedPromptId ?? null);
       })
       .catch(() => {});
   }, [author]);
+
+  // Hinge's real "Ability to pin a specific answer above bio prompts"
+  // (#275) — a real, independent designation the server enforces must be
+  // one of this author's currently saved answers (see profilePrompts.ts).
+  const togglePin = async (promptId: string) => {
+    const nextPromptId = pinnedPromptId === promptId ? null : promptId;
+    const res = await fetch(`${API_URL}/api/profile-prompts/${encodeURIComponent(author)}/pin`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ promptId: nextPromptId }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) setPinnedPromptId(body.pinnedPromptId ?? null);
+  };
 
   const updateSlot = (index: number, patch: Partial<Slot>) => {
     setSlots((prev) => prev.map((slot, i) => (i === index ? { ...slot, ...patch } : slot)));
@@ -58,6 +74,11 @@ export default function ProfilePromptsEditor({ author }: { author: string }) {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body.error ?? "Failed to save prompts");
+      }
+      // The server clears a pin whose prompt is no longer part of the
+      // saved set — mirror that locally instead of a stale pinned prompt.
+      if (pinnedPromptId && !answers.some((a: Slot) => a.promptId === pinnedPromptId)) {
+        setPinnedPromptId(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save prompts");
@@ -103,6 +124,15 @@ export default function ProfilePromptsEditor({ author }: { author: string }) {
             />
             {takenElsewhere && (
               <p style={{ color: "var(--color-danger)" }}>Each prompt can only be selected once</p>
+            )}
+            {slot.promptId && slot.answer.trim() && (
+              <button
+                onClick={() => togglePin(slot.promptId)}
+                aria-pressed={pinnedPromptId === slot.promptId}
+                style={{ marginTop: 4, fontWeight: pinnedPromptId === slot.promptId ? "bold" : "normal" }}
+              >
+                {pinnedPromptId === slot.promptId ? "📌 Pinned above other prompts" : "📌 Pin above other prompts"}
+              </button>
             )}
           </div>
         );

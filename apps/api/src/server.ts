@@ -1172,7 +1172,19 @@ export function createApp(deps?: {
   });
 
   app.get("/api/profile-prompts/:author", (req, res) => {
-    res.json({ answers: profilePromptsStore.getAnswers(req.params.author) });
+    res.json({ answers: profilePromptsStore.getAnswers(req.params.author), pinnedPromptId: profilePromptsStore.getPinnedPromptId(req.params.author) });
+  });
+
+  // Hinge's real "Ability to pin a specific answer above bio prompts"
+  // (#275) — see profilePrompts.ts's doc comment for why this is a real,
+  // independent designation rather than just reordering the answer set.
+  app.put("/api/profile-prompts/:author/pin", (req, res) => {
+    const result = profilePromptsStore.setPinnedPrompt(req.params.author, req.body?.promptId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ answers: profilePromptsStore.getAnswers(req.params.author), pinnedPromptId: profilePromptsStore.getPinnedPromptId(req.params.author) });
   });
 
   // Editable-anytime job title + workplace (#67), same one-value-per-author,
