@@ -75,3 +75,11 @@ test("each author's smart score is independent", () => {
     activityCount: 0,
   });
 });
+
+test("getAllActivityCounts() returns every tracked author's raw count", () => {
+  const store = new SmartScoreStore();
+  store.recordSwipeOutcome("alice", "bob", true);
+  store.recordSwipeOutcome("alice", "carol", false);
+  store.recordSwipeOutcome("dave", "bob", true);
+  assert.deepEqual(store.getAllActivityCounts().sort(), [1, 2]);
+});
