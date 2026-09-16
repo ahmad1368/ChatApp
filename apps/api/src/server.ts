@@ -6408,6 +6408,25 @@ export async function createChatServer() {
       io.to(roomId).emit("call:signal", { callId, from, to, data: payload.data });
     });
 
+    // Tinder's real "Automatic captions for video calls" (#246): the
+    // browser's own real Web Speech API (SpeechRecognition) running on
+    // each participant's own microphone, the same honest "real native
+    // capability, not a fabricated model" scoping as #244's
+    // VoiceSwipeControl — this server never transcribes or touches audio
+    // itself, only relays the already-transcribed caption text, same
+    // division of responsibility as call:signal's WebRTC relay above.
+    socket.on("call:caption", (payload: { callId?: string; roomId?: string; from?: string; to?: string; text?: unknown }) => {
+      const callId = typeof payload?.callId === "string" ? payload.callId : "";
+      const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+      const from = typeof payload?.from === "string" ? payload.from : "";
+      const to = typeof payload?.to === "string" ? payload.to : "";
+      const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+      if (!callId || !roomId || !from || !to || !text) return;
+      const call = callStore.get(callId);
+      if (!call || call.status !== "active") return;
+      io.to(roomId).emit("call:caption", { callId, from, to, text });
+    });
+
     // Bumble's real typing indicator (#126) — client-driven start/stop
     // (the client debounces its own "stopped typing" after a pause in
     // keystrokes; see typing.ts for why there's no reliable server-side
