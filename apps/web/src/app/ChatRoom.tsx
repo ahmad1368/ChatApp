@@ -31,6 +31,7 @@ import { applyBeautyFilter, applyBackgroundBlur } from "./beautyFilter";
 import IcebreakerSuggestions from "./IcebreakerSuggestions";
 import AutocompleteChips from "./AutocompleteChips";
 import UsageTimeTracker from "./UsageTimeTracker";
+import AccountSwitcher from "./AccountSwitcher";
 import LocationMessage from "./LocationMessage";
 import { LocaleToggle, useLocale } from "./LocaleProvider";
 import ThemeToggle from "./ThemeToggle";
@@ -2172,6 +2173,7 @@ export default function ChatRoom({
       <div className="chat-app__header">
         <h1>{t("title")}</h1>
         <div className="chat-app__header-links">
+          <AccountSwitcher author={author} />
           <Link href={`/privacy?author=${encodeURIComponent(author)}`}>Privacy</Link>
           <Link href={`/privacy/export?author=${encodeURIComponent(author)}`}>Download my data</Link>
           <Link href={`/privacy/location?author=${encodeURIComponent(author)}`}>Location privacy</Link>
