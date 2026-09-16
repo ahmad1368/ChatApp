@@ -124,6 +124,7 @@ import { predictNextWords } from "./wordPrediction";
 import { UsageLimitStore, UsageTimeStore, getUsageStatus, USAGE_LIMIT_OPTIONS_MINUTES } from "./usageTime";
 import { PerContactRingtoneStore } from "./perContactRingtone";
 import { computeMoodCompatibility } from "./musicMood";
+import { FeedbackStore } from "./feedback";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -271,6 +272,7 @@ export function createApp(deps?: {
   usageLimitStore: UsageLimitStore;
   usageTimeStore: UsageTimeStore;
   perContactRingtoneStore: PerContactRingtoneStore;
+  feedbackStore: FeedbackStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -514,6 +516,7 @@ export function createApp(deps?: {
   const usageLimitStore = new UsageLimitStore();
   const usageTimeStore = new UsageTimeStore();
   const perContactRingtoneStore = new PerContactRingtoneStore();
+  const feedbackStore = new FeedbackStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -6000,6 +6003,23 @@ export function createApp(deps?: {
     res.status(202).json({ id: report.id });
   });
 
+  // Bumble's real "Ability to send direct feedback to the development
+  // team" (#294) — see feedback.ts for why this is distinct from #180's
+  // two-way support tickets.
+  app.post("/api/feedback", (req, res) => {
+    const result = feedbackStore.submit(req.body?.author, req.body?.category, req.body?.message);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ feedback: result.feedback });
+  });
+
+  app.get("/api/admin/feedback", (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json({ feedback: feedbackStore.listAll() });
+  });
+
   // Google Sign-In: fully real verification (validates the ID token's
   // signature against Google's public keys and checks audience), gated
   // behind GOOGLE_CLIENT_ID since there's no "just log it" stand-in for
@@ -6514,6 +6534,7 @@ export function createApp(deps?: {
     usageLimitStore,
     usageTimeStore,
     perContactRingtoneStore,
+    feedbackStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,

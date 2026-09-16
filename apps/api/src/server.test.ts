@@ -54,6 +54,7 @@ function listen() {
     usageLimitStore,
     usageTimeStore,
     perContactRingtoneStore,
+    feedbackStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -91,6 +92,7 @@ function listen() {
     usageLimitStore,
     usageTimeStore,
     perContactRingtoneStore,
+    feedbackStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -1071,6 +1073,96 @@ test("POST /api/error-reports accepts a valid report and stores it", async () =>
     assert.equal(errorReportStore.count(), 1);
   } finally {
     server.close();
+  }
+});
+
+test("POST /api/feedback accepts valid feedback and stores it (#294)", async () => {
+  const { server, baseUrl, feedbackStore } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", category: "bug", message: "The swipe button is unresponsive." }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.feedback.author, "alice");
+    assert.equal(body.feedback.category, "bug");
+    assert.equal(feedbackStore.count(), 1);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/feedback rejects an invalid category (#294)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", category: "complaint", message: "hi" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/feedback rejects a missing message (#294)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", category: "general", message: "" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/admin/feedback requires the admin key (#294)", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/feedback`);
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
+  }
+});
+
+test("GET /api/admin/feedback returns submitted feedback, newest first (#294)", async () => {
+  const previous = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = "test-admin-secret";
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice", category: "bug", message: "first" }),
+    });
+    await fetch(`${baseUrl}/api/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob", category: "featureRequest", message: "second" }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/feedback`, { headers: { "x-admin-key": "test-admin-secret" } });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(
+      body.feedback.map((f: { message: string }) => f.message),
+      ["second", "first"]
+    );
+  } finally {
+    server.close();
+    if (previous === undefined) delete process.env.ADMIN_API_KEY;
+    else process.env.ADMIN_API_KEY = previous;
   }
 });
 

@@ -2891,6 +2891,8 @@ export default function ChatRoom({
         <Link href="/settings/clear-cache">Clear cache &rarr;</Link>
         {" · "}
         <Link href="/settings/legal">Legal &amp; support &rarr;</Link>
+        {" · "}
+        <Link href="/feedback">Send feedback &rarr;</Link>
       </section>
       {showShortcuts && <KeyboardShortcutsHelp onClose={() => setShowShortcuts(false)} />}
       {reportTarget && (
