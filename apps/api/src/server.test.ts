@@ -50,6 +50,7 @@ function listen() {
     strangerPictureBlockStore,
     clearedHistoryStore,
     aiAvatarStore,
+    wasmFilterUsageStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -83,6 +84,7 @@ function listen() {
     strangerPictureBlockStore,
     clearedHistoryStore,
     aiAvatarStore,
+    wasmFilterUsageStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -3836,6 +3838,48 @@ test("POST /api/ai-avatar/:author returns 502 when generation fails even though 
       body: JSON.stringify({ photoId, style: "anime" }),
     });
     assert.equal(res.status, 502);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/wasm-filter-usage/:author defaults to 0 (#287)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/wasm-filter-usage/alice`);
+    assert.deepEqual(await res.json(), { count: 0 });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/wasm-filter-usage/:author increments the count (#287)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const first = await fetch(`${baseUrl}/api/wasm-filter-usage/alice`, { method: "POST" });
+    assert.equal(first.status, 201);
+    assert.deepEqual(await first.json(), { count: 1 });
+
+    const second = await fetch(`${baseUrl}/api/wasm-filter-usage/alice`, { method: "POST" });
+    assert.deepEqual(await second.json(), { count: 2 });
+
+    const getRes = await fetch(`${baseUrl}/api/wasm-filter-usage/alice`);
+    assert.deepEqual(await getRes.json(), { count: 2 });
+  } finally {
+    server.close();
+  }
+});
+
+test("wasm-filter-usage counts are tracked independently per author (#287)", async () => {
+  const { server, baseUrl, wasmFilterUsageStore } = listen();
+  try {
+    wasmFilterUsageStore.record("alice");
+    wasmFilterUsageStore.record("bob");
+    wasmFilterUsageStore.record("bob");
+    const aliceRes = await fetch(`${baseUrl}/api/wasm-filter-usage/alice`);
+    const bobRes = await fetch(`${baseUrl}/api/wasm-filter-usage/bob`);
+    assert.deepEqual(await aliceRes.json(), { count: 1 });
+    assert.deepEqual(await bobRes.json(), { count: 2 });
   } finally {
     server.close();
   }
