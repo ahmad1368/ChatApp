@@ -20,6 +20,7 @@ import LanguagesInfoEditor from "../../LanguagesInfoEditor";
 import BeliefsInfoEditor from "../../BeliefsInfoEditor";
 import PetsInfoEditor from "../../PetsInfoEditor";
 import DietInfoEditor from "../../DietInfoEditor";
+import BloodTypeInfoEditor from "../../BloodTypeInfoEditor";
 import PersonalityInfoEditor from "../../PersonalityInfoEditor";
 import SpotifyConnect from "../../SpotifyConnect";
 import FacebookConnect from "../../FacebookConnect";
@@ -80,6 +81,7 @@ export default function ProfileSettingsPage() {
       <BeliefsInfoEditor author={author} />
       <PetsInfoEditor author={author} />
       <DietInfoEditor author={author} />
+      <BloodTypeInfoEditor author={author} />
       <PersonalityInfoEditor author={author} />
       <SpotifyConnect author={author} />
       <FacebookConnect author={author} />

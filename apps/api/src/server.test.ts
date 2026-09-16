@@ -8045,6 +8045,7 @@ const EMPTY_DISCOVERY_FILTERS = {
   requireVerifiedOnly: false,
   requiredPets: [],
   requiredDiets: [],
+  requiredBloodTypes: [],
 };
 
 test("GET /api/discovery-filters/:author returns empty filters before any update", async () => {
@@ -8074,6 +8075,7 @@ test("PUT /api/discovery-filters/:author saves filters and GET returns them", as
         requireVerifiedOnly: true,
         requiredPets: ["dog", "cat"],
         requiredDiets: ["vegan"],
+        requiredBloodTypes: [],
       }),
     });
     assert.equal(putRes.status, 200);
@@ -8087,6 +8089,7 @@ test("PUT /api/discovery-filters/:author saves filters and GET returns them", as
       requireVerifiedOnly: true,
       requiredPets: ["dog", "cat"],
       requiredDiets: ["vegan"],
+      requiredBloodTypes: [],
     };
     assert.deepEqual(await putRes.json(), { filters: expected });
 
@@ -8247,6 +8250,7 @@ test("GET /api/swipe-candidates/:author excludes candidates that fail the swiper
         allowedDrinking: [],
         requiredPets: [],
         requiredDiets: [],
+        requiredBloodTypes: [],
       }),
     });
 
@@ -8293,6 +8297,7 @@ test("GET /api/swipe-candidates/:author excludes candidates missing a required l
         allowedDrinking: [],
         requiredPets: [],
         requiredDiets: [],
+        requiredBloodTypes: [],
       }),
     });
 
@@ -8346,6 +8351,7 @@ test("GET /api/swipe-candidates/:author excludes smokers when requireNonSmoking 
         allowedDrinking: [],
         requiredPets: [],
         requiredDiets: [],
+        requiredBloodTypes: [],
       }),
     });
 
@@ -8392,6 +8398,7 @@ test("GET /api/swipe-candidates/:author excludes candidates outside allowedDrink
         allowedDrinking: ["no"],
         requiredPets: [],
         requiredDiets: [],
+        requiredBloodTypes: [],
       }),
     });
 
@@ -8454,6 +8461,7 @@ test("GET /api/swipe-candidates/:author excludes unverified candidates when requ
         requireVerifiedOnly: true,
         requiredPets: [],
         requiredDiets: [],
+        requiredBloodTypes: [],
       }),
     });
 
@@ -8512,6 +8520,7 @@ test("GET /api/swipe-candidates/:author excludes candidates missing a required p
         allowedDrinking: [],
         requiredPets: ["dog", "cat"],
         requiredDiets: [],
+        requiredBloodTypes: [],
       }),
     });
 
@@ -8568,6 +8577,7 @@ test("GET /api/swipe-candidates/:author excludes candidates whose diet isn't in 
         allowedDrinking: [],
         requiredPets: [],
         requiredDiets: ["vegan", "vegetarian"],
+        requiredBloodTypes: [],
       }),
     });
 
@@ -8618,6 +8628,106 @@ test("PUT /api/diet-info/:author rejects an invalid diet", async () => {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ diet: "carnivore", hideDiet: false }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author excludes candidates whose blood type isn't in requiredBloodTypes (#302)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/blood-type-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bloodType: "A+", hideBloodType: false }),
+    });
+    await fetch(`${baseUrl}/api/blood-type-info/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bloodType: "O+", hideBloodType: false }),
+    });
+
+    await fetch(`${baseUrl}/api/discovery-filters/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        minHeightCm: null,
+        maxHeightCm: null,
+        requireEducation: false,
+        requiredLanguages: [],
+        requireNonSmoking: false,
+        allowedDrinking: [],
+        requiredPets: [],
+        requiredDiets: [],
+        requiredBloodTypes: ["O+", "O-"],
+      }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["carol"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/blood-type-info/catalog returns the fixed blood type catalog (#302)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/blood-type-info/catalog`);
+    const body = await res.json();
+    assert.ok(body.bloodTypes.includes("O+"));
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/blood-type-info/:author saves blood type, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/blood-type-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bloodType: "AB-", hideBloodType: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { bloodTypeInfo: { bloodType: "AB-", hideBloodType: true } });
+
+    const getRes = await fetch(`${baseUrl}/api/blood-type-info/alice`);
+    assert.deepEqual(await getRes.json(), { bloodTypeInfo: { bloodType: "AB-", hideBloodType: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/blood-type-info/:author rejects an invalid blood type", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/blood-type-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bloodType: "Z+", hideBloodType: false }),
     });
     assert.equal(res.status, 400);
   } finally {
