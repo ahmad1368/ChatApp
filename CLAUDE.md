@@ -46,6 +46,10 @@ Issue #168 ("Quickly change the app language") is an exact duplicate of already-
 
 Issue #269 ("Ability to set 'I'm traveling' mode") is an exact duplicate of already-implemented #84 ("Show work/travel mode") in the auto-generated backlog — same feature, same reference framing, no differentiating angle (unlike #102's Passport mode, which is a genuinely different, functional location-override feature, not a cosmetic badge). #84 already shipped this: `TravelModeInfoStore` (`PUT`/`GET /api/travel-mode-info/:author`) is a real "I'm temporarily somewhere else" toggle plus an optional destination string. No separate implementation was made for #269 — skip it in `/next-issue` picks (see that file's step 1) and close it as a duplicate of #84 once confirmed.
 
+## Known backlog overlap: #96 and #276
+
+Issue #276 ("Filter by exact height in centimeters") is an exact duplicate of already-implemented #96 ("Advanced filter by height, education and language") in the auto-generated backlog — same feature, no differentiating angle. #96 already shipped this: `DiscoveryFiltersStore` (`discoveryFilters.ts`) lets each author set a real `minHeightCm`/`maxHeightCm` range (stored and filtered in exact centimeters, not some other unit), enforced by `candidateMatchesFilters()` against `/api/swipe-candidates/:author`, edited via `DiscoveryFiltersEditor` on `/settings/profile` — "exact" doesn't add anything a min=max range doesn't already express. No separate implementation was made for #276 — skip it in `/next-issue` picks (see that file's step 1) and close it as a duplicate of #96 once confirmed.
+
 ## Issue workflow
 
 Issues are tracked on GitHub (`gh issue list`) and implemented one at a time via `/next-issue` (`.claude/commands/next-issue.md`). Read that file for the exact branch/PR rules before doing any issue work — do not improvise a different workflow.
