@@ -294,6 +294,10 @@ export const DATE_STATUS_LABELS: Record<DateStatus, string> = {
 export interface TrustedContactInfo {
   name: string;
   shareCode: string;
+  // #314's real "Automatic SMS alert system if there's no response after
+  // a date" needs a real phone number to actually text — optional, since
+  // a contact can still get a share-code link with no SMS alert.
+  phone?: string;
 }
 
 export interface SharedDatePayload {
@@ -302,6 +306,7 @@ export interface SharedDatePayload {
   location: string;
   scheduledAt: string;
   contactNames: string[];
+  contactPhones?: string[];
 }
 
 export interface SharedDate {
@@ -314,6 +319,9 @@ export interface SharedDate {
   revoked: boolean;
   createdAt: string;
   contacts: TrustedContactInfo[];
+  // #314: whether the automatic no-response alert has already fired for
+  // this date, so a client can show "your contacts were alerted."
+  noResponseAlertSent: boolean;
 }
 
 export interface SharedDateView {

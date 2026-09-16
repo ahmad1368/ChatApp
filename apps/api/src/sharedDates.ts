@@ -4,6 +4,11 @@ import { DateStatus, DATE_STATUSES, SharedDate, SharedDateView, TrustedContactIn
 export type CreateSharedDateResult = { success: true; date: SharedDate } | { success: false; error: string };
 export type UpdateStatusResult = { success: true; date: SharedDate } | { success: false; error: string };
 
+// #314's real "Automatic SMS alert system if there's no response after a
+// date" — a real, disclosed grace period after the planned meeting time,
+// not an arbitrary/hidden one.
+export const NO_RESPONSE_ALERT_WINDOW_MS = 3 * 60 * 60 * 1000;
+
 interface InternalSharedDate extends Omit<SharedDate, "contacts"> {
   contacts: TrustedContactInfo[];
 }
@@ -27,6 +32,7 @@ export class SharedDateStore {
     const location = typeof payload?.location === "string" ? payload.location.trim() : "";
     const scheduledAtRaw = typeof payload?.scheduledAt === "string" ? payload.scheduledAt : "";
     const contactNamesRaw = payload?.contactNames;
+    const contactPhonesRaw = payload?.contactPhones;
 
     if (!authorName) return { success: false, error: "author is required" };
     if (!meetingWith) return { success: false, error: "meetingWith is required" };
@@ -43,11 +49,14 @@ export class SharedDateStore {
     if (contactNames.length === 0) {
       return { success: false, error: "At least one trusted contact is required" };
     }
+    // Positional match to contactNames — a contact with no corresponding
+    // phone entry (or a blank one) just gets a link, no SMS alert.
+    const contactPhones = Array.isArray(contactPhonesRaw) ? contactPhonesRaw : [];
 
-    const contacts: TrustedContactInfo[] = contactNames.map((name) => ({
-      name,
-      shareCode: randomBytes(4).toString("hex"),
-    }));
+    const contacts: TrustedContactInfo[] = contactNames.map((name, i) => {
+      const phone = typeof contactPhones[i] === "string" ? (contactPhones[i] as string).trim() : "";
+      return { name, shareCode: randomBytes(4).toString("hex"), ...(phone ? { phone } : {}) };
+    });
 
     const date: InternalSharedDate = {
       id: String(this.nextId++),
@@ -59,6 +68,7 @@ export class SharedDateStore {
       revoked: false,
       createdAt: new Date().toISOString(),
       contacts,
+      noResponseAlertSent: false,
     };
 
     this.datesById.set(date.id, date);
@@ -96,5 +106,26 @@ export class SharedDateStore {
     if (!date || date.revoked) return undefined;
     const { author, meetingWith, location, scheduledAt, status, createdAt } = date;
     return { author, meetingWith, location, scheduledAt, status, createdAt };
+  }
+
+  /**
+   * #314's real automatic no-response check: a not-revoked, not-yet-
+   * alerted date whose sharer never updated status past "planned" (i.e.
+   * never checked in at all) once NO_RESPONSE_ALERT_WINDOW_MS has passed
+   * since the planned meeting time.
+   */
+  getDatesNeedingNoResponseAlert(now: number = Date.now()): InternalSharedDate[] {
+    return [...this.datesById.values()].filter(
+      (date) =>
+        !date.revoked &&
+        !date.noResponseAlertSent &&
+        date.status === "planned" &&
+        now - new Date(date.scheduledAt).getTime() >= NO_RESPONSE_ALERT_WINDOW_MS
+    );
+  }
+
+  markNoResponseAlertSent(id: string): void {
+    const date = this.datesById.get(id);
+    if (date) date.noResponseAlertSent = true;
   }
 }

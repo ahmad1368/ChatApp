@@ -12,6 +12,7 @@ export default function ShareMyDate() {
   const [location, setLocation] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [contactNames, setContactNames] = useState("");
+  const [contactPhones, setContactPhones] = useState("");
   const [sharedDate, setSharedDate] = useState<SharedDate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revoked, setRevoked] = useState(false);
@@ -22,6 +23,9 @@ export default function ShareMyDate() {
       .split(",")
       .map((n) => n.trim())
       .filter(Boolean);
+    // Positionally matched to names — #314's real automatic no-response
+    // SMS alert needs a real phone per contact to actually text.
+    const phones = contactPhones.split(",").map((p) => p.trim());
     const res = await fetch(`${API_URL}/api/shared-dates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -31,6 +35,7 @@ export default function ShareMyDate() {
         location,
         scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : "",
         contactNames: names,
+        contactPhones: phones,
       }),
     });
     const body = await res.json();
@@ -99,6 +104,16 @@ export default function ShareMyDate() {
             placeholder="Trusted contacts, comma-separated (e.g. Sam, Priya)"
             style={{ padding: 8 }}
           />
+          <input
+            value={contactPhones}
+            onChange={(e) => setContactPhones(e.target.value)}
+            placeholder="Their phone numbers, same order, comma-separated (optional)"
+            style={{ padding: 8 }}
+          />
+          <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
+            Add a phone number to automatically text that contact if you haven&apos;t checked in a few hours after
+            your date.
+          </p>
           <button onClick={create} style={{ alignSelf: "flex-start" }}>
             Start sharing
           </button>
@@ -127,10 +142,18 @@ export default function ShareMyDate() {
           <ul style={{ fontSize: 13 }}>
             {sharedDate.contacts.map((contact) => (
               <li key={contact.shareCode}>
-                {contact.name}: {`${typeof window !== "undefined" ? window.location.origin : ""}/share-my-date/shared/${contact.shareCode}`}
+                {contact.name}
+                {contact.phone ? " 📱" : ""}: {`${typeof window !== "undefined" ? window.location.origin : ""}/share-my-date/shared/${contact.shareCode}`}
               </li>
             ))}
           </ul>
+
+          {sharedDate.noResponseAlertSent && (
+            <p style={{ fontSize: 13, color: "#b00020" }}>
+              Your trusted contacts with a phone number on file were texted — no check-in was seen a few hours after
+              your date.
+            </p>
+          )}
 
           <button onClick={revoke} style={{ color: "#b00020" }}>
             Stop sharing

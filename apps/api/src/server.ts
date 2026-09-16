@@ -136,6 +136,7 @@ import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
 import { DuplicatePhotoDetector } from "./duplicatePhotoDetection";
 import { SharedDateStore } from "./sharedDates";
+import { DateNoResponseAlertStore } from "./dateNoResponseAlerts";
 import { ProfileShareStore } from "./profileShare";
 import { SOSStore } from "./sos";
 import { applyWatermark } from "./watermarkImage";
@@ -301,6 +302,7 @@ export function createApp(deps?: {
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
   sharedDateStore: SharedDateStore;
+  dateNoResponseAlertStore: DateNoResponseAlertStore;
   profileShareStore: ProfileShareStore;
   sosStore: SOSStore;
   webAuthnStore: WebAuthnStore;
@@ -562,6 +564,7 @@ export function createApp(deps?: {
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
   const sharedDateStore = new SharedDateStore();
+  const dateNoResponseAlertStore = new DateNoResponseAlertStore();
   const profileShareStore = new ProfileShareStore();
   const sosStore = new SOSStore();
   // Distinct from webAuthnService above: that one re-authenticates a real
@@ -679,6 +682,23 @@ export function createApp(deps?: {
       }
     }
   }, MATCH_EXPIRY_REMINDER_SWEEP_INTERVAL_MS).unref();
+
+  // Tinder's real "Automatic SMS alert system if there's no response
+  // after a date" (#314) — same periodic-sweep stand-in for a job-queue
+  // as the reminder sweep directly above, checking every shared date
+  // once per interval rather than scheduling a one-off timer per date.
+  const NO_RESPONSE_ALERT_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
+  setInterval(() => {
+    for (const date of sharedDateStore.getDatesNeedingNoResponseAlert()) {
+      sharedDateStore.markNoResponseAlertSent(date.id);
+      const message = `${date.author} hasn't checked in after their date with ${date.meetingWith} at ${date.location} — you may want to reach out.`;
+      for (const contact of date.contacts) {
+        if (!contact.phone) continue;
+        dateNoResponseAlertStore.send(date.id, contact.name, contact.phone, message);
+      }
+    }
+  }, NO_RESPONSE_ALERT_SWEEP_INTERVAL_MS).unref();
+
   const TOP_PICKS_POOL_SIZE = 50;
   // Injectable so tests can exercise real branching logic (configured vs.
   // not, valid vs. invalid token) without a real Google Cloud project.
@@ -5535,6 +5555,13 @@ export function createApp(deps?: {
     res.json(view);
   });
 
+  // #314's real "Automatic SMS alert system if there's no response after
+  // a date" — the alerts themselves are sent by the periodic sweep below;
+  // this just exposes what was sent for a client/test to verify.
+  app.get("/api/shared-dates/:id/no-response-alerts", (req, res) => {
+    res.json({ alerts: dateNoResponseAlertStore.getSentAlerts(req.params.id) });
+  });
+
   // Tinder's real "Ability to share a profile with a friend for their
   // opinion" (#264) — same no-auth share-code shape as #46/#47's
   // SharedDateStore. Re-sharing the same candidate reuses the existing
@@ -7012,6 +7039,7 @@ export function createApp(deps?: {
     photoStore,
     duplicatePhotoDetector,
     sharedDateStore,
+    dateNoResponseAlertStore,
     profileShareStore,
     sosStore,
     webAuthnStore,

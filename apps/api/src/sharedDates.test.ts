@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SharedDateStore } from "./sharedDates";
+import { SharedDateStore, NO_RESPONSE_ALERT_WINDOW_MS } from "./sharedDates";
 
 const VALID_PAYLOAD = {
   meetingWith: "Jordan",
@@ -79,4 +79,73 @@ test("revoke() invalidates every contact's share code and only works for the sha
 test("viewByShareCode() returns undefined for an unknown code", () => {
   const store = new SharedDateStore();
   assert.equal(store.viewByShareCode("does-not-exist"), undefined);
+});
+
+test("create() attaches a positionally-matched phone to each contact (#314)", () => {
+  const store = new SharedDateStore();
+  const result = store.create("alice", { ...VALID_PAYLOAD, contactPhones: ["+15551234567", ""] });
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.date.contacts[0].phone, "+15551234567");
+  assert.equal(result.date.contacts[1].phone, undefined);
+});
+
+test("create() starts noResponseAlertSent as false (#314)", () => {
+  const store = new SharedDateStore();
+  const result = store.create("alice", VALID_PAYLOAD);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.date.noResponseAlertSent, false);
+});
+
+test("getDatesNeedingNoResponseAlert() includes a still-planned date past the window (#314)", () => {
+  const store = new SharedDateStore();
+  const result = store.create("alice", VALID_PAYLOAD);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+
+  const now = new Date(VALID_PAYLOAD.scheduledAt).getTime() + NO_RESPONSE_ALERT_WINDOW_MS + 1000;
+  const needing = store.getDatesNeedingNoResponseAlert(now);
+  assert.equal(needing.length, 1);
+  assert.equal(needing[0].id, result.date.id);
+});
+
+test("getDatesNeedingNoResponseAlert() excludes a date still within the window (#314)", () => {
+  const store = new SharedDateStore();
+  store.create("alice", VALID_PAYLOAD);
+  const now = new Date(VALID_PAYLOAD.scheduledAt).getTime() + 1000;
+  assert.deepEqual(store.getDatesNeedingNoResponseAlert(now), []);
+});
+
+test("getDatesNeedingNoResponseAlert() excludes a date whose sharer already checked in (#314)", () => {
+  const store = new SharedDateStore();
+  const result = store.create("alice", VALID_PAYLOAD);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  store.updateStatus("alice", result.date.id, "safe");
+
+  const now = new Date(VALID_PAYLOAD.scheduledAt).getTime() + NO_RESPONSE_ALERT_WINDOW_MS + 1000;
+  assert.deepEqual(store.getDatesNeedingNoResponseAlert(now), []);
+});
+
+test("getDatesNeedingNoResponseAlert() excludes a revoked date (#314)", () => {
+  const store = new SharedDateStore();
+  const result = store.create("alice", VALID_PAYLOAD);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  store.revoke("alice", result.date.id);
+
+  const now = new Date(VALID_PAYLOAD.scheduledAt).getTime() + NO_RESPONSE_ALERT_WINDOW_MS + 1000;
+  assert.deepEqual(store.getDatesNeedingNoResponseAlert(now), []);
+});
+
+test("markNoResponseAlertSent() excludes the date from future sweeps (#314)", () => {
+  const store = new SharedDateStore();
+  const result = store.create("alice", VALID_PAYLOAD);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  store.markNoResponseAlertSent(result.date.id);
+
+  const now = new Date(VALID_PAYLOAD.scheduledAt).getTime() + NO_RESPONSE_ALERT_WINDOW_MS + 1000;
+  assert.deepEqual(store.getDatesNeedingNoResponseAlert(now), []);
 });
