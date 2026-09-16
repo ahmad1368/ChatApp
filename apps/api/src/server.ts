@@ -21,6 +21,7 @@ import { AccountDeletionCoordinator, deleteMessagesForAuthor } from "./accountDe
 import { isValidCoordinates, LocationStore } from "./locationPrivacy";
 import { PushService } from "./push";
 import { WeeklyDigestStore, buildWeeklyDigest } from "./weeklyDigest";
+import { buildWidgetSummary } from "./widgetSummary";
 import { NotificationPreferencesStore } from "./notificationPreferences";
 import { NotificationInboxStore } from "./notificationInbox";
 import { NotificationSoundStore, VIBRATION_PATTERNS } from "./notificationSound";
@@ -5335,6 +5336,20 @@ export function createApp(deps?: {
       return;
     }
     res.json({ success: true });
+  });
+
+  // Tinder's real "Home screen widget support for iPhone and Android"
+  // (#261) — see widgetSummary.ts's doc comment for why this is a
+  // platform-agnostic backend piece with no web UI, same disclosed
+  // scoping as #193/#194's native app-store billing bridges.
+  app.get("/api/widget-summary/:author", (req, res) => {
+    const author = req.params.author;
+    const summary = buildWidgetSummary({
+      unreadNotifications: notificationInboxStore.getUnreadCount(author),
+      newLikes: swipeStore.getLikedBy(author, isBlockedEitherWay).length,
+      activeMatches: swipeStore.getMatches(author).length,
+    });
+    res.json(summary);
   });
 
   // Tinder's real "Custom ringtone and vibration for app notifications"
