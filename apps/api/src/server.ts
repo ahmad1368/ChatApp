@@ -168,6 +168,7 @@ import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
 import { DietInfoStore, DIET_OPTIONS } from "./dietInfo";
 import { BloodTypeInfoStore, BLOOD_TYPE_OPTIONS } from "./bloodTypeInfo";
 import { PhotoReactionStore, PHOTO_REACTION_EMOJIS } from "./photoReactions";
+import { StudentVerificationStore } from "./studentVerification";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
@@ -317,6 +318,7 @@ export function createApp(deps?: {
   dietInfoStore: DietInfoStore;
   bloodTypeInfoStore: BloodTypeInfoStore;
   photoReactionStore: PhotoReactionStore;
+  studentVerificationStore: StudentVerificationStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
@@ -576,6 +578,7 @@ export function createApp(deps?: {
   const dietInfoStore = new DietInfoStore();
   const bloodTypeInfoStore = new BloodTypeInfoStore();
   const photoReactionStore = new PhotoReactionStore();
+  const studentVerificationStore = new StudentVerificationStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
@@ -1111,6 +1114,36 @@ export function createApp(deps?: {
       summary: photoReactionStore.getSummary(req.params.id),
       viewerReaction: viewer ? photoReactionStore.getViewerReaction(req.params.id, viewer) : null,
     });
+  });
+
+  // Raya's real "Student verification system via university (.edu) email"
+  // (#305) — see studentVerification.ts for the real .edu-suffix check and
+  // OTP mechanics, and the honest scoping gap (no enrollment/roster check).
+  app.post("/api/student-verification/:author/request", (req, res) => {
+    const result = studentVerificationStore.requestVerification(req.params.author, req.body?.email);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    // Stand-in for a real email provider (SES, SendGrid, etc.), which needs
+    // credentials this environment doesn't have. Never included in the
+    // HTTP response.
+    console.log(`[student-verification] ${req.params.author}: ${result.code} (expires in 15 minutes)`);
+    res.status(202).json({ message: "Verification code sent" });
+  });
+
+  app.post("/api/student-verification/:author/confirm", (req, res) => {
+    const result = studentVerificationStore.confirmVerification(req.params.author, req.body?.code);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json(studentVerificationStore.getStatus(req.params.author));
+  });
+
+  app.get("/api/student-verification/:author", (req, res) => {
+    res.json(studentVerificationStore.getStatus(req.params.author));
   });
 
   // Hinge's real "Ability to create a custom AI avatar based on the
@@ -6823,6 +6856,7 @@ export function createApp(deps?: {
     dietInfoStore,
     bloodTypeInfoStore,
     photoReactionStore,
+    studentVerificationStore,
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,

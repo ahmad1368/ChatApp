@@ -63,6 +63,7 @@ function listen() {
     gpsVerificationStore,
     membershipStore,
     photoReactionStore,
+    studentVerificationStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -107,6 +108,7 @@ function listen() {
     gpsVerificationStore,
     membershipStore,
     photoReactionStore,
+    studentVerificationStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -4365,6 +4367,78 @@ test("GET /api/photos/:id/reactions defaults to an empty summary and null viewer
   try {
     const res = await fetch(`${baseUrl}/api/photos/photo-1/reactions?viewer=alice`);
     assert.deepEqual(await res.json(), { summary: [], viewerReaction: null });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/student-verification/:author/request rejects a non-university email (#305)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/student-verification/alice/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "alice@gmail.com" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/student-verification/:author/request accepts a .edu email (#305)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/student-verification/alice/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "alice@stanford.edu" }),
+    });
+    assert.equal(res.status, 202);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/student-verification/:author/confirm verifies with the correct code (#305)", async () => {
+  const { server, baseUrl, studentVerificationStore } = listen();
+  try {
+    const requested = studentVerificationStore.requestVerification("alice", "alice@stanford.edu");
+    assert.equal(requested.success, true);
+    const code = requested.success ? requested.code : "";
+
+    const res = await fetch(`${baseUrl}/api/student-verification/alice/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { verified: true, email: "alice@stanford.edu" });
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/student-verification/:author/confirm rejects an incorrect code (#305)", async () => {
+  const { server, baseUrl, studentVerificationStore } = listen();
+  try {
+    studentVerificationStore.requestVerification("alice", "alice@stanford.edu");
+    const res = await fetch(`${baseUrl}/api/student-verification/alice/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "000000" }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/student-verification/:author defaults to unverified (#305)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/student-verification/alice`);
+    assert.deepEqual(await res.json(), { verified: false });
   } finally {
     server.close();
   }
