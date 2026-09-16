@@ -42,6 +42,7 @@ import { canDeleteMessage } from "./messageDeletion";
 import { canSendFirstMessage } from "./firstMessageRule";
 import { GenderInfoStore } from "./genderInfo";
 import { MatchExpiryStore, MATCH_RESPONSE_WINDOW_MS } from "./matchExpiry";
+import { MatchTimerStore } from "./matchTimer";
 import { VerificationStore } from "./verification";
 import { DiscoveryBoundariesStore } from "./discoveryBoundaries";
 import { AllowedDomainStore } from "./allowedDomains";
@@ -302,6 +303,7 @@ export function createApp(deps?: {
   videoCallEffectsStore: VideoCallEffectsStore;
   genderInfoStore: GenderInfoStore;
   matchExpiryStore: MatchExpiryStore;
+  matchTimerStore: MatchTimerStore;
   notificationPreferencesStore: NotificationPreferencesStore;
   notificationInboxStore: NotificationInboxStore;
   notificationSoundStore: NotificationSoundStore;
@@ -538,6 +540,7 @@ export function createApp(deps?: {
   const videoCallEffectsStore = new VideoCallEffectsStore();
   const genderInfoStore = new GenderInfoStore();
   const matchExpiryStore = new MatchExpiryStore();
+  const matchTimerStore = new MatchTimerStore();
 
   // Tinder's real "Reminder notification to respond to expiring chats"
   // (#154): a periodic sweep is this app's stand-in for the job-queue/
@@ -4358,6 +4361,10 @@ export function createApp(deps?: {
     // moment a match is created — see matchExpiry.ts.
     if (result.matched) {
       matchExpiryStore.recordMatch(swiperName, swipedName);
+      // #259's real "time spent together" timer — its own immutable
+      // record, since #137's extend() deliberately mutates the field
+      // above.
+      matchTimerStore.recordMatch(swiperName, swipedName);
       // #213's "First Match" badge — awarded to both sides of a real match.
       achievementBadgeStore.award(swiperName, "first-match");
       achievementBadgeStore.award(swipedName, "first-match");
@@ -4488,6 +4495,19 @@ export function createApp(deps?: {
     const state = matchExpiryStore.getState(author, candidate)!;
     const expiresAt = new Date(new Date(state.matchedAt).getTime() + MATCH_RESPONSE_WINDOW_MS).toISOString();
     res.json({ expiresAt, extended: true });
+  });
+
+  // Tinder's real "Show a timer for time spent together after matching"
+  // (#259) — see matchTimer.ts's doc comment for why this is its own
+  // store rather than reusing #136/#137's mutable matchExpiryStore.
+  app.get("/api/matches/:author/:candidate/time-together", (req, res) => {
+    const { author, candidate } = req.params;
+    const timer = matchTimerStore.getTimer(author, candidate);
+    if (!timer) {
+      res.status(404).json({ error: "No tracked match between these two authors" });
+      return;
+    }
+    res.json(timer);
   });
 
   // Tinder's "Rewind" feature (#92): undo only the single most recent
@@ -5983,6 +6003,7 @@ export function createApp(deps?: {
     videoCallEffectsStore,
     genderInfoStore,
     matchExpiryStore,
+    matchTimerStore,
     notificationPreferencesStore,
     notificationInboxStore,
     notificationSoundStore,
