@@ -116,6 +116,7 @@ import { ArchivedChatsStore } from "./archivedChats";
 import { FavoritesStore } from "./favorites";
 import { getLottieAnimationCatalog } from "./lottieAnimations";
 import { StrangerPictureBlockStore } from "./strangerPictureBlock";
+import { getSimilarProfiles } from "./similarProfiles";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -2020,6 +2021,19 @@ export function createApp(deps?: {
         ),
       }));
     res.json({ candidates });
+  });
+
+  // Tinder's real "Show similar profiles based on a selected pattern"
+  // (#284) — ranked by similarity to `selectedAuthor` (the profile the
+  // viewer picked as the pattern), not to `author` (the viewer) — see
+  // similarProfiles.ts.
+  app.get("/api/similar-profiles/:author/:selectedAuthor", (req, res) => {
+    const { author, selectedAuthor } = req.params;
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, () => 0, () => 0, Number.MAX_SAFE_INTEGER)
+      .map((candidate) => ({ author: candidate.author, interests: interestsInfoStore.get(candidate.author).interests }));
+    const selectedInterests = interestsInfoStore.get(selectedAuthor).interests;
+    res.json({ profiles: getSimilarProfiles(selectedInterests, pool, selectedAuthor) });
   });
 
   // Tinder's real Boost/Super Boost (#105, #106): free here since this
