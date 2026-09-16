@@ -148,6 +148,8 @@ import { scanForBankCardNumber } from "./bankCardDetector";
 import { VoiceResumeStore } from "./voiceResume";
 import { KeywordBlacklistStore, bioContainsBlacklistedKeyword } from "./keywordBlacklist";
 import { LanguageCertificateStore, CERTIFICATE_EXAM_TYPES } from "./languageCertificate";
+import { TargetImmigrationCountryStore, TARGET_COUNTRY_CATALOG } from "./targetImmigrationCountry";
+import { isSameTargetCountry } from "./targetImmigrationCountryMatch";
 import { createGame, applyMove } from "./ticTacToe";
 import { DATE_PROPOSAL_LABELS, isDateProposalCategory } from "./dateProposals";
 import { createDateInvite, respondToDateInvite, confirmDate, isOverdueForConfirmation } from "./dateInvites";
@@ -320,6 +322,7 @@ export function createApp(deps?: {
   voiceResumeStore: VoiceResumeStore;
   keywordBlacklistStore: KeywordBlacklistStore;
   languageCertificateStore: LanguageCertificateStore;
+  targetImmigrationCountryStore: TargetImmigrationCountryStore;
   backgroundMusicStore: BackgroundMusicStore;
   bioStore: BioStore;
   weeklyGoalStore: WeeklyGoalStore;
@@ -592,6 +595,7 @@ export function createApp(deps?: {
   const voiceResumeStore = new VoiceResumeStore();
   const keywordBlacklistStore = new KeywordBlacklistStore();
   const languageCertificateStore = new LanguageCertificateStore();
+  const targetImmigrationCountryStore = new TargetImmigrationCountryStore();
   const backgroundMusicStore = new BackgroundMusicStore();
   const bioStore = new BioStore();
   const weeklyGoalStore = new WeeklyGoalStore();
@@ -1923,6 +1927,26 @@ export function createApp(deps?: {
     res.json({ certificate: languageCertificateStore.getStatus(req.params.author) });
   });
 
+  // Match.com's real "Ability to select a target immigration country to
+  // find a travel companion" (#325) — see targetImmigrationCountry.ts;
+  // matched against other authors via /api/target-country-matches below.
+  app.get("/api/target-immigration-country/catalog", (_req, res) => {
+    res.json({ countries: TARGET_COUNTRY_CATALOG });
+  });
+
+  app.put("/api/target-immigration-country/:author", (req, res) => {
+    const result = targetImmigrationCountryStore.update(req.params.author, req.body?.targetCountry, req.body?.hideTargetCountry);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ info: result.info });
+  });
+
+  app.get("/api/target-immigration-country/:author", (req, res) => {
+    res.json({ info: targetImmigrationCountryStore.get(req.params.author) });
+  });
+
   // Editable-anytime religion/political-views (#74), same
   // one-value-per-author, replace-on-update shape as this app's other
   // standalone profile fields.
@@ -2938,6 +2962,28 @@ export function createApp(deps?: {
       .filter((entry): entry is { author: string; sharedPlans: string[]; compatibility: number } => entry !== null)
       .sort((a, b) => b.sharedPlans.length - a.sharedPlans.length);
     res.json({ candidates: planMatches });
+  });
+
+  // Match.com's real "find a travel companion" for a shared immigration
+  // goal (#325) — same drawn-from-the-same-pool shape as #118/#119 above,
+  // but an exact single-value match rather than a set-overlap score. See
+  // targetImmigrationCountryMatch.ts.
+  app.get("/api/target-country-matches/:author", (req, res) => {
+    const author = req.params.author;
+    const authorInfo = targetImmigrationCountryStore.get(author);
+    if (authorInfo.hideTargetCountry || !authorInfo.targetCountry) {
+      res.json({ candidates: [] });
+      return;
+    }
+    const pool = swipeStore
+      .getCandidates(author, isExcludedCandidate, getCandidateCompatibility, getCandidateBoostLevel, TOP_PICKS_POOL_SIZE, getCandidateCompleteness)
+      .map((c) => c.author);
+    const candidates = pool.filter((candidate) => {
+      const candidateInfo = targetImmigrationCountryStore.get(candidate);
+      if (candidateInfo.hideTargetCountry) return false;
+      return isSameTargetCountry(authorInfo.targetCountry, candidateInfo.targetCountry);
+    });
+    res.json({ candidates: candidates.map((candidate) => ({ author: candidate, targetCountry: authorInfo.targetCountry })) });
   });
 
   // "Use AI to analyze bio text and improve matching" (#120) — an honest
@@ -7227,6 +7273,7 @@ export function createApp(deps?: {
     voiceResumeStore,
     keywordBlacklistStore,
     languageCertificateStore,
+    targetImmigrationCountryStore,
     backgroundMusicStore,
     bioStore,
     weeklyGoalStore,

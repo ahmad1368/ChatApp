@@ -20,6 +20,7 @@ import FamilyPlansInfoEditor from "../../FamilyPlansInfoEditor";
 import MaritalStatusInfoEditor from "../../MaritalStatusInfoEditor";
 import ZodiacInfoEditor from "../../ZodiacInfoEditor";
 import LanguagesInfoEditor from "../../LanguagesInfoEditor";
+import TargetImmigrationCountryEditor from "../../TargetImmigrationCountryEditor";
 import BeliefsInfoEditor from "../../BeliefsInfoEditor";
 import PetsInfoEditor from "../../PetsInfoEditor";
 import DietInfoEditor from "../../DietInfoEditor";
@@ -86,6 +87,7 @@ export default function ProfileSettingsPage() {
       <MaritalStatusInfoEditor author={author} />
       <ZodiacInfoEditor author={author} />
       <LanguagesInfoEditor author={author} />
+      <TargetImmigrationCountryEditor author={author} />
       <BeliefsInfoEditor author={author} />
       <PetsInfoEditor author={author} />
       <DietInfoEditor author={author} />

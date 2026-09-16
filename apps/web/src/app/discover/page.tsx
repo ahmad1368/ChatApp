@@ -12,6 +12,7 @@ import FacebookMutualConnections from "../FacebookMutualConnections";
 import MusicMatches from "../MusicMatches";
 import MoodCompatibility from "../MoodCompatibility";
 import WeekendPlanMatches from "../WeekendPlanMatches";
+import TargetCountryMatches from "../TargetCountryMatches";
 import ZodiacMatches from "../ZodiacMatches";
 import BioMatches from "../BioMatches";
 import AdBanner from "../AdBanner";
@@ -333,6 +334,7 @@ export default function DiscoverPage() {
       <MusicMatches author={author} />
       <MoodCompatibility author={author} />
       <WeekendPlanMatches author={author} />
+      <TargetCountryMatches author={author} />
       <ZodiacMatches author={author} />
       <BioMatches author={author} />
       {/* Web-only "grid or list" browsing (#115) — an alternative to the
