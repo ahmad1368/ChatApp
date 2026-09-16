@@ -1460,6 +1460,10 @@ export default function ChatRoom({
     socket.on("message:rejected", (payload: { reason?: string; error?: string }) => {
       if (payload?.reason === "scam_content") {
         setImageError("That message looks like it violates ChatApp's policy against financial and crypto scams, so it wasn't sent.");
+      } else if (payload?.reason === "bank_card_number") {
+        // Bumble's real "Automatic alert to prevent sharing bank card
+        // details in chat" (#318).
+        setImageError("That message looks like it contains a bank card number — for your safety, it wasn't sent.");
       } else if (payload?.reason === "rate_limited") {
         setImageError("You're sending messages too quickly. Please wait a moment and try again.");
       } else if (payload?.reason === "guest_mode") {

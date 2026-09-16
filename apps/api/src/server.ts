@@ -144,6 +144,7 @@ import { applyWatermark } from "./watermarkImage";
 import { DuplicateAccountStore } from "./duplicateAccounts";
 import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
+import { scanForBankCardNumber } from "./bankCardDetector";
 import { createGame, applyMove } from "./ticTacToe";
 import { DATE_PROPOSAL_LABELS, isDateProposalCategory } from "./dateProposals";
 import { createDateInvite, respondToDateInvite, confirmDate, isOverdueForConfirmation } from "./dateInvites";
@@ -7306,6 +7307,13 @@ export async function createChatServer() {
         return;
       }
 
+      // Bumble's real "Automatic alert to prevent sharing bank card
+      // details in chat" (#318) — see bankCardDetector.ts.
+      if (scanForBankCardNumber(payload.text ?? "").flagged) {
+        socket.emit("message:rejected", { reason: "bank_card_number" });
+        return;
+      }
+
       // Bumble's real AI "unkind message" warning (#143): unlike the scam
       // check above (a hard block) or spam below (silent auto-report),
       // this is a soft nudge — the sender gets a chance to edit or confirm
@@ -7593,8 +7601,9 @@ export async function createChatServer() {
 
     // Bumble's real "edit a sent message" (#133) — see messageEditing.ts
     // for the sender-only/time-window/text-only-message rules. Reuses the
-    // same scam-content check message:send applies, so an edit can't be
-    // used to slip content past moderation that a fresh send would catch.
+    // same scam-content and bank-card checks message:send applies, so an
+    // edit can't be used to slip content past moderation that a fresh
+    // send would catch.
     socket.on("message:edit", (payload: { roomId?: string; messageId?: string; author?: string; text?: unknown }) => {
       const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
       const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
@@ -7614,6 +7623,10 @@ export async function createChatServer() {
       }
       if (scanForScamContent(text).flagged) {
         socket.emit("message:edit-rejected", { messageId, error: "That edit looks like it violates ChatApp's policy against financial and crypto scams" });
+        return;
+      }
+      if (scanForBankCardNumber(text).flagged) {
+        socket.emit("message:edit-rejected", { messageId, error: "That edit looks like it contains a bank card number — please remove it" });
         return;
       }
 

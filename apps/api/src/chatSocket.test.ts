@@ -122,6 +122,36 @@ test("message:send is rejected with scam_content for a scam phrase", async () =>
   }
 });
 
+test("message:send is rejected with bank_card_number for a valid card number (#318)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    client.emit("join", "room-1");
+    const rejected = waitFor<{ reason?: string }>(client, "message:rejected");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "here's my card 4111 1111 1111 1111" });
+    const payload = await rejected;
+    assert.equal(payload.reason, "bank_card_number");
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
+
+test("message:send delivers ordinary text with a long non-card digit run (#318)", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    client.emit("join", "room-1");
+    const received = waitFor<{ text: string }>(client, "message:new");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "my tracking number is 1Z999AA10123456784" });
+    const message = await received;
+    assert.equal(message.text, "my tracking number is 1Z999AA10123456784");
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
+
 test("message:send is rejected with rate_limited after exceeding the per-connection send rate", async () => {
   const { httpServer, baseUrl } = await startChatServer();
   const client = await connectClient(baseUrl);
