@@ -8044,6 +8044,7 @@ const EMPTY_DISCOVERY_FILTERS = {
   allowedDrinking: [],
   requireVerifiedOnly: false,
   requiredPets: [],
+  requiredDiets: [],
 };
 
 test("GET /api/discovery-filters/:author returns empty filters before any update", async () => {
@@ -8072,6 +8073,7 @@ test("PUT /api/discovery-filters/:author saves filters and GET returns them", as
         allowedDrinking: ["no", "sometimes"],
         requireVerifiedOnly: true,
         requiredPets: ["dog", "cat"],
+        requiredDiets: ["vegan"],
       }),
     });
     assert.equal(putRes.status, 200);
@@ -8084,6 +8086,7 @@ test("PUT /api/discovery-filters/:author saves filters and GET returns them", as
       allowedDrinking: ["no", "sometimes"],
       requireVerifiedOnly: true,
       requiredPets: ["dog", "cat"],
+      requiredDiets: ["vegan"],
     };
     assert.deepEqual(await putRes.json(), { filters: expected });
 
@@ -8243,6 +8246,7 @@ test("GET /api/swipe-candidates/:author excludes candidates that fail the swiper
         requireNonSmoking: false,
         allowedDrinking: [],
         requiredPets: [],
+        requiredDiets: [],
       }),
     });
 
@@ -8288,6 +8292,7 @@ test("GET /api/swipe-candidates/:author excludes candidates missing a required l
         requireNonSmoking: false,
         allowedDrinking: [],
         requiredPets: [],
+        requiredDiets: [],
       }),
     });
 
@@ -8340,6 +8345,7 @@ test("GET /api/swipe-candidates/:author excludes smokers when requireNonSmoking 
         requireNonSmoking: true,
         allowedDrinking: [],
         requiredPets: [],
+        requiredDiets: [],
       }),
     });
 
@@ -8385,6 +8391,7 @@ test("GET /api/swipe-candidates/:author excludes candidates outside allowedDrink
         requireNonSmoking: false,
         allowedDrinking: ["no"],
         requiredPets: [],
+        requiredDiets: [],
       }),
     });
 
@@ -8446,6 +8453,7 @@ test("GET /api/swipe-candidates/:author excludes unverified candidates when requ
         allowedDrinking: [],
         requireVerifiedOnly: true,
         requiredPets: [],
+        requiredDiets: [],
       }),
     });
 
@@ -8503,6 +8511,7 @@ test("GET /api/swipe-candidates/:author excludes candidates missing a required p
         requireNonSmoking: false,
         allowedDrinking: [],
         requiredPets: ["dog", "cat"],
+        requiredDiets: [],
       }),
     });
 
@@ -8512,6 +8521,105 @@ test("GET /api/swipe-candidates/:author excludes candidates missing a required p
       body2.candidates.map((c: { author: string }) => c.author),
       ["carol"]
     );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author excludes candidates whose diet isn't in requiredDiets (#301)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/diet-info/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ diet: "omnivore", hideDiet: false }),
+    });
+    await fetch(`${baseUrl}/api/diet-info/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ diet: "vegan", hideDiet: false }),
+    });
+
+    await fetch(`${baseUrl}/api/discovery-filters/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        minHeightCm: null,
+        maxHeightCm: null,
+        requireEducation: false,
+        requiredLanguages: [],
+        requireNonSmoking: false,
+        allowedDrinking: [],
+        requiredPets: [],
+        requiredDiets: ["vegan", "vegetarian"],
+      }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["carol"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/diet-info/catalog returns the fixed diet catalog (#301)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/diet-info/catalog`);
+    const body = await res.json();
+    assert.ok(body.diets.includes("vegan"));
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/diet-info/:author saves diet, then GET returns it", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/diet-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ diet: "vegetarian", hideDiet: true }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { dietInfo: { diet: "vegetarian", hideDiet: true } });
+
+    const getRes = await fetch(`${baseUrl}/api/diet-info/alice`);
+    assert.deepEqual(await getRes.json(), { dietInfo: { diet: "vegetarian", hideDiet: true } });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/diet-info/:author rejects an invalid diet", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/diet-info/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ diet: "carnivore", hideDiet: false }),
+    });
+    assert.equal(res.status, 400);
   } finally {
     server.close();
   }

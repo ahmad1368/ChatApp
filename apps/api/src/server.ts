@@ -165,6 +165,7 @@ import { ZodiacInfoStore } from "./zodiacInfo";
 import { LanguagesInfoStore, LANGUAGE_CATALOG } from "./languagesInfo";
 import { BeliefsInfoStore } from "./beliefsInfo";
 import { PetsInfoStore, PET_CATALOG } from "./petsInfo";
+import { DietInfoStore, DIET_OPTIONS } from "./dietInfo";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
@@ -311,6 +312,7 @@ export function createApp(deps?: {
   languagesInfoStore: LanguagesInfoStore;
   beliefsInfoStore: BeliefsInfoStore;
   petsInfoStore: PetsInfoStore;
+  dietInfoStore: DietInfoStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
@@ -567,6 +569,7 @@ export function createApp(deps?: {
   const languagesInfoStore = new LanguagesInfoStore();
   const beliefsInfoStore = new BeliefsInfoStore();
   const petsInfoStore = new PetsInfoStore();
+  const dietInfoStore = new DietInfoStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
@@ -1721,6 +1724,26 @@ export function createApp(deps?: {
     res.json({ petsInfo: petsInfoStore.get(req.params.author) });
   });
 
+  // OkCupid's real "Filter by diet type (vegetarian, vegan, omnivore)"
+  // (#301) — the profile-field half; discoveryFilters.ts's requiredDiets
+  // is the actual filtering half.
+  app.get("/api/diet-info/catalog", (_req, res) => {
+    res.json({ diets: DIET_OPTIONS });
+  });
+
+  app.put("/api/diet-info/:author", (req, res) => {
+    const result = dietInfoStore.update(req.params.author, req.body?.diet, req.body?.hideDiet);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ dietInfo: result.dietInfo });
+  });
+
+  app.get("/api/diet-info/:author", (req, res) => {
+    res.json({ dietInfo: dietInfoStore.get(req.params.author) });
+  });
+
   // Editable-anytime personality type (#76): MBTI and Enneagram, same
   // one-value-per-author, replace-on-update shape as this app's other
   // standalone profile fields.
@@ -2225,6 +2248,7 @@ export function createApp(deps?: {
       drinking: candidateLifestyle.drinking,
       isVerified: verificationStore.isVerified(b),
       pets: petsInfoStore.get(b).pets,
+      diet: dietInfoStore.get(b).diet,
     };
     if (!candidateMatchesFilters(filters, candidateData)) {
       return true;
@@ -4907,10 +4931,10 @@ export function createApp(deps?: {
     res.json({ mode: viewModeStore.get(req.params.author) });
   });
 
-  // OkCupid's advanced discovery filters (#96, extended by #97, #98, and
-  // #257): height range, education requirement, required languages,
-  // non-smoking, allowed drinking, verified-only, and favorite pets —
-  // narrows /api/swipe-candidates.
+  // OkCupid's advanced discovery filters (#96, extended by #97, #98,
+  // #257, and #301): height range, education requirement, required
+  // languages, non-smoking, allowed drinking, verified-only, favorite
+  // pets, and required diet type — narrows /api/swipe-candidates.
   app.put("/api/discovery-filters/:author", (req, res) => {
     const result = discoveryFiltersStore.update(
       req.params.author,
@@ -4921,7 +4945,8 @@ export function createApp(deps?: {
       req.body?.requireNonSmoking,
       req.body?.allowedDrinking,
       req.body?.requireVerifiedOnly,
-      req.body?.requiredPets
+      req.body?.requiredPets,
+      req.body?.requiredDiets
     );
     if (!result.success) {
       res.status(400).json({ error: result.error });
@@ -6730,6 +6755,7 @@ export function createApp(deps?: {
     languagesInfoStore,
     beliefsInfoStore,
     petsInfoStore,
+    dietInfoStore,
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,
