@@ -55,6 +55,7 @@ export default function DiscoverPage() {
   const [unlimitedRewinds, setUnlimitedRewinds] = useState(false);
   const [bioKeyword, setBioKeyword] = useState("");
   const [viewMode, setViewModeState] = useState<ViewMode>("card");
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
   // OkCupid/Tinder's real bio keyword search (#113): a one-off query
   // string, not a persisted preference (see DiscoveryFiltersEditor for
@@ -125,8 +126,29 @@ export default function DiscoverPage() {
       .then((res) => res.json())
       .then((body) => setViewModeState(body.mode ?? "card"))
       .catch(() => {});
+    fetch(`${API_URL}/api/favorites/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setFavorites(new Set<string>(body.favorites ?? [])))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [author]);
+
+  // Tinder's real "Ability to define a favorites list" (#279) — bookmark
+  // any candidate for later without swiping on them. See favorites.ts.
+  const toggleFavorite = (targetAuthor: string) => {
+    const isFavorited = favorites.has(targetAuthor);
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (isFavorited) next.delete(targetAuthor);
+      else next.add(targetAuthor);
+      return next;
+    });
+    fetch(`${API_URL}/api/favorites`, {
+      method: isFavorited ? "DELETE" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ viewerAuthor: author, targetAuthor }),
+    }).catch(() => {});
+  };
 
   // OkCupid's real DoubleTake-style grid browsing (#115) — a persisted
   // preference (see viewMode.ts), not just local UI state, so it follows
@@ -269,7 +291,7 @@ export default function DiscoverPage() {
         <Link href="/">&larr; Back to chat</Link> &middot; <Link href="/matches">Your matches</Link> &middot;{" "}
         <Link href="/liked-you">Who liked you</Link> &middot; <Link href="/visitors">Profile visitors</Link> &middot;{" "}
         <Link href="/double-date">Double Date</Link> &middot; <Link href="/live-events">Live Events</Link> &middot;{" "}
-        <Link href="/message-requests">Message requests</Link>
+        <Link href="/message-requests">Message requests</Link> &middot; <Link href="/favorites">Favorites</Link>
       </p>
       <TotalMatchesBadge />
       <ProfileBoost author={author} />
@@ -360,6 +382,14 @@ export default function DiscoverPage() {
             </p>
             <WeatherBadge author={author} candidate={current.author} />
             <ProfileShareButton sharer={author} candidateAuthor={current.author} />
+            <button
+              onClick={() => toggleFavorite(current.author)}
+              aria-pressed={favorites.has(current.author)}
+              title={favorites.has(current.author) ? "Remove from favorites" : "Add to favorites"}
+              style={{ marginTop: 4 }}
+            >
+              {favorites.has(current.author) ? "★ Favorited" : "☆ Favorite"}
+            </button>
             <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16 }}>
               <button onClick={() => swipe("pass")} disabled={busy} style={{ fontSize: 24 }}>
                 ✕
@@ -433,6 +463,13 @@ export default function DiscoverPage() {
                 </p>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  onClick={() => toggleFavorite(candidate.author)}
+                  aria-pressed={favorites.has(candidate.author)}
+                  title={favorites.has(candidate.author) ? "Remove from favorites" : "Add to favorites"}
+                >
+                  {favorites.has(candidate.author) ? "★" : "☆"}
+                </button>
                 <button onClick={() => swipe("pass", candidate.author)} disabled={busy}>
                   ✕
                 </button>
