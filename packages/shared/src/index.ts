@@ -63,6 +63,12 @@ export interface ChatMessage {
   // balance (#196's CoinStore) actually covers the cost, so a client can
   // never forge a gift it didn't pay for.
   gift?: VirtualGift;
+  // Coffee Meets Bagel's real "System to suggest real gifts through
+  // partner stores" (#272) — distinct from #197's fictional coin-bought
+  // `gift` above: this points at a real, live partner-store search link
+  // (see realGiftSuggestions.ts), fulfilled entirely by that partner,
+  // never by this app.
+  realGiftSuggestion?: RealGiftSuggestion;
   // Bumble's real "Private Detector" AI photo warning (#144) — set
   // server-side (see server.ts's message:send) for an `imageUrl` message
   // whose sender is a real safety signal this app already tracks (enough
@@ -137,6 +143,34 @@ export const GIFT_CATALOG: VirtualGift[] = [
   { id: "diamond", name: "Diamond", emoji: "💎", cost: 200 },
 ];
 
+export interface RealGiftIdea {
+  id: string;
+  name: string;
+  emoji: string;
+  searchQuery: string;
+}
+
+export interface RealGiftSuggestion {
+  id: string;
+  name: string;
+  emoji: string;
+  storeUrl: string;
+}
+
+// Coffee Meets Bagel's real "System to suggest real gifts through
+// partner stores" (#272) — a small, fixed, curated catalog of real gift
+// ideas (same "quality over quantity" shape as #197's GIFT_CATALOG),
+// shared between server (validation + building the real store link) and
+// client (the suggestion picker) so the two never drift apart.
+export const REAL_GIFT_CATALOG: RealGiftIdea[] = [
+  { id: "flowers", name: "Flowers", emoji: "💐", searchQuery: "flower bouquet delivery" },
+  { id: "chocolates", name: "Chocolates", emoji: "🍫", searchQuery: "gourmet chocolate gift box" },
+  { id: "wine", name: "Wine", emoji: "🍷", searchQuery: "wine gift set" },
+  { id: "jewelry", name: "Jewelry", emoji: "💍", searchQuery: "jewelry gift" },
+  { id: "plant", name: "Plant", emoji: "🪴", searchQuery: "potted plant gift" },
+  { id: "book", name: "Book", emoji: "📚", searchQuery: "bestselling book gift" },
+];
+
 export interface ChatLocationShare {
   latitude: number;
   longitude: number;
@@ -178,6 +212,10 @@ export interface SendMessagePayload {
   // real cost and debits #196's CoinStore, same "server fills in the
   // authoritative details" trust boundary as dateInvite above.
   giftId?: string;
+  // #272's real gift suggestion — client sends only the catalog id; the
+  // server builds the authoritative partner-store link (see
+  // realGiftSuggestions.ts).
+  realGiftId?: string;
   // Self-reported by the client — see the trust-boundary note in
   // apps/api/src/server.ts (same limitation as #26-#37's :userId trust:
   // there's no merged auth session yet to verify this against). The
