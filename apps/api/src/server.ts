@@ -145,6 +145,7 @@ import { DuplicateAccountStore } from "./duplicateAccounts";
 import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
 import { scanForBankCardNumber } from "./bankCardDetector";
+import { VoiceResumeStore } from "./voiceResume";
 import { createGame, applyMove } from "./ticTacToe";
 import { DATE_PROPOSAL_LABELS, isDateProposalCategory } from "./dateProposals";
 import { createDateInvite, respondToDateInvite, confirmDate, isOverdueForConfirmation } from "./dateInvites";
@@ -314,6 +315,7 @@ export function createApp(deps?: {
   photoAlbumStore: PhotoAlbumStore;
   introVideoStore: IntroVideoStore;
   voiceIntroStore: VoiceIntroStore;
+  voiceResumeStore: VoiceResumeStore;
   backgroundMusicStore: BackgroundMusicStore;
   bioStore: BioStore;
   weeklyGoalStore: WeeklyGoalStore;
@@ -583,6 +585,7 @@ export function createApp(deps?: {
   const photoReviewStore = new PhotoReviewStore();
   const introVideoStore = new IntroVideoStore();
   const voiceIntroStore = new VoiceIntroStore();
+  const voiceResumeStore = new VoiceResumeStore();
   const backgroundMusicStore = new BackgroundMusicStore();
   const bioStore = new BioStore();
   const weeklyGoalStore = new WeeklyGoalStore();
@@ -1601,6 +1604,32 @@ export function createApp(deps?: {
 
   app.delete("/api/voice-intro/:author", (req, res) => {
     voiceIntroStore.remove(req.params.author);
+    res.status(204).send();
+  });
+
+  // Match.com's real "Ability to add a voice resume" (#319) — see
+  // voiceResume.ts for why this is distinct from #64's casual voice intro.
+  app.post("/api/voice-resume", (req, res) => {
+    const result = voiceResumeStore.upload(req.body?.author, req.body?.mimeType, req.body?.data);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ success: true });
+  });
+
+  app.get("/api/voice-resume/:author", (req, res) => {
+    const clip = voiceResumeStore.get(req.params.author);
+    if (!clip) {
+      res.status(404).json({ error: "No voice resume for this author" });
+      return;
+    }
+    res.setHeader("Content-Type", clip.mimeType);
+    res.status(200).send(clip.data);
+  });
+
+  app.delete("/api/voice-resume/:author", (req, res) => {
+    voiceResumeStore.remove(req.params.author);
     res.status(204).send();
   });
 
@@ -7086,6 +7115,7 @@ export function createApp(deps?: {
     photoAlbumStore,
     introVideoStore,
     voiceIntroStore,
+    voiceResumeStore,
     backgroundMusicStore,
     bioStore,
     weeklyGoalStore,
