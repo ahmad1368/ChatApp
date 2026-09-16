@@ -27,6 +27,7 @@ import PhotoEditor from "./PhotoEditor";
 import GifPicker from "./GifPicker";
 import LocationPicker, { LocationSharePayload } from "./LocationPicker";
 import DateInvitePicker, { DateInviteSharePayload } from "./DateInvitePicker";
+import PollComposer from "./PollComposer";
 import { applyBeautyFilter, applyBackgroundBlur } from "./beautyFilter";
 import IcebreakerSuggestions from "./IcebreakerSuggestions";
 import AutocompleteChips from "./AutocompleteChips";
@@ -308,6 +309,50 @@ function DateInviteCard({
 }
 
 /**
+ * Tinder's real "System to create a two-person poll in chat" (#327): a
+ * custom question + up to 4 options either side wrote, with live vote
+ * counts and each side's own current pick highlighted (see server.ts's
+ * poll:vote for the authoritative one-vote-per-participant rule this
+ * only mirrors for the UI).
+ */
+function ChatPollCard({
+  poll,
+  viewer,
+  onVote,
+}: {
+  poll: NonNullable<ChatMessage["poll"]>;
+  viewer: string;
+  onVote: (optionId: string) => void;
+}) {
+  const canVote = viewer === poll.creator || viewer === poll.recipient;
+  const viewerVote = poll.votes[viewer];
+  const totalVotes = Object.keys(poll.votes).length;
+  return (
+    <div className="chat-app__poll">
+      <p className="chat-app__poll-question">📊 {poll.question}</p>
+      {poll.options.map((option) => {
+        const voteCount = Object.values(poll.votes).filter((id) => id === option.id).length;
+        return (
+          <button
+            key={option.id}
+            className="chat-app__poll-option"
+            onClick={() => canVote && onVote(option.id)}
+            disabled={!canVote}
+            aria-pressed={viewerVote === option.id}
+          >
+            {viewerVote === option.id ? "✓ " : ""}
+            {option.text} ({voteCount})
+          </button>
+        );
+      })}
+      <p className="chat-app__poll-status">
+        {totalVotes === 2 ? "Both of you voted" : totalVotes === 1 ? "1 of 2 voted" : "No votes yet"}
+      </p>
+    </div>
+  );
+}
+
+/**
  * Bumble's real "See translation" (#145): on-demand per message, into the
  * viewer's own current app language (see LocaleProvider.tsx's "en"/"fa"
  * toggle from #9) rather than a background bulk-translate of the whole
@@ -406,6 +451,7 @@ function MessageRow({
   onGameMove,
   onRespondDateInvite,
   onConfirmDateInvite,
+  onPollVote,
 }: {
   message: ChatMessage;
   highlighted: boolean;
@@ -429,6 +475,7 @@ function MessageRow({
   onGameMove: (messageId: string, cellIndex: number) => void;
   onRespondDateInvite: (messageId: string, response: "accepted" | "declined") => void;
   onConfirmDateInvite: (messageId: string) => void;
+  onPollVote: (messageId: string, optionId: string) => void;
 }) {
   // Mirrors messageEditing.ts/messageDeletion.ts's rules loosely for the
   // UI — the server is the actual source of truth and re-checks all of
@@ -440,6 +487,7 @@ function MessageRow({
     !message.imageUrl &&
     !message.encrypted &&
     !message.game &&
+    !message.poll &&
     !message.dateProposalCategory &&
     !message.dateInvite &&
     !message.gift &&
@@ -478,6 +526,8 @@ function MessageRow({
           <EncryptedMessage payload={message.encrypted} sharedKey={sharedKey} />
         ) : message.game ? (
           <TicTacToeBoard game={message.game} viewer={viewer} onMove={(cellIndex) => onGameMove(message.id, cellIndex)} />
+        ) : message.poll ? (
+          <ChatPollCard poll={message.poll} viewer={viewer} onVote={(optionId) => onPollVote(message.id, optionId)} />
         ) : message.dateInvite ? (
           <DateInviteCard
             dateInvite={message.dateInvite}
@@ -679,6 +729,7 @@ export default function ChatRoom({
   const [e2eeError, setE2eeError] = useState<string | null>(null);
   const [sharedKey, setSharedKey] = useState<CryptoKey | null>(null);
   const [showDateProposalPicker, setShowDateProposalPicker] = useState(false);
+  const [showPollComposer, setShowPollComposer] = useState(false);
   const [showGiftPicker, setShowGiftPicker] = useState(false);
   const [showRealGiftPicker, setShowRealGiftPicker] = useState(false);
   const [coinBalance, setCoinBalance] = useState(0);
@@ -1320,6 +1371,15 @@ export default function ChatRoom({
     socket.on("game:rejected", ({ error }: { messageId: string; error: string }) => {
       setEditError(error);
     });
+    // Tinder's real "System to create a two-person poll in chat" (#327)
+    // — each vote lands here for both participants, same shape as
+    // game:updated above.
+    socket.on("poll:updated", ({ messageId, poll }: { messageId: string; poll: ChatMessage["poll"] }) => {
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, poll } : m)));
+    });
+    socket.on("poll:rejected", ({ error }: { messageId: string; error: string }) => {
+      setEditError(error);
+    });
     // WhatsApp/Bumble's real "Delete for Everyone" (#134).
     socket.on("message:deleted", ({ messageId }: { messageId: string }) => {
       setMessages((prev) =>
@@ -1924,6 +1984,26 @@ export default function ChatRoom({
     socketRef.current?.emit("game:move", { roomId, messageId, author, cellIndex });
   };
 
+  // Tinder's real "System to create a two-person poll in chat" (#327) —
+  // only offered against a known `recipient`, same requirement as #148's
+  // game above.
+  const sendPoll = (question: string, options: string[]) => {
+    if (isGuest || !recipient) return;
+    socketRef.current?.emit("message:send", {
+      roomId,
+      author,
+      text: "",
+      pollQuestion: question,
+      pollOptions: options,
+      recipient,
+      asGuest: isGuest,
+    });
+  };
+
+  const votePoll = (messageId: string, optionId: string) => {
+    socketRef.current?.emit("poll:vote", { roomId, messageId, author, optionId });
+  };
+
   // Bumble's real "suggest a type of date" quick-reply chip (#147) — a
   // lighter-weight sibling to a full date invitation: no location/time
   // form, just an instant themed conversation starter. The server fills
@@ -2525,6 +2605,7 @@ export default function ChatRoom({
             onGameMove={makeGameMove}
             onRespondDateInvite={respondToDateInvite}
             onConfirmDateInvite={confirmDateInvite}
+            onPollVote={votePoll}
           />
         ))}
         {queue.map((q) => (
@@ -2661,6 +2742,17 @@ export default function ChatRoom({
             🎮
           </button>
         )}
+        {recipient && (
+          <button
+            className="chat-app__image-button"
+            onClick={() => setShowPollComposer((v) => !v)}
+            disabled={isGuest || !liveUpdatesEnabled}
+            title="Create a poll"
+            aria-label="Create a poll"
+          >
+            📊
+          </button>
+        )}
         <button
           className="chat-app__image-button"
           onClick={() => setShowDateProposalPicker((v) => !v)}
@@ -2717,6 +2809,15 @@ export default function ChatRoom({
       )}
       {showDateInvitePicker && (
         <DateInvitePicker onSend={sendDateInvite} onClose={() => setShowDateInvitePicker(false)} />
+      )}
+      {showPollComposer && (
+        <PollComposer
+          onSend={(question, options) => {
+            sendPoll(question, options);
+            setShowPollComposer(false);
+          }}
+          onClose={() => setShowPollComposer(false)}
+        />
       )}
       {showGiftPicker && (
         <div className="chat-app__date-proposal-picker">

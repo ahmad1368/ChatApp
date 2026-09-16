@@ -79,6 +79,30 @@ export interface ChatMessage {
   // rendering it immediately. Scoped to plain imageUrl messages only —
   // #123's selfDestructImageUrl already gates behind its own tap-to-reveal.
   suspicious?: boolean;
+  // Tinder's real "System to create a two-person poll in chat" (#327) —
+  // a custom question + options the creator writes, attached to the
+  // message that started it and mutated in place as the two participants
+  // vote (see server.ts's poll:vote), the same way #148's game/#146's
+  // dateInvite are mutated in place. Distinct from #214's app-wide
+  // DailyPollStore (a public everyone-vs-everyone poll) and #215's fixed-
+  // question CoupleQuizStore: this is a custom question either side
+  // writes, scoped to exactly the two people in this chat.
+  poll?: ChatPoll;
+}
+
+export interface ChatPollOption {
+  id: string;
+  text: string;
+}
+
+export interface ChatPoll {
+  question: string;
+  options: ChatPollOption[];
+  creator: string;
+  recipient: string;
+  // author -> optionId — only ever the creator and recipient can vote,
+  // and a re-vote replaces the previous choice rather than stacking.
+  votes: Record<string, string>;
 }
 
 export interface EncryptedPayload {
@@ -242,6 +266,11 @@ export interface SendMessagePayload {
   // game needs a known second player, same reasoning as #135 only
   // applying with a recipient). See ticTacToe.ts's createGame().
   startGame?: boolean;
+  // Tinder's real "System to create a two-person poll in chat" (#327) —
+  // starts a new poll against `recipient` (required, same reasoning as
+  // #148's startGame). See chatPoll.ts's createPoll().
+  pollQuestion?: string;
+  pollOptions?: string[];
   // Bumble's real "unkind message" AI warning (#143) — set only by the
   // client's own "Send anyway" action after the server's message:warning
   // prompted the sender to confirm a flagged message. Never set by the

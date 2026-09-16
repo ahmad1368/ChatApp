@@ -151,6 +151,7 @@ import { LanguageCertificateStore, CERTIFICATE_EXAM_TYPES } from "./languageCert
 import { TargetImmigrationCountryStore, TARGET_COUNTRY_CATALOG } from "./targetImmigrationCountry";
 import { isSameTargetCountry } from "./targetImmigrationCountryMatch";
 import { createGame, applyMove } from "./ticTacToe";
+import { createPoll, voteOnPoll } from "./chatPoll";
 import { DATE_PROPOSAL_LABELS, isDateProposalCategory } from "./dateProposals";
 import { createDateInvite, respondToDateInvite, confirmDate, isOverdueForConfirmation } from "./dateInvites";
 import { RecaptchaService } from "./recaptcha";
@@ -7613,6 +7614,25 @@ export async function createChatServer() {
         message.game = createGame(message.author, payload.recipient);
       }
 
+      // Tinder's real "System to create a two-person poll in chat"
+      // (#327) — same "requires a known recipient" reasoning as #148's
+      // game directly above. See chatPoll.ts's createPoll().
+      if (payload.pollQuestion !== undefined) {
+        if (!payload.recipient) {
+          socket.emit("message:rejected", { reason: "poll_requires_recipient" });
+          return;
+        }
+        const pollResult = createPoll(message.author, payload.recipient, payload.pollQuestion, payload.pollOptions);
+        if (!pollResult.success) {
+          socket.emit("message:rejected", { reason: "invalid_poll", error: pollResult.error });
+          return;
+        }
+        message.poll = pollResult.poll;
+        if (!message.text) {
+          message.text = pollResult.poll.question;
+        }
+      }
+
       // Bumble's real "suggest a type of date" quick-reply chip (#147) —
       // see dateProposals.ts for why this is a deliberately lighter-weight
       // sibling to #146's dateInvite rather than a duplicate of it. Falls
@@ -7878,6 +7898,34 @@ export async function createChatServer() {
 
         message.game = result.game;
         io.to(roomId).emit("game:updated", { messageId, game: message.game });
+      }
+    );
+
+    // Tinder's real "System to create a two-person poll in chat" (#327)
+    // — one vote at a time, mutated in place (see chatPoll.ts's
+    // voteOnPoll), the same way #148's game:move mutates its game above.
+    socket.on(
+      "poll:vote",
+      (payload: { roomId?: string; messageId?: string; author?: string; optionId?: unknown }) => {
+        const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+        const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
+        const author = typeof payload?.author === "string" ? payload.author : "";
+        if (!roomId || !messageId || !author) return;
+
+        const message = messagesByRoom.get(roomId)?.find((m) => m.id === messageId);
+        if (!message?.poll) {
+          socket.emit("poll:rejected", { messageId, error: "Poll not found" });
+          return;
+        }
+
+        const result = voteOnPoll(message.poll, author, payload?.optionId);
+        if (!result.success) {
+          socket.emit("poll:rejected", { messageId, error: result.error });
+          return;
+        }
+
+        message.poll = result.poll;
+        io.to(roomId).emit("poll:updated", { messageId, poll: message.poll });
       }
     );
 
