@@ -127,6 +127,7 @@ import { computeMoodCompatibility } from "./musicMood";
 import { FeedbackStore } from "./feedback";
 import { BackgroundCheckService } from "./backgroundCheck";
 import { BackgroundCheckStore } from "./backgroundCheckRecord";
+import { PhotoChallengeStore } from "./photoChallenge";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -277,6 +278,7 @@ export function createApp(deps?: {
   perContactRingtoneStore: PerContactRingtoneStore;
   feedbackStore: FeedbackStore;
   backgroundCheckStore: BackgroundCheckStore;
+  photoChallengeStore: PhotoChallengeStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -523,6 +525,7 @@ export function createApp(deps?: {
   const feedbackStore = new FeedbackStore();
   const backgroundCheckService = deps?.backgroundCheckService ?? new BackgroundCheckService();
   const backgroundCheckStore = new BackgroundCheckStore();
+  const photoChallengeStore = new PhotoChallengeStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -1154,6 +1157,42 @@ export function createApp(deps?: {
     }
 
     res.json(backgroundCheckStore.updateStatus(author, status));
+  });
+
+  // Hinge's real "Ability to participate in weekly photography
+  // challenges" (#298) — see photoChallenge.ts for the real deterministic
+  // weekly theme rotation and anti-gaming voting rules.
+  app.get("/api/photo-challenge/theme", (_req, res) => {
+    res.json(photoChallengeStore.getCurrentTheme());
+  });
+
+  app.post("/api/photo-challenge/submissions", (req, res) => {
+    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
+    const photoId = typeof req.body?.photoId === "string" ? req.body.photoId.trim() : "";
+    const photo = photoStore.get(photoId);
+    if (!photo || photo.author !== author) {
+      res.status(404).json({ error: "Photo not found for this author" });
+      return;
+    }
+    const result = photoChallengeStore.submit(author, photoId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.status(201).json({ submission: result.submission });
+  });
+
+  app.get("/api/photo-challenge/submissions", (_req, res) => {
+    res.json({ submissions: photoChallengeStore.getSubmissions() });
+  });
+
+  app.post("/api/photo-challenge/submissions/:submissionId/vote", (req, res) => {
+    const result = photoChallengeStore.vote(req.body?.voter, req.params.submissionId);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ votes: result.votes });
   });
 
   // Tinder's real "WebAssembly technology support for the browser
@@ -6614,6 +6653,7 @@ export function createApp(deps?: {
     perContactRingtoneStore,
     feedbackStore,
     backgroundCheckStore,
+    photoChallengeStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,
