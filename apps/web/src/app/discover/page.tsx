@@ -15,6 +15,7 @@ import ZodiacMatches from "../ZodiacMatches";
 import BioMatches from "../BioMatches";
 import AdBanner from "../AdBanner";
 import VoiceSwipeControl from "../VoiceSwipeControl";
+import ProfileShareButton from "../ProfileShareButton";
 import { vibrateForeground, vibrationPatternForCategory } from "../notificationSound";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -350,6 +351,7 @@ export default function DiscoverPage() {
               <Link href={`/profile/${encodeURIComponent(current.author)}`}>{current.author}</Link>
             </p>
             <p style={{ color: "var(--color-muted)", fontSize: 13 }}>{current.compatibility}% match</p>
+            <ProfileShareButton sharer={author} candidateAuthor={current.author} />
             <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16 }}>
               <button onClick={() => swipe("pass")} disabled={busy} style={{ fontSize: 24 }}>
                 ✕
