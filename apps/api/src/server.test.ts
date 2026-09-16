@@ -46,6 +46,7 @@ function listen() {
     pinnedChatsStore,
     archivedChatsStore,
     favoritesStore,
+    strangerPictureBlockStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -76,6 +77,7 @@ function listen() {
     pinnedChatsStore,
     archivedChatsStore,
     favoritesStore,
+    strangerPictureBlockStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -3312,6 +3314,102 @@ test("GET /api/rooms/:roomId/messages filters mutually-blocked authors for a vie
     const unfiltered = await fetch(`${baseUrl}/api/rooms/general/messages`);
     const unfilteredBody = await unfiltered.json();
     assert.equal(unfilteredBody.length, 2);
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/stranger-picture-block/:author saves the preference (#281)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/stranger-picture-block/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    assert.equal(res.status, 200);
+    const getRes = await fetch(`${baseUrl}/api/stranger-picture-block/alice`);
+    assert.deepEqual(await getRes.json(), { enabled: true });
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages hides a stranger's picture message once the setting is enabled (#281)", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  try {
+    await fetch(`${baseUrl}/api/stranger-picture-block/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    messagesByRoom.set("general", [
+      { id: "1", roomId: "general", author: "bob", text: "", imageUrl: "http://example.com/x.png", createdAt: new Date().toISOString() },
+      { id: "2", roomId: "general", author: "carol", text: "hey", createdAt: new Date().toISOString() },
+    ]);
+
+    const res = await fetch(`${baseUrl}/api/rooms/general/messages?viewer=alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.map((m: { author: string }) => m.author),
+      ["carol"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages still shows a match's picture message with the setting enabled (#281)", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  try {
+    await fetch(`${baseUrl}/api/stranger-picture-block/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "alice", swiped: "bob", direction: "like" }),
+    });
+    await fetch(`${baseUrl}/api/swipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ swiper: "bob", swiped: "alice", direction: "like" }),
+    });
+    messagesByRoom.set("general", [
+      { id: "1", roomId: "general", author: "bob", text: "", imageUrl: "http://example.com/x.png", createdAt: new Date().toISOString() },
+    ]);
+
+    const res = await fetch(`${baseUrl}/api/rooms/general/messages?viewer=alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.map((m: { author: string }) => m.author),
+      ["bob"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/rooms/:roomId/messages doesn't hide a stranger's text-only message (#281)", async () => {
+  const { server, baseUrl, messagesByRoom } = listen();
+  try {
+    await fetch(`${baseUrl}/api/stranger-picture-block/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    messagesByRoom.set("general", [
+      { id: "1", roomId: "general", author: "bob", text: "hi", createdAt: new Date().toISOString() },
+    ]);
+
+    const res = await fetch(`${baseUrl}/api/rooms/general/messages?viewer=alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.map((m: { author: string }) => m.author),
+      ["bob"]
+    );
   } finally {
     server.close();
   }

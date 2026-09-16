@@ -636,6 +636,8 @@ export default function ChatRoom({
   const lastSendPayloadRef = useRef<SendMessagePayload | null>(null);
   const [reportTarget, setReportTarget] = useState<{ author: string; messageId: string } | null>(null);
   const [blockedAuthors, setBlockedAuthors] = useState<string[]>([]);
+  const [matchAuthors, setMatchAuthors] = useState<string[]>([]);
+  const [blockStrangerPictures, setBlockStrangerPictures] = useState(false);
   const [watermarkLabel, setWatermarkLabel] = useState<string | null>(null);
   const [obscured, setObscured] = useState(false);
   const [albumPhotoIds, setAlbumPhotoIds] = useState<string[]>([]);
@@ -876,6 +878,20 @@ export default function ChatRoom({
       .catch(() => setBlockedAuthors([]));
   };
 
+  // #281's "don't receive picture messages from strangers" needs to know
+  // who counts as NOT a stranger (this viewer's own matches) — see
+  // strangerPictureBlock.ts.
+  const refreshStrangerPictureBlock = () => {
+    fetch(`${API_URL}/api/matches/${encodeURIComponent(author)}?includeArchived=true`)
+      .then((res) => res.json())
+      .then((body) => setMatchAuthors((body ?? []).map((m: { author: string }) => m.author)))
+      .catch(() => setMatchAuthors([]));
+    fetch(`${API_URL}/api/stranger-picture-block/${encodeURIComponent(author)}`)
+      .then((res) => res.json())
+      .then((body) => setBlockStrangerPictures(Boolean(body.enabled)))
+      .catch(() => setBlockStrangerPictures(false));
+  };
+
   const refreshPendingAlbumRequests = () => {
     fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/access-requests`)
       .then((res) => res.json())
@@ -906,6 +922,7 @@ export default function ChatRoom({
 
   useEffect(() => {
     refreshBlockedAuthors();
+    refreshStrangerPictureBlock();
     setContactPickerSupported(Boolean(getContactsManager()));
     fetch(`${API_URL}/api/photo-albums/${encodeURIComponent(author)}/access-level`)
       .then((res) => res.json())
@@ -1129,7 +1146,15 @@ export default function ChatRoom({
   // than filtering per-socket (doing so would break #20's Redis-backed
   // multi-instance delivery), so the client is the one place that can
   // reliably keep a blocked author out of view for every message path.
-  const visibleMessages = messages.filter((m) => !blockedAuthors.includes(m.author));
+  const visibleMessages = messages.filter((m) => {
+    if (blockedAuthors.includes(m.author)) return false;
+    // #281: hide a stranger's (non-match's) picture message once the
+    // viewer has opted in — see strangerPictureBlock.ts.
+    if (blockStrangerPictures && m.author !== author && !matchAuthors.includes(m.author)) {
+      if (m.imageUrl || m.selfDestructImageUrl) return false;
+    }
+    return true;
+  });
 
   const enableWebPush = async () => {
     setWebPushStatus("subscribing");
@@ -2816,6 +2841,8 @@ export default function ChatRoom({
         <Link href="/settings/notification-sound">Ringtone &amp; vibration &rarr;</Link>
         {" · "}
         <Link href="/settings/presence-visibility">Online status &rarr;</Link>
+        {" · "}
+        <Link href="/settings/stranger-pictures">Picture messages &rarr;</Link>
         {" · "}
         <Link href="/settings/measurement-units">Measurement units &rarr;</Link>
         {" · "}

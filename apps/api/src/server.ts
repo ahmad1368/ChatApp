@@ -115,6 +115,7 @@ import { PinnedChatsStore } from "./pinnedChats";
 import { ArchivedChatsStore } from "./archivedChats";
 import { FavoritesStore } from "./favorites";
 import { getLottieAnimationCatalog } from "./lottieAnimations";
+import { StrangerPictureBlockStore } from "./strangerPictureBlock";
 import { searchMessages } from "./messageSearch";
 import { WatermarkStore } from "./watermark";
 import { PhotoStore, ALLOWED_PHOTO_MIME_TYPES } from "./photos";
@@ -254,6 +255,7 @@ export function createApp(deps?: {
   pinnedChatsStore: PinnedChatsStore;
   archivedChatsStore: ArchivedChatsStore;
   favoritesStore: FavoritesStore;
+  strangerPictureBlockStore: StrangerPictureBlockStore;
   watermarkStore: WatermarkStore;
   photoStore: PhotoStore;
   duplicatePhotoDetector: DuplicatePhotoDetector;
@@ -489,6 +491,7 @@ export function createApp(deps?: {
   const pinnedChatsStore = new PinnedChatsStore();
   const archivedChatsStore = new ArchivedChatsStore();
   const favoritesStore = new FavoritesStore();
+  const strangerPictureBlockStore = new StrangerPictureBlockStore();
   const watermarkStore = new WatermarkStore();
   const photoStore = new PhotoStore();
   const duplicatePhotoDetector = new DuplicatePhotoDetector();
@@ -860,6 +863,22 @@ export function createApp(deps?: {
   // lottie-web — see lottieAnimations.ts and LottieAnimation.tsx.
   app.get("/api/lottie-animations", (_req, res) => {
     res.json({ animations: getLottieAnimationCatalog() });
+  });
+
+  // Tinder's real "Setting to not receive picture messages from strangers"
+  // (#281) — see strangerPictureBlock.ts for why this is an opt-in,
+  // per-viewer preference applied where picture messages are filtered.
+  app.get("/api/stranger-picture-block/:author", (req, res) => {
+    res.json({ enabled: strangerPictureBlockStore.get(req.params.author) });
+  });
+
+  app.put("/api/stranger-picture-block/:author", (req, res) => {
+    const result = strangerPictureBlockStore.update(req.params.author, req.body?.enabled);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ enabled: result.enabled });
   });
 
   // Self-declared phone number (same client-supplied-identity limitation as
@@ -5255,7 +5274,16 @@ export function createApp(deps?: {
     // The client also filters message:new the same way, since this app has
     // no per-viewer socket delivery to filter against without breaking
     // #20's Redis-backed multi-instance broadcast.
-    const all = viewer ? unfiltered.filter((m) => !blockStore.isMutuallyBlocked(viewer, m.author)) : unfiltered;
+    const blockFiltered = viewer ? unfiltered.filter((m) => !blockStore.isMutuallyBlocked(viewer, m.author)) : unfiltered;
+    // #281's "don't receive picture messages from strangers" applies the
+    // same way, on top of blocking — see strangerPictureBlock.ts.
+    const all = viewer
+      ? blockFiltered.filter((m) => {
+          const hasPicture = Boolean(m.imageUrl || m.selfDestructImageUrl);
+          const isMatch = swipeStore.getMatches(viewer).includes(m.author);
+          return !strangerPictureBlockStore.shouldHidePicture(viewer, m.author, hasPicture, isMatch);
+        })
+      : blockFiltered;
 
     const since = typeof req.query.since === "string" ? req.query.since : undefined;
     if (since !== undefined) {
@@ -6266,6 +6294,7 @@ export function createApp(deps?: {
     pinnedChatsStore,
     archivedChatsStore,
     favoritesStore,
+    strangerPictureBlockStore,
     watermarkStore,
     photoStore,
     duplicatePhotoDetector,
