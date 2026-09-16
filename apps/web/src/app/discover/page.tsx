@@ -13,6 +13,7 @@ import WeekendPlanMatches from "../WeekendPlanMatches";
 import BioMatches from "../BioMatches";
 import AdBanner from "../AdBanner";
 import VoiceSwipeControl from "../VoiceSwipeControl";
+import { vibrateForeground, vibrationPatternForCategory } from "../notificationSound";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -151,8 +152,20 @@ export default function DiscoverPage() {
       }
       if (body.matched) {
         setMatchNotice(candidate.author);
+        // Bumble's real "Haptic feedback on like or Match" (#248): the
+        // browser's own real Vibration API (navigator.vibrate) — only
+        // Android Chrome/Firefox actually implement it (iOS Safari has no
+        // Vibration API at all), an honest, disclosed platform gap rather
+        // than a fabricated cross-platform haptics layer. Reuses the same
+        // per-category patterns #160's push vibration already defines, so
+        // a match feels like the same celebratory double-buzz whether it
+        // arrives as a push notification or happens live on this screen.
+        vibrateForeground(vibrationPatternForCategory("newMatch"));
       } else {
         setMatchNotice(null);
+        if (direction === "like" || direction === "superlike") {
+          vibrateForeground(vibrationPatternForCategory("newLike"));
+        }
       }
       setLastSwiped(candidate.author);
       setCandidates((prev) => prev.filter((c) => c.author !== candidate.author));
