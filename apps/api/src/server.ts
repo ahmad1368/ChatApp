@@ -3293,6 +3293,15 @@ export function createApp(deps?: {
     });
   });
 
+  // Tinder's real "Show the number of successful matches recorded in the
+  // app" (#278) — the same real, live `getTotalMatchCount()` #171's admin
+  // dashboard already uses, just exposed publicly (unauthenticated, no
+  // sensitive detail in a single aggregate count) as the social-proof
+  // stat real dating apps advertise.
+  app.get("/api/stats/matches", (_req, res) => {
+    res.json({ totalMatches: swipeStore.getTotalMatchCount() });
+  });
+
   // Bumble's real "Tools to analyze user behavior and conversion rate"
   // (#179) — a genuine signup → onboarding → first-swipe → first-match →
   // first-message funnel, plus a real daily-active-users count, both
