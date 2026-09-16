@@ -19,6 +19,7 @@ import BeliefsInfoEditor from "../../BeliefsInfoEditor";
 import PetsInfoEditor from "../../PetsInfoEditor";
 import PersonalityInfoEditor from "../../PersonalityInfoEditor";
 import SpotifyConnect from "../../SpotifyConnect";
+import FacebookConnect from "../../FacebookConnect";
 import InstagramConnect from "../../InstagramConnect";
 import InterestsInfoEditor from "../../InterestsInfoEditor";
 import WeekendPlansEditor from "../../WeekendPlansEditor";
@@ -74,6 +75,7 @@ export default function ProfileSettingsPage() {
       <PetsInfoEditor author={author} />
       <PersonalityInfoEditor author={author} />
       <SpotifyConnect author={author} />
+      <FacebookConnect author={author} />
       <InstagramConnect author={author} />
       <InterestsInfoEditor author={author} />
       <WeekendPlansEditor author={author} />

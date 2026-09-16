@@ -41,4 +41,27 @@ describe("FacebookAuthService", () => {
     const service = new FacebookAuthService("app-id", "app-secret", async () => undefined);
     assert.equal(await service.verify("bad-token"), undefined);
   });
+
+  it("fetchFriends returns [] without calling the fetcher when unconfigured", async () => {
+    let called = false;
+    const friendsFetcher = async () => {
+      called = true;
+      return ["1", "2"];
+    };
+    const service = new FacebookAuthService(undefined, undefined, async () => undefined, friendsFetcher);
+    assert.deepEqual(await service.fetchFriends("some-token"), []);
+    assert.equal(called, false);
+  });
+
+  it("fetchFriends passes the token through to the friends fetcher", async () => {
+    let received: unknown;
+    const friendsFetcher = async (token: string) => {
+      received = token;
+      return ["fb-2", "fb-3"];
+    };
+    const service = new FacebookAuthService("app-id", "app-secret", async () => undefined, friendsFetcher);
+    const friends = await service.fetchFriends("user-token");
+    assert.equal(received, "user-token");
+    assert.deepEqual(friends, ["fb-2", "fb-3"]);
+  });
 });

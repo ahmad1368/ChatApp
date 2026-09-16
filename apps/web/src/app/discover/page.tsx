@@ -8,6 +8,7 @@ import TopPicks from "../TopPicks";
 import ProfileBoost from "../ProfileBoost";
 import CrossedPaths from "../CrossedPaths";
 import SharedContacts from "../SharedContacts";
+import FacebookMutualConnections from "../FacebookMutualConnections";
 import MusicMatches from "../MusicMatches";
 import WeekendPlanMatches from "../WeekendPlanMatches";
 import BioMatches from "../BioMatches";
@@ -293,6 +294,7 @@ export default function DiscoverPage() {
       <TopPicks author={author} />
       <CrossedPaths author={author} />
       <SharedContacts author={author} />
+      <FacebookMutualConnections author={author} />
       <MusicMatches author={author} />
       <WeekendPlanMatches author={author} />
       <BioMatches author={author} />
