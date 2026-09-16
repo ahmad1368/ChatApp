@@ -10,6 +10,11 @@ interface PhotoNote {
   createdAt: string;
 }
 
+interface PhotoReactionSummary {
+  emoji: string;
+  count: number;
+}
+
 function PhotoCard({ owner, viewer, photoId }: { owner: string; viewer: string; photoId: string }) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
@@ -19,6 +24,9 @@ function PhotoCard({ owner, viewer, photoId }: { owner: string; viewer: string; 
   const [altText, setAltText] = useState("");
   const [altTextDraft, setAltTextDraft] = useState("");
   const [editingAltText, setEditingAltText] = useState(false);
+  const [reactionEmojis, setReactionEmojis] = useState<string[]>([]);
+  const [reactionSummary, setReactionSummary] = useState<PhotoReactionSummary[]>([]);
+  const [viewerReaction, setViewerReaction] = useState<string | null>(null);
 
   const loadLikes = () => {
     fetch(`${API_URL}/api/photo-likes/${encodeURIComponent(owner)}/${encodeURIComponent(photoId)}?viewer=${encodeURIComponent(viewer)}`)
@@ -47,12 +55,52 @@ function PhotoCard({ owner, viewer, photoId }: { owner: string; viewer: string; 
       .catch(() => {});
   };
 
+  const loadReactions = () => {
+    fetch(`${API_URL}/api/photos/${encodeURIComponent(photoId)}/reactions?viewer=${encodeURIComponent(viewer)}`)
+      .then((res) => res.json())
+      .then((body) => {
+        setReactionSummary(body.summary ?? []);
+        setViewerReaction(body.viewerReaction ?? null);
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     loadLikes();
     loadNotes();
     loadAltText();
+    loadReactions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [owner, viewer, photoId]);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/photo-reactions/emojis`)
+      .then((res) => res.json())
+      .then((body) => setReactionEmojis(body.emojis ?? []))
+      .catch(() => {});
+  }, []);
+
+  const pickReaction = async (emoji: string) => {
+    setBusy(true);
+    try {
+      if (viewerReaction === emoji) {
+        await fetch(`${API_URL}/api/photos/${encodeURIComponent(photoId)}/reaction`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ viewer }),
+        });
+      } else {
+        await fetch(`${API_URL}/api/photos/${encodeURIComponent(photoId)}/reaction`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ viewer, emoji }),
+        });
+      }
+      loadReactions();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const saveAltText = async () => {
     setBusy(true);
@@ -120,6 +168,32 @@ function PhotoCard({ owner, viewer, photoId }: { owner: string; viewer: string; 
           {liked ? "❤️" : "🤍"} {likeCount}
         </button>
       </div>
+      {reactionEmojis.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4, marginTop: 6 }}>
+          {reactionEmojis.map((emoji) => {
+            const summaryEntry = reactionSummary.find((s) => s.emoji === emoji);
+            const selected = viewerReaction === emoji;
+            return (
+              <button
+                key={emoji}
+                onClick={() => pickReaction(emoji)}
+                disabled={busy}
+                aria-pressed={selected}
+                style={{
+                  fontSize: 13,
+                  padding: "2px 6px",
+                  borderRadius: 12,
+                  border: selected ? "1px solid var(--color-accent, #e0245e)" : "1px solid var(--color-border)",
+                  background: selected ? "var(--color-accent-muted, rgba(224,36,94,0.12))" : "none",
+                  cursor: "pointer",
+                }}
+              >
+                {emoji} {summaryEntry ? summaryEntry.count : ""}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {owner === viewer &&
         (editingAltText ? (
           <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
