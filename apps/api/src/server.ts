@@ -146,6 +146,7 @@ import { DiscoveryVisibilityStore } from "./discoveryVisibility";
 import { scanForScamContent } from "./scamDetector";
 import { scanForBankCardNumber } from "./bankCardDetector";
 import { VoiceResumeStore } from "./voiceResume";
+import { KeywordBlacklistStore, bioContainsBlacklistedKeyword } from "./keywordBlacklist";
 import { createGame, applyMove } from "./ticTacToe";
 import { DATE_PROPOSAL_LABELS, isDateProposalCategory } from "./dateProposals";
 import { createDateInvite, respondToDateInvite, confirmDate, isOverdueForConfirmation } from "./dateInvites";
@@ -316,6 +317,7 @@ export function createApp(deps?: {
   introVideoStore: IntroVideoStore;
   voiceIntroStore: VoiceIntroStore;
   voiceResumeStore: VoiceResumeStore;
+  keywordBlacklistStore: KeywordBlacklistStore;
   backgroundMusicStore: BackgroundMusicStore;
   bioStore: BioStore;
   weeklyGoalStore: WeeklyGoalStore;
@@ -586,6 +588,7 @@ export function createApp(deps?: {
   const introVideoStore = new IntroVideoStore();
   const voiceIntroStore = new VoiceIntroStore();
   const voiceResumeStore = new VoiceResumeStore();
+  const keywordBlacklistStore = new KeywordBlacklistStore();
   const backgroundMusicStore = new BackgroundMusicStore();
   const bioStore = new BioStore();
   const weeklyGoalStore = new WeeklyGoalStore();
@@ -2479,12 +2482,20 @@ export function createApp(deps?: {
     // scan (report threshold + spam-bio pattern match) never reaches the
     // like queue at all — see that file for why these two signals rather
     // than an invented model.
+    const candidateBio = bioStore.get(b);
     const fakeProfileScan = scanCandidateForFakeProfile({
-      bio: bioStore.get(b),
+      bio: candidateBio,
       reportCount: reportStore.countFor(b),
       hasDuplicatePhoto: duplicatePhotoDetector.isFlagged(b),
     });
     if (fakeProfileScan.flagged) {
+      return true;
+    }
+    // Tinder's real "Ability to define a blacklist of disliked keywords"
+    // (#322): a candidate whose bio mentions any of the swiper's own
+    // blacklisted keywords never reaches their deck — see
+    // keywordBlacklist.ts.
+    if (bioContainsBlacklistedKeyword(candidateBio, keywordBlacklistStore.get(a))) {
       return true;
     }
     const filters = discoveryFiltersStore.get(a);
@@ -5218,6 +5229,22 @@ export function createApp(deps?: {
     res.json({ filters: discoveryFiltersStore.get(req.params.author) });
   });
 
+  // Tinder's real "Ability to define a blacklist of disliked keywords"
+  // (#322) — see keywordBlacklist.ts; enforced against candidates' bios
+  // in isExcludedCandidate() above.
+  app.put("/api/keyword-blacklist/:author", (req, res) => {
+    const result = keywordBlacklistStore.update(req.params.author, req.body?.keywords);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ keywords: result.keywords });
+  });
+
+  app.get("/api/keyword-blacklist/:author", (req, res) => {
+    res.json({ keywords: keywordBlacklistStore.get(req.params.author) });
+  });
+
   // Tinder's real "Ability to disable receiving Super Likes" (#308) — see
   // superLikeOptOut.ts and the POST /api/swipes downgrade logic below.
   app.put("/api/super-like-opt-out/:author", (req, res) => {
@@ -7116,6 +7143,7 @@ export function createApp(deps?: {
     introVideoStore,
     voiceIntroStore,
     voiceResumeStore,
+    keywordBlacklistStore,
     backgroundMusicStore,
     bioStore,
     weeklyGoalStore,

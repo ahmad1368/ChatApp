@@ -73,6 +73,7 @@ function listen() {
     messageAgeLimitStore,
     dateNoResponseAlertStore,
     attachmentStyleStore,
+    keywordBlacklistStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -127,6 +128,7 @@ function listen() {
     messageAgeLimitStore,
     dateNoResponseAlertStore,
     attachmentStyleStore,
+    keywordBlacklistStore,
     smsSecurityAlertStore,
     notificationInboxStore,
     notificationSoundStore,
@@ -9008,6 +9010,95 @@ test("GET /api/swipe-candidates/:author with no bioKeyword returns everyone rega
       body.candidates.map((c: { author: string }) => c.author),
       ["bob"]
     );
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/swipe-candidates/:author excludes a candidate whose bio contains the swiper's blacklisted keyword (#322)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "alice" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "bob" }),
+    });
+    await fetch(`${baseUrl}/api/discovery/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author: "carol" }),
+    });
+
+    await fetch(`${baseUrl}/api/bio/bob`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "I love smoking cigars" }),
+    });
+    await fetch(`${baseUrl}/api/bio/carol`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio: "Coffee enthusiast" }),
+    });
+    await fetch(`${baseUrl}/api/keyword-blacklist/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keywords: ["smoking"] }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/swipe-candidates/alice`);
+    const body = await res.json();
+    assert.deepEqual(
+      body.candidates.map((c: { author: string }) => c.author),
+      ["carol"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/keyword-blacklist/:author trims and lowercases keywords, then GET returns them (#322)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const putRes = await fetch(`${baseUrl}/api/keyword-blacklist/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keywords: ["  Smoking ", "CRYPTO"] }),
+    });
+    assert.equal(putRes.status, 200);
+    assert.deepEqual(await putRes.json(), { keywords: ["smoking", "crypto"] });
+
+    const getRes = await fetch(`${baseUrl}/api/keyword-blacklist/alice`);
+    assert.deepEqual(await getRes.json(), { keywords: ["smoking", "crypto"] });
+  } finally {
+    server.close();
+  }
+});
+
+test("PUT /api/keyword-blacklist/:author rejects too many keywords (#322)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const keywords = Array.from({ length: 21 }, (_, i) => `keyword${i}`);
+    const res = await fetch(`${baseUrl}/api/keyword-blacklist/alice`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keywords }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/keyword-blacklist/:author defaults to an empty list (#322)", async () => {
+  const { server, baseUrl } = listen();
+  try {
+    const res = await fetch(`${baseUrl}/api/keyword-blacklist/alice`);
+    assert.deepEqual(await res.json(), { keywords: [] });
   } finally {
     server.close();
   }
