@@ -12,6 +12,8 @@ import ProfilePromptsEditor from "../../ProfilePromptsEditor";
 import JobInfoEditor from "../../JobInfoEditor";
 import EducationInfoEditor from "../../EducationInfoEditor";
 import HeightInfoEditor from "../../HeightInfoEditor";
+import AgeInfoEditor from "../../AgeInfoEditor";
+import MessageAgeLimitEditor from "../../MessageAgeLimitEditor";
 import LifestyleInfoEditor from "../../LifestyleInfoEditor";
 import FamilyPlansInfoEditor from "../../FamilyPlansInfoEditor";
 import MaritalStatusInfoEditor from "../../MaritalStatusInfoEditor";
@@ -74,6 +76,8 @@ export default function ProfileSettingsPage() {
       <JobInfoEditor author={author} />
       <EducationInfoEditor author={author} />
       <HeightInfoEditor author={author} />
+      <AgeInfoEditor author={author} />
+      <MessageAgeLimitEditor author={author} />
       <LifestyleInfoEditor author={author} />
       <FamilyPlansInfoEditor author={author} />
       <MaritalStatusInfoEditor author={author} />

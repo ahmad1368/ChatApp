@@ -174,6 +174,9 @@ import { ProfileNoteStore } from "./profileNotes";
 import { SuperLikeOptOutStore } from "./superLikeOptOut";
 import { CallQualityFeedbackStore, CALL_QUALITY_ISSUES } from "./callQualityFeedback";
 import { MuteMatchStore, MUTE_DURATION_HOURS } from "./muteMatch";
+import { AgeInfoStore } from "./ageInfo";
+import { MessageAgeLimitStore } from "./messageAgeLimit";
+import { canSendGivenAgeLimit } from "./messageAgeLimitRule";
 import { PersonalityInfoStore } from "./personalityInfo";
 import { SpotifyService } from "./spotifyAuth";
 import { GiphyService, GIPHY_CONTENT_TYPES, GiphyContentType } from "./giphy";
@@ -329,6 +332,8 @@ export function createApp(deps?: {
   superLikeOptOutStore: SuperLikeOptOutStore;
   callQualityFeedbackStore: CallQualityFeedbackStore;
   muteMatchStore: MuteMatchStore;
+  ageInfoStore: AgeInfoStore;
+  messageAgeLimitStore: MessageAgeLimitStore;
   personalityInfoStore: PersonalityInfoStore;
   spotifyInfoStore: SpotifyInfoStore;
   instagramInfoStore: InstagramInfoStore;
@@ -594,6 +599,8 @@ export function createApp(deps?: {
   const superLikeOptOutStore = new SuperLikeOptOutStore();
   const callQualityFeedbackStore = new CallQualityFeedbackStore();
   const muteMatchStore = new MuteMatchStore();
+  const ageInfoStore = new AgeInfoStore();
+  const messageAgeLimitStore = new MessageAgeLimitStore();
   const personalityInfoStore = new PersonalityInfoStore();
   const spotifyInfoStore = new SpotifyInfoStore();
   const instagramInfoStore = new InstagramInfoStore();
@@ -5166,6 +5173,36 @@ export function createApp(deps?: {
     res.json({ mutedUntil: muteMatchStore.getMutedUntil(req.params.author, req.params.match) });
   });
 
+  // Tinder's real "Ability to set an exact age limit for receiving
+  // messages" (#312) — see ageInfo.ts (self-reported age) and
+  // messageAgeLimit.ts (the real min/max range), enforced in
+  // message:send below via messageAgeLimitRule.ts.
+  app.put("/api/age-info/:author", (req, res) => {
+    const result = ageInfoStore.update(req.params.author, req.body?.age);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ age: result.age });
+  });
+
+  app.get("/api/age-info/:author", (req, res) => {
+    res.json({ age: ageInfoStore.get(req.params.author) });
+  });
+
+  app.put("/api/message-age-limit/:author", (req, res) => {
+    const result = messageAgeLimitStore.update(req.params.author, req.body?.minAge, req.body?.maxAge);
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ limit: result.limit });
+  });
+
+  app.get("/api/message-age-limit/:author", (req, res) => {
+    res.json({ limit: messageAgeLimitStore.get(req.params.author) });
+  });
+
   app.post("/api/swipes", (req, res) => {
     // Bumble's real Snooze Mode (#164): a snoozed account can't swipe on
     // new candidates either — the whole account pauses, not just other
@@ -7006,6 +7043,8 @@ export function createApp(deps?: {
     superLikeOptOutStore,
     callQualityFeedbackStore,
     muteMatchStore,
+    ageInfoStore,
+    messageAgeLimitStore,
     personalityInfoStore,
     spotifyInfoStore,
     instagramInfoStore,
@@ -7098,6 +7137,8 @@ export async function createChatServer() {
     notificationPreferencesStore,
     notificationInboxStore,
     muteMatchStore,
+    ageInfoStore,
+    messageAgeLimitStore,
     banStore,
     requireAdmin,
     coinStore,
@@ -7237,6 +7278,13 @@ export async function createChatServer() {
           const check = canSendFirstMessage(senderGender, recipientGender);
           if (!check.allowed) {
             socket.emit("message:rejected", { reason: "first_message_gender_rule", error: check.error });
+            return;
+          }
+          // #312's real exact age limit — same "first message only" scope
+          // as #135's gender rule directly above.
+          const ageCheck = canSendGivenAgeLimit(ageInfoStore.get(payload.author), messageAgeLimitStore.get(payload.recipient));
+          if (!ageCheck.allowed) {
+            socket.emit("message:rejected", { reason: "recipient_age_limit", error: ageCheck.error });
             return;
           }
         }
