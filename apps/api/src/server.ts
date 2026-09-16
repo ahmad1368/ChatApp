@@ -2,7 +2,15 @@ import cors from "cors";
 import express, { Express } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { ChatMessage, DEFAULT_ROOM_ID, GIFT_CATALOG, ONBOARDING_STEPS, OnboardingStep, SendMessagePayload } from "@chatapp/shared";
+import {
+  ChatMessage,
+  DEFAULT_ROOM_ID,
+  GIFT_CATALOG,
+  ONBOARDING_STEPS,
+  OnboardingStep,
+  SendMessagePayload,
+  CAFE_GIFT_CARD_CATALOG,
+} from "@chatapp/shared";
 import { describeUserAgent, normalizePhoneNumber, OtpService, TokenService, UserStore } from "./auth";
 import { TwoFactorService } from "./twoFactor";
 import { SmsSecurityAlertStore } from "./smsSecurityAlerts";
@@ -152,6 +160,7 @@ import { TargetImmigrationCountryStore, TARGET_COUNTRY_CATALOG } from "./targetI
 import { isSameTargetCountry } from "./targetImmigrationCountryMatch";
 import { createGame, applyMove } from "./ticTacToe";
 import { createPoll, voteOnPoll } from "./chatPoll";
+import { CafeGiftCardStore, findDenomination as findGiftCardDenomination } from "./cafeGiftCard";
 import { DATE_PROPOSAL_LABELS, isDateProposalCategory } from "./dateProposals";
 import { createDateInvite, respondToDateInvite, confirmDate, isOverdueForConfirmation } from "./dateInvites";
 import { RecaptchaService } from "./recaptcha";
@@ -400,6 +409,7 @@ export function createApp(deps?: {
   notificationSoundStore: NotificationSoundStore;
   requireAdmin: (req: express.Request, res: express.Response) => boolean;
   coinStore: CoinStore;
+  cafeGiftCardStore: CafeGiftCardStore;
   dailySpinStore: DailySpinStore;
   loginStreakStore: LoginStreakStore;
   achievementBadgeStore: AchievementBadgeStore;
@@ -529,6 +539,7 @@ export function createApp(deps?: {
   const appleAppStoreBridge = new AppleAppStoreBridge(subscriptionStore);
   const cryptoChargeStore = new CryptoChargeStore();
   const coinStore = new CoinStore();
+  const cafeGiftCardStore = new CafeGiftCardStore();
   const dailySpinStore = new DailySpinStore();
   const loginStreakStore = new LoginStreakStore();
   const achievementBadgeStore = new AchievementBadgeStore();
@@ -7379,6 +7390,7 @@ export function createApp(deps?: {
     measurementUnitsStore,
     requireAdmin,
     coinStore,
+    cafeGiftCardStore,
     dailySpinStore,
     loginStreakStore,
     achievementBadgeStore,
@@ -7427,6 +7439,7 @@ export async function createChatServer() {
     banStore,
     requireAdmin,
     coinStore,
+    cafeGiftCardStore,
     dailyChallengeStore,
   } = createApp();
   const httpServer = createServer(app);
@@ -7680,6 +7693,40 @@ export async function createChatServer() {
       // server builds the authoritative, real partner-store link (see
       // realGiftSuggestions.ts), distinct from #197's fictional
       // coin-bought gift above.
+      // Coffee Meets Bagel's real "System to send electronic cafe gift
+      // cards" (#330) — the client sends only the chosen denomination;
+      // the real cost/debit and code generation happen here, same trust
+      // boundary as #197's gift above.
+      if (payload.cafeGiftCardAmount !== undefined) {
+        if (!payload.recipient) {
+          socket.emit("message:rejected", { reason: "gift_card_requires_recipient" });
+          return;
+        }
+        if (payload.recipient === message.author) {
+          socket.emit("message:rejected", { reason: "invalid_gift_card", error: "Cannot send a gift card to yourself" });
+          return;
+        }
+        const denomination = findGiftCardDenomination(payload.cafeGiftCardAmount);
+        if (!denomination) {
+          socket.emit("message:rejected", { reason: "invalid_gift_card_amount" });
+          return;
+        }
+        const spendResult = coinStore.spend(message.author, denomination.coinCost);
+        if (!spendResult.success) {
+          socket.emit("message:rejected", { reason: "insufficient_coins" });
+          return;
+        }
+        const cardResult = cafeGiftCardStore.create(message.author, payload.recipient, payload.cafeGiftCardAmount);
+        if (!cardResult.success) {
+          socket.emit("message:rejected", { reason: "invalid_gift_card", error: cardResult.error });
+          return;
+        }
+        message.cafeGiftCard = cardResult.card;
+        if (!message.text) {
+          message.text = `☕ $${denomination.amountDollars} cafe gift card`;
+        }
+      }
+
       if (payload.realGiftId !== undefined) {
         const idea = findRealGiftIdea(payload.realGiftId);
         if (!idea) {
@@ -7926,6 +7973,34 @@ export async function createChatServer() {
 
         message.poll = result.poll;
         io.to(roomId).emit("poll:updated", { messageId, poll: message.poll });
+      }
+    );
+
+    // Coffee Meets Bagel's real "System to send electronic cafe gift
+    // cards" (#330) — the recipient redeems in place, same shape as
+    // poll:vote/game:move above (see cafeGiftCard.ts's redeem()).
+    socket.on(
+      "cafe-gift-card:redeem",
+      (payload: { roomId?: string; messageId?: string; author?: string }) => {
+        const roomId = typeof payload?.roomId === "string" ? payload.roomId : "";
+        const messageId = typeof payload?.messageId === "string" ? payload.messageId : "";
+        const author = typeof payload?.author === "string" ? payload.author : "";
+        if (!roomId || !messageId || !author) return;
+
+        const message = messagesByRoom.get(roomId)?.find((m) => m.id === messageId);
+        if (!message?.cafeGiftCard) {
+          socket.emit("cafe-gift-card:rejected", { messageId, error: "Gift card not found" });
+          return;
+        }
+
+        const result = cafeGiftCardStore.redeem(message.cafeGiftCard.id, author);
+        if (!result.success) {
+          socket.emit("cafe-gift-card:rejected", { messageId, error: result.error });
+          return;
+        }
+
+        message.cafeGiftCard = result.card;
+        io.to(roomId).emit("cafe-gift-card:updated", { messageId, cafeGiftCard: message.cafeGiftCard });
       }
     );
 

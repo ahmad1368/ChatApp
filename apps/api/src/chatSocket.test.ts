@@ -1149,6 +1149,116 @@ test("Virtual gifts (#197): a sender with enough coins can send a gift, which de
   }
 });
 
+test("Cafe gift cards (#330): message:send is rejected with invalid_gift_card_amount for an amount not in the catalog", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    client.emit("join", "room-1");
+    const rejected = waitFor<{ reason?: string }>(client, "message:rejected");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "", recipient: "bob", cafeGiftCardAmount: 7 });
+    const payload = await rejected;
+    assert.equal(payload.reason, "invalid_gift_card_amount");
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
+
+test("Cafe gift cards (#330): message:send is rejected with gift_card_requires_recipient when no recipient is given", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    client.emit("join", "room-1");
+    const rejected = waitFor<{ reason?: string }>(client, "message:rejected");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "", cafeGiftCardAmount: 5 });
+    const payload = await rejected;
+    assert.equal(payload.reason, "gift_card_requires_recipient");
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
+
+test("Cafe gift cards (#330): message:send is rejected with insufficient_coins when the sender hasn't bought any", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    client.emit("join", "room-1");
+    const rejected = waitFor<{ reason?: string }>(client, "message:rejected");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "", recipient: "bob", cafeGiftCardAmount: 5 });
+    const payload = await rejected;
+    assert.equal(payload.reason, "insufficient_coins");
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
+
+test("Cafe gift cards (#330): a sender with enough coins can send one, which debits the balance and carries a real code", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "medium" }),
+    });
+
+    client.emit("join", "room-1");
+    const received = waitFor<{ cafeGiftCard?: { id: string; amountDollars: number; code: string; redeemed: boolean }; text: string }>(
+      client,
+      "message:new"
+    );
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "", recipient: "bob", cafeGiftCardAmount: 5 });
+    const message = await received;
+
+    assert.equal(message.cafeGiftCard?.amountDollars, 5);
+    assert.equal(message.cafeGiftCard?.redeemed, false);
+    assert.match(message.cafeGiftCard?.code ?? "", /^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
+    assert.ok(message.text.includes("$5"));
+
+    const balanceRes = await fetch(`${baseUrl}/api/coins/alice`);
+    assert.equal((await balanceRes.json()).balance, 50);
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
+
+test("Cafe gift cards (#330): only the recipient can redeem it, and only once", async () => {
+  const { httpServer, baseUrl } = await startChatServer();
+  const client = await connectClient(baseUrl);
+  try {
+    await fetch(`${baseUrl}/api/coins/alice/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: "medium" }),
+    });
+
+    client.emit("join", "room-1");
+    const received = waitFor<{ id: string; cafeGiftCard?: { id: string } }>(client, "message:new");
+    client.emit("message:send", { roomId: "room-1", author: "alice", text: "", recipient: "bob", cafeGiftCardAmount: 5 });
+    const message = await received;
+
+    const wrongRedeemerRejected = waitFor<{ error?: string }>(client, "cafe-gift-card:rejected");
+    client.emit("cafe-gift-card:redeem", { roomId: "room-1", messageId: message.id, author: "mallory" });
+    await wrongRedeemerRejected;
+
+    const updated = waitFor<{ cafeGiftCard: { redeemed: boolean } }>(client, "cafe-gift-card:updated");
+    client.emit("cafe-gift-card:redeem", { roomId: "room-1", messageId: message.id, author: "bob" });
+    const updatedPayload = await updated;
+    assert.equal(updatedPayload.cafeGiftCard.redeemed, true);
+
+    const doubleRedeemRejected = waitFor<{ error?: string }>(client, "cafe-gift-card:rejected");
+    client.emit("cafe-gift-card:redeem", { roomId: "room-1", messageId: message.id, author: "bob" });
+    const doubleRedeemPayload = await doubleRedeemRejected;
+    assert.match(doubleRedeemPayload.error ?? "", /already been redeemed/);
+  } finally {
+    client.close();
+    httpServer.close();
+  }
+});
+
 test("Daily challenges (#219): sending a message and a voice note progresses their respective challenges", async () => {
   const { httpServer, baseUrl } = await startChatServer();
   const client = await connectClient(baseUrl);

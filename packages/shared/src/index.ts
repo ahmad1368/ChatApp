@@ -88,6 +88,11 @@ export interface ChatMessage {
   // question CoupleQuizStore: this is a custom question either side
   // writes, scoped to exactly the two people in this chat.
   poll?: ChatPoll;
+  // Coffee Meets Bagel's real "System to send electronic cafe gift
+  // cards" (#330) — set server-side once #196's CoinStore actually
+  // covers the chosen denomination's cost, same "server fills in the
+  // authoritative, paid-for details" trust boundary as #197's gift.
+  cafeGiftCard?: CafeGiftCard;
 }
 
 export interface ChatPollOption {
@@ -203,6 +208,39 @@ export const REAL_GIFT_CATALOG: RealGiftIdea[] = [
   { id: "book", name: "Book", emoji: "📚", searchQuery: "bestselling book gift" },
 ];
 
+export interface CafeGiftCardDenomination {
+  amountDollars: number;
+  coinCost: number;
+}
+
+// Coffee Meets Bagel's real "System to send electronic cafe gift cards"
+// (#330) — a small, fixed, curated set of denominations (same "quality
+// over quantity" shape as #197's GIFT_CATALOG/#272's REAL_GIFT_CATALOG),
+// priced roughly in line with #196's own coin packages (~100 coins per
+// real dollar of card value). Distinct from #197's purely symbolic
+// "coffee" emoji gift (no real value, no code) — this one carries a real
+// generated redemption code and a real dollar amount (see
+// cafeGiftCard.ts), though this app has no real gift-card-issuing API
+// (Tremendous, Amazon Incentives, etc.) to actually fund/redeem it at a
+// physical or online cafe — that fulfillment gap is disclosed, not
+// fabricated, the same honest scoping as #272's partner-store links.
+export const CAFE_GIFT_CARD_CATALOG: CafeGiftCardDenomination[] = [
+  { amountDollars: 5, coinCost: 500 },
+  { amountDollars: 10, coinCost: 1000 },
+  { amountDollars: 15, coinCost: 1500 },
+  { amountDollars: 25, coinCost: 2500 },
+];
+
+export interface CafeGiftCard {
+  id: string;
+  amountDollars: number;
+  code: string;
+  sender: string;
+  recipient: string;
+  redeemed: boolean;
+  createdAt: string;
+}
+
 export interface ChatLocationShare {
   latitude: number;
   longitude: number;
@@ -271,6 +309,11 @@ export interface SendMessagePayload {
   // #148's startGame). See chatPoll.ts's createPoll().
   pollQuestion?: string;
   pollOptions?: string[];
+  // Coffee Meets Bagel's real "System to send electronic cafe gift
+  // cards" (#330) — client sends only the chosen denomination in
+  // dollars; the server looks it up in CAFE_GIFT_CARD_CATALOG and debits
+  // #196's CoinStore, same trust boundary as #197's giftId.
+  cafeGiftCardAmount?: number;
   // Bumble's real "unkind message" AI warning (#143) — set only by the
   // client's own "Send anyway" action after the server's message:warning
   // prompted the sender to confirm a flagged message. Never set by the
